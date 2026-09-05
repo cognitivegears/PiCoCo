@@ -1,0 +1,76 @@
+================================================================
+PiCoCo — PCB Fabrication Checklist
+READ THIS BEFORE SUBMITTING TO ANY BOARD HOUSE
+================================================================
+
+The cartridge edge fingers insert into a 40-year-old CoCo slot. Using
+JLCPCB's or PCBWay's default plating options WILL destroy the slot's
+bronze wipers over time. The settings below are not optional.
+
+-----------------------------------------------------------------
+JLCPCB ORDER SETTINGS (verified 2026-04; re-check before ordering)
+-----------------------------------------------------------------
+
+  Base material:         FR-4
+  Layers:                2
+  Dimensions:            ~98 x 55 mm (see Gerber outline)
+  PCB thickness:         1.6 mm       (*** critical — matches CoCo slot width)
+  PCB color:             Any (green is cheapest)
+  Silkscreen:            White (on green) or Black (on other colors)
+  Surface finish:        HASL with lead, or ENIG — does NOT affect fingers
+  Outer copper weight:   1 oz
+  Gold fingers:          YES          (*** critical)
+  Gold finger bevel:     30°          (*** critical)
+  Gold thickness:        1 µm minimum (*** critical; 2 µm is better)
+  Impedance control:     No
+  Castellated holes:     No
+  Remove order number:   User's choice
+
+-----------------------------------------------------------------
+WHY THESE SETTINGS MATTER
+-----------------------------------------------------------------
+
+* Hard gold plating on fingers: the CoCo slot uses bronze wipers.
+  HASL or ENIG plating will abrade within tens of insertion cycles,
+  leaving oxide that ruins signal integrity on /CTS, /SCS, and data.
+  Hard gold lasts thousands of cycles.
+
+* 30° bevel on leading edge: a square-cut edge will scrape and lift
+  pad material on insertion. The bevel glides into the slot.
+
+* 1 µm gold minimum: thinner plating wears through quickly,
+  especially on older CoCo slots where the wipers may already be
+  worn to an abrasive surface.
+
+* 1.6 mm board (= 0.062"): the CoCo slot is spec'd for 0.062"
+  boards. 1.2 mm is too thin (loose fit, intermittent contact).
+  2.0 mm is too thick and won't insert.
+
+-----------------------------------------------------------------
+ASSEMBLY (OPTIONAL)
+-----------------------------------------------------------------
+
+If ordering JLCPCB PCBA (SMT assembly):
+- Enable SMT Assembly, top side only.
+- Upload the BOM.csv and CPL.csv from this fab/ directory.
+- Confirm U15 (SN74LVC1G11) is available in JLC Extended Library;
+  if not, substitute with an equivalent 3-input AND gate in SC-70-6.
+- DNP parts (do-not-populate): R2, R3, J_CART, J_LVC. Mark these as
+  "Do not place" in the JLC order form or they will be soldered
+  unnecessarily.
+- Through-hole parts (P1 edge connector, JP1 header, J_SWD header)
+  must be hand-soldered after JLC assembly.
+
+-----------------------------------------------------------------
+POST-ORDER VERIFICATION
+-----------------------------------------------------------------
+
+When boards arrive:
+1. Verify edge fingers are plated gold, not silver-tinted (HASL).
+2. Verify 30° bevel is present (feel with a fingernail — should
+   slope, not square).
+3. Test-fit into a CoCo slot BEFORE soldering anything. If the
+   board doesn't seat, a light sand on the bevel usually fixes it.
+
+If a board was shipped with HASL fingers or no bevel, CONTACT THE
+FAB HOUSE for a replacement — do not insert it into a real CoCo.

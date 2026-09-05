@@ -30,3 +30,13 @@ fp-info-cache
 *.csv
 #auto_saved_files#
 *.lck
+
+# VS Code local history
+.history/
+
+# Analysis / exploration output
+*_analysis.json
+
+# Python
+__pycache__/
+*.pyc
