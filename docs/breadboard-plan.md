@@ -85,10 +85,10 @@ breadboard it is half a 74HC00.
   either circuit is needed (step 8 below) before both are committed to
   copper.
 - The cart footprint `COCO-CART-2.1X1.75` ends its fingers 0.44 mm from
-  the board edge. JLCPCB requires >= 0.6 mm (PCBWay >= 0.5 mm) for a
-  30° bevel on 1.6 mm stock or the bevel cuts into the finger tips. The
-  breakout's derived footprint pulls the leading edge back to 0.80 mm;
-  do the same to the main footprint before the main board is fabbed.
+  the board edge. JLCPCB's order form gives the 30° bevel on 1.6 mm
+  stock as 1.13 mm deep, so the bevel would cut into the finger tips.
+  The breakout's derived footprint pulls the leading edge back to
+  1.30 mm; do the same to the main footprint before it is fabbed.
 - Firmware doc 3.4: DMA cannot index a table by a value pulled from
   the PIO FIFO. The workable version has the PIO compose the full
   32-bit pointer itself (`in pins, 13` then `in y, 19` with Y holding

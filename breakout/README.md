@@ -50,13 +50,15 @@ Finger width (1.27 mm), pitch (2.54 mm), x positions, layer assignment
 (odd on top, even on bottom), and the far end of every pad are identical
 to `COCO-CART-2.1X1.75`, the footprint the main PiCoCo board uses. One
 thing was changed on purpose: the leading edge of the 39 full-length
-fingers was pulled back from 0.44 mm to 0.80 mm from the board edge.
-JLCPCB requires at least 0.6 mm and PCBWay at least 0.5 mm there, or
-the 30° bevel cuts into the finger tips and exposes copper. The contact
-wipe zone is millimetres further in, so mating is unaffected. The +5V
-finger (9) was already short at the leading edge (mates last) and is
-unchanged. The main board's footprint still has the 0.44 mm figure and
-should get the same trim before it is fabbed.
+fingers was pulled back from 0.44 mm to 1.30 mm from the board edge.
+JLCPCB's order form states that a 30° bevel on 1.6 mm stock is 1.13 mm
+deep (0.53 mm residual thickness at the tip), so any copper closer than
+that sits on the chamfer and gets ground off, leaving bare copper at
+the finger tips. 1.30 mm keeps every finger fully on the flat. The
+contact wipe zone is millimetres further in, so mating is unaffected.
+The +5V finger (9) was already short at the leading edge (mates last)
+and is unchanged. The main board's footprint still has the 0.44 mm
+figure and should get the same trim before it is fabbed.
 
 ## Bill of materials
 
@@ -96,12 +98,19 @@ bash tools/gen_fab.sh breakout/PiCoCo-Breakout.kicad_pcb fab/breakout
 ```
 
 Use the JLCPCB settings in `fab/READ-BEFORE-ORDERING.txt`. The ones that
-matter for this board:
+matter for this board, as the JLCPCB form presents them:
 
-- 1.6 mm thickness (slot fit)
-- **Gold fingers: yes, 30° bevel, hard gold >= 1 um.** HASL or ENIG on
-  the fingers will wear the slot's wipers.
-- Surface finish elsewhere: anything.
+- Layers 2, thickness 1.6 mm (slot fit), 1 oz copper.
+- **Surface finish: ENIG.** JLCPCB only offers the gold-finger process
+  on an ENIG board; with HASL selected the form warns that the fingers
+  will merely be tinned.
+- **Gold Fingers: Yes. Beveling: 30°.** The form then shows the bevel
+  depth (1.13 mm) and residual thickness (0.53 mm) the finger geometry
+  was designed around.
+- Confirm Production File: Yes is worth the extra day on a gold-finger
+  board; you get to see how they interpreted the fingers and bevel.
+- Everything else at defaults: outline tolerance ±0.2 mm, flying-probe
+  test, no castellations, no edge plating, no blind slots.
 - Minimum quantity is 5. Keep the spares.
 
 Fab-rule check against the published requirements (JLCPCB help
@@ -109,8 +118,8 @@ Fab-rule check against the published requirements (JLCPCB help
 
 | Rule | Requirement | This board |
 |---|---|---|
-| finger to board edge, 30° bevel, 1.6 mm | JLC >= 0.6 mm, PCBWay >= 0.5 mm | 0.80 mm |
-| copper in the bevel zone | none | none: pours stop 11 mm up, traces leave pads inward |
+| finger to board edge, 30° bevel, 1.6 mm | JLC bevel depth 1.13 mm (order form); help page says >= 0.6 mm; PCBWay >= 0.5 mm | 1.30 mm |
+| copper in the bevel zone | none | none: fingers end at 1.30 mm, pours stop 11 mm up, traces leave pads inward |
 | pads / plated holes near fingers | >= 1.0 mm | nearest is J1 at ~38 mm |
 | board size after bevel | JLC >= 50 x 50 mm, PCBWay width > 45 mm | 52.8 x 99 mm (inside the 100 x 100 mm price tier) |
 | fingers on one edge only | yes | yes |

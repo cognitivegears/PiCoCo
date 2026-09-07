@@ -106,12 +106,12 @@ def write_fingers_footprint() -> None:
         if kind == "descr":
             it = ('(descr "Color Computer cartridge edge fingers only (40 x 0.1in, 2.1in wide). '
                   'Board outline is drawn in the PCB, not the footprint.")')
-        # Fab bevel rule: JLCPCB needs >= 0.6 mm and PCBWay >= 0.5 mm from finger to
-        # edge for a 30 deg bevel on 1.6 mm stock; the source footprint has 0.44 mm.
-        # Pull the leading edge back to 0.80 mm. Width, pitch, and the far end stay.
-        it = it.replace("(at 2.54 -5.207) (size 1.27 9.525)", "XX")  # placeholder guard
+        # Fab bevel rule: JLCPCB's order form states a 30 deg bevel on 1.6 mm stock is
+        # 1.13 mm deep (residual 0.53 mm); the source footprint ends fingers 0.44 mm
+        # from the edge, inside the bevel. Pull the leading edge back to 1.30 mm so
+        # no copper sits on the chamfer. Width, pitch, and the far end (-9.97) stay.
         it = re.sub(r"\(at ([\d.]+) -5\.207\) \(size 1\.27 9\.525\)",
-                    r"(at \1 -5.385) (size 1.27 9.17)", it.replace("XX", "(at 2.54 -5.207) (size 1.27 9.525)"))
+                    r"(at \1 -5.635) (size 1.27 8.67)", it)
         keep.append(it.replace("(thickness 0.1016)", "(thickness 0.15)"))
     text = ('(footprint "COCO-CART-FINGERS" (version 20221018) (generator gen_breakout_py)\n'
             '  (layer "F.Cu")\n  ' + "\n  ".join(keep) + "\n)\n")
