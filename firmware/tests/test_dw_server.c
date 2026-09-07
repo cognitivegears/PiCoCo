@@ -30,6 +30,19 @@ static void mk(const char *name, const uint8_t *hdr, int hdrlen, int nsect) {
     fclose(fp);
 }
 
+/* Overwrites byte 2 of every sector with val, so two same-sized images can
+ * be told apart by content (mk() alone makes them identical). */
+static void stamp_byte2(const char *name, uint8_t val, int nsect) {
+    char path[512];
+    snprintf(path, sizeof(path), "%s/%s", g_dir, name);
+    FILE *fp = fopen(path, "r+b");
+    for (int n = 0; n < nsect; n++) {
+        fseek(fp, n * 256 + 2, SEEK_SET);
+        fwrite(&val, 1, 1, fp);
+    }
+    fclose(fp);
+}
+
 static void on_send(void *ctx, const uint8_t *buf, size_t n) {
     (void)ctx;
     memcpy(out + outn, buf, n);
@@ -93,10 +106,40 @@ TEST(hdbdos_splits_drive_by_lsn) {
     setup();
     s.hdbdos = true;
     mk("raw2.dsk", NULL, 0, 630);
+    stamp_byte2("raw2.dsk", 0xB2, 630); /* distinguish from drive 0's raw.dsk */
     ASSERT_EQ(dw_mount(&s, 1, "raw2.dsk", false), 0);
     feed(0x52, 0, 0, 2, 0x77); /* 631 -> drive1 lsn1 */
     ASSERT_EQ(out[0], 0);
     ASSERT_EQ(out[3], 1);
+    ASSERT_EQ(out[5], 0xB2);
+}
+
+TEST(hdbdos_drive_wrap_is_notrdy) {
+    setup();
+    s.hdbdos = true;
+    /* LSN 161280 = 630*256: drive = lsn/630 = 256, which must NOT wrap into
+     * range 0..3 (uint8_t truncation bug). LSN3 BE = 0x02,0x76,0x00. */
+    uint8_t d[256];
+    memset(d, 0x11, sizeof(d));
+    uint16_t sum = dw_checksum(d, 256);
+    uint8_t msg[1 + 1 + 3 + 256 + 2];
+    msg[0] = 0x57; msg[1] = 0; msg[2] = 0x02; msg[3] = 0x76; msg[4] = 0x00;
+    memcpy(msg + 5, d, 256);
+    msg[261] = (uint8_t)(sum >> 8);
+    msg[262] = (uint8_t)(sum & 0xFF);
+    dw_feed(&s, msg, sizeof(msg), 0);
+    ASSERT_EQ(outn, 1);
+    ASSERT_EQ(out[0], DW_E_NOTRDY);
+
+    outn = 0;
+    feed(0x52, 0, 0x02, 0x76, 0x00);
+    ASSERT_EQ(outn, 259);
+    ASSERT_EQ(out[0], DW_E_NOTRDY);
+
+    outn = 0;
+    feed(0x52, 0, 0, 0, 0);
+    ASSERT_EQ(out[0], 0);
+    ASSERT_EQ(out[3], 0); /* drive 0 sector 0's original marker byte, untouched */
 }
 
 TEST(hdbdos_past_end_reads_zeros) {
@@ -204,6 +247,16 @@ TEST(time_default_and_set) {
     ASSERT_EQ(out[5], 2);
 }
 
+TEST(time_survives_now_ms_wrap) {
+    setup();
+    dw_time_set(&s, 1767225600, 0xFFFFF000u);
+    feed_at(0x00001000u, 0x23);
+    ASSERT_EQ(outn, 6);
+    ASSERT_EQ(out[3], 0);
+    ASSERT_EQ(out[4], 0);
+    ASSERT_EQ(out[5], 8);
+}
+
 static uint8_t cap[64];
 static size_t capn;
 static void on_capture(void *ctx, int dir, const uint8_t *buf, size_t n) {
@@ -241,6 +294,7 @@ int main(void) {
     RUN(read_unmounted_is_notrdy_with_full_reply);
     RUN(read_eof);
     RUN(hdbdos_splits_drive_by_lsn);
+    RUN(hdbdos_drive_wrap_is_notrdy);
     RUN(hdbdos_past_end_reads_zeros);
     RUN(write_ok_then_read_back);
     RUN(write_bad_checksum_is_crc_and_untouched);
@@ -249,6 +303,7 @@ int main(void) {
     RUN(payload_timeout_resets);
     RUN(unknown_op_ignored);
     RUN(time_default_and_set);
+    RUN(time_survives_now_ms_wrap);
     RUN(capture_sees_both_directions);
     TEST_MAIN_END
 }

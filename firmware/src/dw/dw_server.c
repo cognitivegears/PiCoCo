@@ -55,9 +55,9 @@ static uint16_t payload_len(uint8_t op) {
 }
 
 /* Resolves the target drive/lsn, applying the HDB-DOS drive-by-LSN split. */
-static void resolve_drive(dw_server *s, uint8_t drive, uint32_t lsn, uint8_t *out_drive, uint32_t *out_lsn) {
+static void resolve_drive(dw_server *s, uint32_t drive, uint32_t lsn, uint32_t *out_drive, uint32_t *out_lsn) {
     if (s->hdbdos) {
-        drive = (uint8_t)(lsn / DW_HDBDOS_DISK_SECTORS);
+        drive = lsn / DW_HDBDOS_DISK_SECTORS;
         lsn %= DW_HDBDOS_DISK_SECTORS;
     }
     *out_drive = drive;
@@ -66,7 +66,7 @@ static void resolve_drive(dw_server *s, uint8_t drive, uint32_t lsn, uint8_t *ou
 
 static void do_read(dw_server *s, uint32_t now_ms) {
     (void)now_ms;
-    uint8_t drive; uint32_t lsn;
+    uint32_t drive; uint32_t lsn;
     resolve_drive(s, s->buf[0], dw_lsn_unpack(&s->buf[1]), &drive, &lsn);
 
     uint8_t data[256] = {0};
@@ -102,7 +102,7 @@ static void do_write(dw_server *s, uint32_t now_ms) {
     uint16_t want_sum = ((uint16_t)s->buf[260] << 8) | s->buf[261];
     uint16_t got_sum = dw_checksum(data, 256);
 
-    uint8_t drive; uint32_t lsn;
+    uint32_t drive; uint32_t lsn;
     resolve_drive(s, s->buf[0], dw_lsn_unpack(&s->buf[1]), &drive, &lsn);
 
     uint8_t rc;
@@ -121,7 +121,7 @@ static void do_write(dw_server *s, uint32_t now_ms) {
 }
 
 static void do_time(dw_server *s, uint32_t now_ms) {
-    int64_t secs = s->time_base + ((int64_t)now_ms - (int64_t)s->time_base_ms) / 1000;
+    int64_t secs = s->time_base + (int64_t)(uint32_t)(now_ms - s->time_base_ms) / 1000;
     time_t t = (time_t)secs;
     struct tm tmv;
     gmtime_r(&t, &tmv);
