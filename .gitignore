@@ -44,3 +44,4 @@ __pycache__/
 # superpowers worktrees + scratch
 .worktrees/
 .superpowers/
+build*/
