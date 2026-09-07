@@ -1,0 +1,4 @@
+build*/
+roms/*
+!roms/.gitkeep
+*.cfg
