@@ -310,7 +310,9 @@ TEST(readex_unmounted) {
     ASSERT_EQ(outn, 256);
     for (int i = 0; i < 256; i++) ASSERT_EQ(out[i], 0);
     outn = 0;
-    feed(0, 0);
+    /* Deliberately wrong checksum for the all-zero data: proves rc stays
+     * DW_E_NOTRDY (not E_CRC) because pending_rc != DW_E_OK skips the compare. */
+    feed(0xFF, 0xFF);
     ASSERT_EQ(outn, 1);
     ASSERT_EQ(out[0], DW_E_NOTRDY);
 }
@@ -353,6 +355,7 @@ TEST(sersetstat_comst_consumes_26_more) {
     memset(stat, 0x55, sizeof(stat));
     dw_feed(&s, stat, sizeof(stat), 0);
     ASSERT_EQ(outn, 0);
+    ASSERT_EQ(s.stats.unknown_op, 0);
     feed(0x5A, 'A');
     ASSERT_EQ(outn, 1);
     ASSERT_EQ(out[0], 0xFF);
