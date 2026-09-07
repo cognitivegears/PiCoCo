@@ -64,12 +64,13 @@ static void resolve_drive(dw_server *s, uint32_t drive, uint32_t lsn, uint32_t *
     *out_lsn = lsn;
 }
 
-static void do_read(dw_server *s, uint32_t now_ms) {
-    (void)now_ms;
+/* Resolves drive/lsn from a READ/READEX request (buf[0]=drive, buf[1..3]=lsn)
+ * and reads the sector, so READ and READEX share one code path. */
+static void read_sector(dw_server *s, const uint8_t *req, uint8_t *rc_out, uint8_t data[256]) {
     uint32_t drive; uint32_t lsn;
-    resolve_drive(s, s->buf[0], dw_lsn_unpack(&s->buf[1]), &drive, &lsn);
+    resolve_drive(s, req[0], dw_lsn_unpack(&req[1]), &drive, &lsn);
 
-    uint8_t data[256] = {0};
+    memset(data, 0, 256);
     uint8_t rc;
     if (drive >= DW_MAX_DRIVES || !s->drives[drive].mounted) {
         rc = DW_E_NOTRDY;
@@ -86,6 +87,13 @@ static void do_read(dw_server *s, uint32_t now_ms) {
             else if (rc == DW_E_READ) s->stats.read_err++;
         }
     }
+    *rc_out = rc;
+}
+
+static void do_read(dw_server *s, uint32_t now_ms) {
+    (void)now_ms;
+    uint8_t rc, data[256];
+    read_sector(s, s->buf, &rc, data);
 
     uint16_t sum = dw_checksum(data, 256);
     uint8_t reply[259];
@@ -140,7 +148,15 @@ static void dispatch(dw_server *s, uint32_t now_ms) {
         case DW_OP_RESET2:
         case DW_OP_RESET3:
         case DW_OP_INIT:
-            break;
+        case DW_OP_SERGETSTAT:
+        case DW_OP_SERINIT:
+        case DW_OP_SERTERM:
+        case DW_OP_SERWRITE:
+        case DW_OP_PRINT:
+        case DW_OP_PRINTFLUSH:
+        case DW_OP_GETSTAT:
+        case DW_OP_SETSTAT:
+            break; /* consume, no reply */
         case DW_OP_DWINIT: {
             uint8_t r = 0xFF;
             tx(s, &r, 1);
@@ -157,11 +173,71 @@ static void dispatch(dw_server *s, uint32_t now_ms) {
         case DW_OP_REWRITE:
             do_write(s, now_ms);
             break;
+        case DW_OP_READEX:
+        case DW_OP_REREADEX: {
+            uint8_t rc, data[256];
+            read_sector(s, s->buf, &rc, data);
+            tx(s, data, sizeof(data));
+            s->pending_rc = rc;
+            s->sector_sum = dw_checksum(data, sizeof(data));
+            s->state = DW_READEX_CKSUM;
+            s->have = 0;
+            s->need = 2;
+            return; /* stay out of the tail: not back to IDLE yet */
+        }
+        case DW_OP_SERREAD: {
+            uint8_t r[2] = {0, 0};
+            tx(s, r, sizeof(r));
+            break;
+        }
+        case DW_OP_SERREADM: {
+            /* ponytail: no vserial channels; real reply when networking lands */
+            uint8_t r = 0;
+            tx(s, &r, 1);
+            break;
+        }
+        case DW_OP_SERSETSTAT:
+            /* buf = [chan, code]; COMST (0x28) carries 26 more status bytes. */
+            if (s->have == 2 && s->buf[1] == 0x28) {
+                s->need = 2 + 26;
+                return;
+            }
+            break;
+        case DW_OP_SERWRITEM:
+            /* buf = [chan, count]; count <= 255 so 2+count always fits buf[264]. */
+            if (s->have == 2 && s->buf[1] > 0) {
+                s->need = (uint16_t)(2 + s->buf[1]);
+                return;
+            }
+            break;
+        case DW_OP_NAMEOBJ_MOUNT:
+        case DW_OP_NAMEOBJ_CREATE: {
+            /* buf = [len, ...name]; len <= 255 so 1+len always fits buf[264]. */
+            if (s->have == 1 && s->buf[0] > 0) {
+                s->need = (uint16_t)(1 + s->buf[0]);
+                return;
+            }
+            uint8_t r = 0;
+            tx(s, &r, 1);
+            break;
+        }
         default:
-            /* Recognized but not yet implemented (GETSTAT/SETSTAT, SERxxx,
-             * NAMEOBJ, FASTWRITE, READEX/REREADEX) -- Task 4 extends this. */
+            /* FASTWRITE 0x80..0x8F and anything else in payload_len():
+             * consume, no reply. */
             break;
     }
+    s->state = DW_IDLE;
+}
+
+/* Finishes a READEX/REREADEX after the client's 2 checksum bytes arrive. */
+static void finish_readex(dw_server *s) {
+    uint16_t client_sum = ((uint16_t)s->buf[0] << 8) | s->buf[1];
+    uint8_t rc = s->pending_rc;
+    if (rc == DW_E_OK && client_sum != s->sector_sum) {
+        rc = DW_E_CRC;
+        s->stats.crc_err++;
+    }
+    tx(s, &rc, 1);
     s->state = DW_IDLE;
 }
 
@@ -199,6 +275,9 @@ void dw_feed(dw_server *s, const uint8_t *buf, size_t n, uint32_t now_ms) {
         } else if (s->state == DW_PAYLOAD) {
             s->buf[s->have++] = b;
             if (s->have >= s->need) dispatch(s, now_ms);
+        } else if (s->state == DW_READEX_CKSUM) {
+            s->buf[s->have++] = b;
+            if (s->have >= s->need) finish_readex(s);
         }
     }
 }

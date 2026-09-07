@@ -279,6 +279,116 @@ TEST(capture_sees_both_directions) {
     ASSERT_EQ(cap[4], 1); ASSERT_EQ(cap[5], 0xFF);
 }
 
+TEST(readex_ok) {
+    setup();
+    feed(0xD2, 0, 0, 0, 5);
+    ASSERT_EQ(outn, 256);
+    ASSERT_EQ(out[0], 5);
+    uint16_t sum = dw_checksum(out, 256);
+    outn = 0;
+    feed((uint8_t)(sum >> 8), (uint8_t)(sum & 0xFF));
+    ASSERT_EQ(outn, 1);
+    ASSERT_EQ(out[0], 0);
+    ASSERT_EQ(s.state, DW_IDLE);
+}
+
+TEST(readex_bad_client_checksum) {
+    setup();
+    feed(0xD2, 0, 0, 0, 5);
+    ASSERT_EQ(outn, 256);
+    outn = 0;
+    feed(0xFF, 0xFF);
+    ASSERT_EQ(outn, 1);
+    ASSERT_EQ(out[0], DW_E_CRC);
+    ASSERT_EQ(s.stats.crc_err, 1);
+    ASSERT_EQ(s.state, DW_IDLE);
+}
+
+TEST(readex_unmounted) {
+    setup();
+    feed(0xD2, 2, 0, 0, 0);
+    ASSERT_EQ(outn, 256);
+    for (int i = 0; i < 256; i++) ASSERT_EQ(out[i], 0);
+    outn = 0;
+    feed(0, 0);
+    ASSERT_EQ(outn, 1);
+    ASSERT_EQ(out[0], DW_E_NOTRDY);
+}
+
+TEST(readex_checksum_timeout_sends_nothing) {
+    setup();
+    feed_at(0, 0xD2, 0, 0, 0, 5);
+    outn = 0;
+    dw_tick(&s, 300);
+    ASSERT_EQ(outn, 0);
+    ASSERT_EQ(s.state, DW_IDLE);
+    ASSERT_EQ(s.stats.timeouts, 1);
+}
+
+TEST(rereadex_same_as_readex) {
+    setup();
+    feed(0xF2, 0, 0, 0, 5);
+    ASSERT_EQ(outn, 256);
+    ASSERT_EQ(out[0], 5);
+    uint16_t sum = dw_checksum(out, 256);
+    outn = 0;
+    feed((uint8_t)(sum >> 8), (uint8_t)(sum & 0xFF));
+    ASSERT_EQ(outn, 1);
+    ASSERT_EQ(out[0], 0);
+    ASSERT_EQ(s.state, DW_IDLE);
+}
+
+TEST(serread_no_data) {
+    setup();
+    feed(0x43);
+    ASSERT_EQ(outn, 2);
+    ASSERT_EQ(out[0] | out[1], 0);
+}
+
+TEST(sersetstat_comst_consumes_26_more) {
+    setup();
+    feed(0xC4, 1, 0x28);
+    ASSERT_EQ(outn, 0);
+    uint8_t stat[26];
+    memset(stat, 0x55, sizeof(stat));
+    dw_feed(&s, stat, sizeof(stat), 0);
+    ASSERT_EQ(outn, 0);
+    feed(0x5A, 'A');
+    ASSERT_EQ(outn, 1);
+    ASSERT_EQ(out[0], 0xFF);
+}
+
+TEST(sersetstat_other_code) {
+    setup();
+    feed(0xC4, 1, 0x29);
+    ASSERT_EQ(outn, 0);
+    feed(0x5A, 'A');
+    ASSERT_EQ(outn, 1);
+    ASSERT_EQ(out[0], 0xFF);
+}
+
+TEST(serwritem_consumes_count) {
+    setup();
+    feed(0x64, 1, 3, 'a', 'b', 'c');
+    ASSERT_EQ(outn, 0);
+    feed(0x5A, 'A');
+    ASSERT_EQ(outn, 1);
+    ASSERT_EQ(out[0], 0xFF);
+}
+
+TEST(nameobj_replies_zero) {
+    setup();
+    feed(0x01, 3, 'a', 'b', 'c');
+    ASSERT_EQ(outn, 1);
+    ASSERT_EQ(out[0], 0);
+}
+
+TEST(fastwrite_and_print_consumed) {
+    setup();
+    feed(0x81, 'x', 0x50, 'y', 0x46, 0x47, 0, 0, 0x53, 0, 0);
+    ASSERT_EQ(outn, 0);
+}
+
 int main(void) {
     char tmpl[300];
     const char *tmpdir = getenv("TMPDIR");
@@ -305,5 +415,16 @@ int main(void) {
     RUN(time_default_and_set);
     RUN(time_survives_now_ms_wrap);
     RUN(capture_sees_both_directions);
+    RUN(readex_ok);
+    RUN(readex_bad_client_checksum);
+    RUN(readex_unmounted);
+    RUN(readex_checksum_timeout_sends_nothing);
+    RUN(rereadex_same_as_readex);
+    RUN(serread_no_data);
+    RUN(sersetstat_comst_consumes_26_more);
+    RUN(sersetstat_other_code);
+    RUN(serwritem_consumes_count);
+    RUN(nameobj_replies_zero);
+    RUN(fastwrite_and_print_consumed);
     TEST_MAIN_END
 }
