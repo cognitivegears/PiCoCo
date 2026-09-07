@@ -56,6 +56,13 @@ TEST(jvc_bad_sector_size) {
     ASSERT_EQ(dw_disk_open(&st, "j512.dsk", false, &d), -2);
 }
 
+TEST(jvc_shift_code_out_of_range) {
+    uint8_t h[3] = {18, 1, 40};
+    mk("jshift.dsk", h, 3, 10);
+    dw_disk d;
+    ASSERT_EQ(dw_disk_open(&st, "jshift.dsk", false, &d), -2);
+}
+
 TEST(vdk_detect) {
     uint8_t h[12] = {'d', 'k', 12, 0, 1, 1, 0, 0, 35, 1, 0, 0};
     mk("v.vdk", h, 12, 630);
@@ -67,6 +74,13 @@ TEST(vdk_detect) {
     ASSERT_EQ(dw_disk_read(&d, 7, s), 0);
     ASSERT_EQ(s[0], 7);
     dw_disk_close(&d);
+}
+
+TEST(vdk_header_larger_than_file) {
+    uint8_t h[12] = {'d', 'k', 0xD0, 0x07, 1, 1, 0, 0, 35, 1, 0, 0}; /* hsize = 2000 LE */
+    mk("vbad.vdk", h, 12, 2); /* file size = 12 + 2*256 = 524 < 2000 */
+    dw_disk d;
+    ASSERT_EQ(dw_disk_open(&st, "vbad.vdk", false, &d), -2);
 }
 
 TEST(os9_detect) {
@@ -84,6 +98,22 @@ TEST(os9_detect) {
     uint8_t s[256] = {0};
     ASSERT_EQ(dw_disk_write(&d, 630, s), DW_E_EOF);
     dw_disk_close(&d);
+}
+
+TEST(os9_needs_full_sector) {
+    uint8_t h[0x13];
+    memset(h, 0, sizeof(h));
+    h[0] = 0x00; h[1] = 0x02; h[2] = 0x76; /* DD_TOT = 630 */
+    h[3] = 18;                             /* DD_TKS */
+    h[0x10] = 0;                           /* DD_FMT */
+    h[0x11] = 0x00; h[0x12] = 0x12;        /* DD_SPT = 18 */
+    mk("oshort.os9", h, sizeof(h), 0);     /* only 19 bytes, no sectors */
+    dw_disk d;
+    int r = dw_disk_open(&st, "oshort.os9", false, &d);
+    if (r == 0) {
+        ASSERT(d.fmt != DW_FMT_OS9);
+        dw_disk_close(&d);
+    }
 }
 
 TEST(read_eof_and_zero_fill) {
@@ -149,8 +179,11 @@ int main(void) {
     RUN(raw_detect);
     RUN(jvc_detect);
     RUN(jvc_bad_sector_size);
+    RUN(jvc_shift_code_out_of_range);
     RUN(vdk_detect);
+    RUN(vdk_header_larger_than_file);
     RUN(os9_detect);
+    RUN(os9_needs_full_sector);
     RUN(read_eof_and_zero_fill);
     RUN(write_extends_and_wrprot);
     RUN(checksum);

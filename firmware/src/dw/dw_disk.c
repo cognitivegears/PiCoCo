@@ -18,7 +18,7 @@ int dw_disk_open(dw_store *store, const char *name, bool read_only, dw_disk *d) 
     uint32_t hn = size < sizeof(hdr) ? size : (uint32_t)sizeof(hdr);
     if (hn > 0) {
         int rn = store->ops->read(&f, 0, hdr, hn);
-        if (rn < 0) rn = 0;
+        if (rn < 0) { store->ops->close(&f); return -1; }
         if ((uint32_t)rn < hn) memset(hdr + rn, 0, hn - (uint32_t)rn);
     }
 
@@ -26,21 +26,22 @@ int dw_disk_open(dw_store *store, const char *name, bool read_only, dw_disk *d) 
     uint32_t byte_offset = 0, sectors = 0;
 
     if (hn >= 4 && hdr[0] == 'd' && hdr[1] == 'k') {
-        fmt = DW_FMT_VDK;
         byte_offset = u16le(&hdr[2]);
+        if (byte_offset > size) { store->ops->close(&f); return -2; }
+        fmt = DW_FMT_VDK;
         sectors = (size - byte_offset) / 256;
     } else if (size % 256 != 0 && size % 256 <= 5) {
         uint32_t hdrlen = size % 256;
         uint8_t code = hdrlen >= 3 ? hdr[2] : 1;
-        if ((128u << code) != 256) { store->ops->close(&f); return -2; }
+        if (code != 1) { store->ops->close(&f); return -2; }
         fmt = DW_FMT_JVC;
         byte_offset = hdrlen;
         sectors = (size - byte_offset) / 256;
-    } else if (hn >= 0x13) {
+    } else if (size >= 256 && hn >= 0x13) {
         uint32_t tot = u24be(&hdr[0]);
         uint32_t spt = u16be(&hdr[0x11]);
         uint32_t sides = (uint32_t)(hdr[0x10] & 1) + 1;
-        if (tot != 0 && spt != 0 && hdr[3] != 0 && hdr[3] == spt &&
+        if (tot != 0 && spt != 0 && hdr[3] == spt &&
             tot == (tot / spt / sides) * spt * sides) {
             fmt = DW_FMT_OS9;
             byte_offset = 0;
