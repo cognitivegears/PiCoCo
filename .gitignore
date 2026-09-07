@@ -40,3 +40,7 @@ fp-info-cache
 # Python
 __pycache__/
 *.pyc
+
+# superpowers worktrees + scratch
+.worktrees/
+.superpowers/
