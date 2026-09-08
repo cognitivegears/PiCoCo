@@ -43,6 +43,13 @@ static void stamp_byte2(const char *name, uint8_t val, int nsect) {
     fclose(fp);
 }
 
+static int (*g_orig_sync)(dw_file *);
+static int g_sync_count;
+static int counting_sync(dw_file *f) {
+    g_sync_count++;
+    return g_orig_sync(f);
+}
+
 static void on_send(void *ctx, const uint8_t *buf, size_t n) {
     (void)ctx;
     memcpy(out + outn, buf, n);
@@ -81,6 +88,18 @@ TEST(reset_zeroes_stats) {
     ASSERT_EQ(s.stats.ops[0x00], 0);
     ASSERT_EQ(s.stats.ops[0xFF], 0);
     ASSERT_EQ(s.state, DW_IDLE);
+}
+
+TEST(reset_syncs_mounted_drives) {
+    setup();
+    dw_store_ops wrapped = *st.ops;
+    g_orig_sync = wrapped.sync;
+    wrapped.sync = counting_sync;
+    dw_store wrapped_store = { .ops = &wrapped, .ctx = st.ctx };
+    s.drives[0].store = &wrapped_store;
+    g_sync_count = 0;
+    feed(0xFF);
+    ASSERT_EQ(g_sync_count, 1);
 }
 
 TEST(dwinit_replies_version) {
@@ -431,7 +450,9 @@ TEST(fastwrite_and_print_consumed) {
 
 TEST(wirebug_packet_consumed) {
     setup();
-    uint8_t pkt[24] = {0x42, 0x02, 0x08};
+    uint8_t pkt[24];
+    memset(pkt, 0xA5, sizeof(pkt)); /* fills the 21 reserved bytes too, so under-consumption is detected */
+    pkt[0] = 0x42; pkt[1] = 0x02; pkt[2] = 0x08;
     dw_feed(&s, pkt, sizeof(pkt), 0);
     ASSERT_EQ(outn, 0);
     ASSERT_EQ(s.stats.unknown_op, 0);
@@ -484,6 +505,24 @@ TEST(serreadm_replies_nothing) {
     setup();
     feed(0x63, 0x01, 0x04);
     ASSERT_EQ(outn, 0);
+    /* resync check: the parser must be back at IDLE, not desynced */
+    feed(0x5A, 0x80);
+    ASSERT_EQ(outn, 1);
+}
+
+TEST(settime_rejects_bad_fields) {
+    setup();
+    /* month 13: invalid; must be ignored, clock stays at the boot default. */
+    feed_at(0, 0x24, 0x7E, 0x0D, 0x07, 0x0C, 0x22, 0x38);
+    ASSERT_EQ(outn, 0);
+    feed_at(0, 0x23);
+    ASSERT_EQ(outn, 6);
+    ASSERT_EQ(out[0], 126);
+    ASSERT_EQ(out[1], 1);
+    ASSERT_EQ(out[2], 1);
+    ASSERT_EQ(out[3], 0);
+    ASSERT_EQ(out[4], 0);
+    ASSERT_EQ(out[5], 0);
 }
 
 TEST(serwritem_count_zero_is_256) {
@@ -530,6 +569,7 @@ int main(void) {
 
     RUN(nop_and_reset_send_nothing);
     RUN(reset_zeroes_stats);
+    RUN(reset_syncs_mounted_drives);
     RUN(dwinit_replies_version);
     RUN(dwinit_low_client_disables_hdbdos);
     RUN(read_ok);
@@ -563,6 +603,7 @@ int main(void) {
     RUN(fastwrite_window_consumed);
     RUN(timer_replies_ms);
     RUN(settime_sets_clock);
+    RUN(settime_rejects_bad_fields);
     RUN(dw4_single_byte_ops_counted);
     RUN(serreadm_replies_nothing);
     RUN(serwritem_count_zero_is_256);

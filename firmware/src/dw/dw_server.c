@@ -60,7 +60,8 @@ static uint16_t payload_len(uint8_t op) {
             return 23;
         default:
             if (op >= DW_OP_FASTWRITE_BASE && op <= DW_OP_FASTWRITE_BASE + 0x0F) return 1;
-            if (op >= DW_OP_FASTWRITE_WINDOW_BASE && op <= DW_OP_FASTWRITE_WINDOW_BASE + 0x0F) return 1;
+            /* DW4 only assigns 0x90..0x9D; 0x9E/0x9F stay unknown. */
+            if (op >= DW_OP_FASTWRITE_WINDOW_BASE && op <= DW_OP_FASTWRITE_WINDOW_BASE + 0x0D) return 1;
             return DW_UNKNOWN_LEN;
     }
 }
@@ -159,11 +160,11 @@ static void do_time(dw_server *s, uint32_t now_ms) {
     int64_t secs = s->time_base + (int64_t)(uint32_t)(now_ms - s->time_base_ms) / 1000;
     time_t t = (time_t)secs;
     struct tm tmv;
-    gmtime_r(&t, &tmv);
-    uint8_t reply[6] = {
-        (uint8_t)tmv.tm_year, (uint8_t)(tmv.tm_mon + 1), (uint8_t)tmv.tm_mday,
-        (uint8_t)tmv.tm_hour, (uint8_t)tmv.tm_min, (uint8_t)tmv.tm_sec,
-    };
+    uint8_t reply[6] = {0};
+    if (gmtime_r(&t, &tmv)) {
+        reply[0] = (uint8_t)tmv.tm_year; reply[1] = (uint8_t)(tmv.tm_mon + 1); reply[2] = (uint8_t)tmv.tm_mday;
+        reply[3] = (uint8_t)tmv.tm_hour; reply[4] = (uint8_t)tmv.tm_min; reply[5] = (uint8_t)tmv.tm_sec;
+    }
     tx(s, reply, sizeof(reply));
 }
 
@@ -183,9 +184,16 @@ static void dispatch(dw_server *s, uint32_t now_ms) {
             break; /* consume, no reply */
         case DW_OP_RESET1:
         case DW_OP_RESET2:
-        case DW_OP_RESET3:
-            memset(&s->stats, 0, sizeof(s->stats)); /* spec: reset statistics */
+        case DW_OP_RESET3: {
+            /* spec: RESET flushes caches and resets statistics. */
+            for (int i = 0; i < DW_MAX_DRIVES; i++) {
+                dw_disk *d = &s->drives[i];
+                if (d->mounted && d->store && d->store->ops && d->store->ops->sync)
+                    d->store->ops->sync(&d->f);
+            }
+            memset(&s->stats, 0, sizeof(s->stats));
             break;
+        }
         case DW_OP_DWINIT: {
             /* Clients sending a real drive number (< 0x80: NitrOS-9, CoCoBoot,
              * LWOS) mean HDB-DOS's drive-by-LSN split; turn it off for them. */
@@ -198,9 +206,14 @@ static void dispatch(dw_server *s, uint32_t now_ms) {
             do_time(s, now_ms);
             break;
         case DW_OP_SETTIME: {
-            int year = s->buf[0] + 1900, month = s->buf[1], day = s->buf[2];
-            int64_t unix = days_from_civil(year, month, day) * 86400
-                         + s->buf[3] * 3600 + s->buf[4] * 60 + s->buf[5];
+            int month = s->buf[1], day = s->buf[2], hour = s->buf[3], min = s->buf[4], sec = s->buf[5];
+            /* ponytail: a malformed/adversarial client shouldn't be able to
+             * feed garbage into gmtime_r via the clock; reject silently
+             * rather than tracking a separate bad-arg counter. */
+            if (month < 1 || month > 12 || day < 1 || day > 31 || hour > 23 || min > 59 || sec > 59)
+                break;
+            int year = s->buf[0] + 1900;
+            int64_t unix = days_from_civil(year, month, day) * 86400 + hour * 3600 + min * 60 + sec;
             dw_time_set(s, unix, now_ms);
             break;
         }
@@ -274,8 +287,9 @@ static void dispatch(dw_server *s, uint32_t now_ms) {
             break;
         }
         default:
-            /* FASTWRITE 0x80..0x8F and anything else in payload_len():
-             * consume, no reply. */
+            /* FASTWRITE 0x80..0x8F, the DW4 fast-write window 0x90..0x9D,
+             * AARON, WIREBUG_MODE, 230K230K/230K115K, and anything else
+             * payload_len() recognizes: consume, no reply. */
             break;
     }
     s->state = DW_IDLE;

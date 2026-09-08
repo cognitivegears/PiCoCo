@@ -128,15 +128,15 @@ def check_read_unmounted_one_byte(dw, hdbdos):
     rc = dw.recv(1)[0]
     if rc != 0xF6:
         return False
+    prev_timeout = dw.s.gettimeout()
     dw.s.settimeout(0.5)
     try:
-        extra = dw.s.recv(4096)
-        silent = len(extra) == 0
+        dw.s.recv(4096)  # any bytes, even b'' from a closed socket, mean it wasn't silent
+        return False
     except socket.timeout:
-        silent = True
+        return True
     finally:
-        dw.s.settimeout(2.0)
-    return silent
+        dw.s.settimeout(prev_timeout)
 
 
 def check_dwinit_nonzero(dw):

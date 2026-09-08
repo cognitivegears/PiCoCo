@@ -93,6 +93,7 @@ TEST(dw_mount_and_status) {
     ASSERT(dw.drives[0].mounted);
     console_exec("status");
     ASSERT(strstr(out, "raw.dsk"));
+    ASSERT(strstr(out, "dw hdbdos on"));
     ASSERT_EQ(console_exec("dw mount 9 raw.dsk"), -1);
     console_exec("dw eject 0");
     ASSERT(!dw.drives[0].mounted);

@@ -213,6 +213,7 @@ static int cmd_status(void) {
          bus_stats.cycles, bus_stats.reads, bus_stats.writes, bus_stats.write_overrun);
     outf("bus drive %s\n", bus_drive_get() ? "on" : "off");
     outf("last reset %s\n", plat_last_reset());
+    outf("dw hdbdos %s\n", g_dw->hdbdos ? "on" : "off"); /* DWINIT can flip this remotely */
     outf("becker reads %u writes %u underrun %u overrun %u\n",
          becker_stats.reads, becker_stats.writes, becker_stats.underrun, becker_stats.overrun);
     outf("log_dropped %u\n", log_dropped);
