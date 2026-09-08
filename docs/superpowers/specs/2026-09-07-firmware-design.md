@@ -118,7 +118,7 @@ header changes.
   uint8_t rw; uint8_t data;}`, always on, overwrites oldest. Write
   cost is one store per cycle. `trace_freeze()` stops recording so a
   dump is consistent.
-- `bus_stats`: cycles, reads, writes, write_overrun, per-mode counters.
+- `bus_stats`: cycles, reads, writes, write_overrun.
 
 API used by devices: `bus_set_read(idx, byte)`, `bus_set_read_range(idx,
 ptr, len)`, `bus_add_read_hook(idx, fn)`, `bus_pop_write(&addr, &data)`.
@@ -199,6 +199,11 @@ byte pushed by core0 becomes visible on the CoCo's next $FF41 poll, one
 poll of latency (about 10 µs). Two writers had a race where the status
 could read "data ready" while the data entry still held 0xFF.
 
+Precondition: the data hook pops a byte only when the status entry
+already shows 0x02, so a $FF42 read that races a fresh push returns
+0xFF without consuming the byte; DriveWire clients always poll $FF41
+first, so this costs nothing in practice.
+
 ## 6. DriveWire server (dw/)
 
 ### 6.1 Interface
@@ -232,7 +237,7 @@ the 256 data bytes, big-endian.
 | Op | Request after opcode | Reply |
 |---|---|---|
 | $00 NOP, $54 TERM, $F8/$FE/$FF RESET | none | none |
-| $49 INIT | none | none; ejects nothing, resets parser stats |
+| $49 INIT | none | none; ejects nothing, resets the parser to IDLE |
 | $5A DWINIT | client id | $FF (combo lock not implemented) |
 | $23 TIME | none | year-1900, month, day, hour, min, sec |
 | $52 READ, $72 REREAD | drive, LSN3 | rc, cksum2, data256 |
@@ -254,10 +259,13 @@ failure.
 
 ### 6.4 HDB-DOS mode
 
-Default on. Drive byte ignored; `drive = lsn / 630; lsn %= 630` unless
-the image is larger than 630 sectors, in which case the whole LSN
-addresses drive 0 (pyDriveWire behaviour, max 630*256). `dw hdbdos off`
-uses the drive byte directly for OS-9 use.
+Default on. Drive byte ignored; `drive = lsn / 630; lsn %= 630`. The
+split is unconditional, matching pyDriveWire's `cmdRead`. DriveWire 4
+style multi-disk images (one large file holding many 630-sector virtual
+disks) are served with `dw hdbdos off`: the drive byte selects the
+drive and the LSN addresses into the file; reads past the end return
+E_EOF and writes extend the file. `dw hdbdos off` uses the drive byte
+directly for OS-9 use.
 
 ### 6.5 Disk images (dw_disk.c)
 
@@ -283,7 +291,8 @@ struct dw_store_ops {
 ```
 
 POSIX and FatFS implementations. Stats: read/write count and max
-latency in microseconds, exposed by `dw stats`.
+latency in microseconds, exposed by `dw stats`. Per-store latency
+counters are deferred to Plan B, where flash latency is what matters.
 
 ### 6.7 Time
 
@@ -308,9 +317,9 @@ Acceptable for saving programs; heavy write loads belong on SD. If this
 proves wrong, `dw_store_ops` makes LittleFS a one-file swap plus a
 console upload command.
 
-Config file `picoco.cfg`, text `key=value`: `mode`, `rom`, `drive0..3`,
-`hdbdos`, `log.<module>`. `save` writes it, boot reads it. Missing file
-means `mode=diag` (nothing driven except 0xFF, console only).
+`picoco.cfg` is a list of console commands (section 8) replayed at
+boot; `save` writes it. Missing file means `mode=diag` (nothing driven
+except 0xFF, console only).
 
 ## 8. Console (CDC1)
 
@@ -323,7 +332,7 @@ serve:
 | `help`, `status`, `version` | |
 | `smoke` (toggle every GPIO at 10 Hz until a key) | 0.2 |
 | `halt on\|off` | 0.3 / step 8 |
-| `trace dump [n]`, `trace freeze\|run`, `trace filter <lo> <hi>` | 0.4 |
+| `trace dump [n]`, `trace freeze\|run` | 0.4 |
 | `rom pattern\|load <file>\|off` | 0.5, 0.6 |
 | `becker loop\|bridge\|native\|off` | 0.7, 0.8, native |
 | `dw mount <n> <file> [ro]`, `dw eject <n>`, `dw hdbdos on\|off`, `dw stats`, `dw capture on\|off <file>` | native |
@@ -354,8 +363,10 @@ record).
   exists.
 - **Capture and replay.** `dw capture on <file>` appends every byte
   `dw_feed` receives (and, tagged, every byte sent) to a file on
-  storage. `picoco-host --replay <file>` feeds it into the server on
-  the Mac; `tests/fixtures/` keeps captures as regression tests.
+  storage. File format: chunks of `dir (0 = from CoCo, 1 = to CoCo),
+  len_lo, len_hi, bytes`. `picoco-host --replay` feeds the dir-0 chunks
+  into the server on the Mac and `test_replay` checks the dir-1 bytes
+  match; `tests/fixtures/` keeps captures as regression tests.
 - **Logging.** `LOG_E/I/D(module, fmt, ...)` writes a formatted line
   with a microsecond timestamp into a 4 KB ring; core0 drains it to
   CDC1. Full ring drops the line and bumps `log_dropped`. Compile-time
