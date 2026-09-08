@@ -91,7 +91,7 @@ static int cmd_dw_selftest(void) {
         outf("selftest FAIL create\n");
         return -1;
     }
-    uint8_t sec[256];
+    static uint8_t sec[256]; /* static: core0 stack */
     bool write_ok = true;
     for (int n = 0; n < 10 && write_ok; n++) {
         memset(sec, 0, sizeof(sec));
@@ -100,9 +100,14 @@ static int cmd_dw_selftest(void) {
     }
     g_store->ops->sync(&f);
     g_store->ops->close(&f);
-    if (!write_ok) { outf("selftest FAIL create\n"); return -1; }
+    if (!write_ok) {
+        plat_fs_remove("selftest.dsk");
+        outf("selftest FAIL create\n");
+        return -1;
+    }
 
     if (dw_mount(g_dw, 3, "selftest.dsk", false) != 0) {
+        plat_fs_remove("selftest.dsk");
         outf("selftest FAIL mount\n");
         return -1;
     }
@@ -125,10 +130,10 @@ static int cmd_dw_selftest(void) {
 
     /* WRITE drive 3 LSN 7 with a 0x5A fill: expect rc 0. */
     if (!fail) {
-        uint8_t data[256];
+        static uint8_t data[256]; /* static: core0 stack */
         memset(data, 0x5A, sizeof(data));
         uint16_t sum = dw_checksum(data, sizeof(data));
-        uint8_t write_req[1 + 4 + 256 + 2];
+        static uint8_t write_req[1 + 4 + 256 + 2]; /* static: core0 stack */
         write_req[0] = DW_OP_WRITE;
         write_req[1] = 3; write_req[2] = 0; write_req[3] = 0; write_req[4] = 7;
         memcpy(write_req + 5, data, sizeof(data));
@@ -305,6 +310,9 @@ static int cmd_fs(int argc, char **argv) {
         return 0;
     }
     if (strcasecmp(argv[1], "format") == 0) {
+        for (int i = 0; i < DW_MAX_DRIVES; i++) {
+            if (g_dw->drives[i].mounted) return cerr("eject all drives first");
+        }
         if (plat_fs_format() != 0) return cerr("format failed");
         return 0;
     }
@@ -332,7 +340,7 @@ static int cmd_time(int argc, char **argv) {
 static int cmd_log(int argc, char **argv) {
     if (argc < 2) return cerr("usage: log <module> off|error|info|debug | log dump");
     if (strcasecmp(argv[1], "dump") == 0) {
-        static char buf[4096]; /* static: Pico core0 stack is 2 KB */
+        static char buf[4096]; /* static: Pico core0 stack is 4 KB */
         size_t n = log_drain(buf, sizeof(buf) - 1);
         buf[n] = '\0';
         g_out(g_out_ctx, buf);
@@ -371,7 +379,7 @@ static bool cfg_append(char *cfg, size_t cap, size_t *len, const char *fmt, ...)
 }
 
 static int cmd_save(void) {
-    static char cfg[1024]; /* static: Pico core0 stack is 2 KB */
+    static char cfg[1024]; /* static: Pico core0 stack is 4 KB */
     size_t len = 0;
     if (!cfg_append(cfg, sizeof(cfg), &len, "becker %s\n", mode_name(mode_get())))
         return cerr("config too large");
@@ -472,7 +480,7 @@ void console_feed(const uint8_t *buf, size_t n) {
 }
 
 int console_run_config(void) {
-    char buf[1024];
+    static char buf[1024]; /* static: core0 stack */
     int n = plat_cfg_read(buf, sizeof(buf) - 1);
     if (n < 0) return -1;
     buf[n] = '\0';

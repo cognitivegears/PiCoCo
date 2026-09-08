@@ -60,10 +60,13 @@ int plat_fs_list(void (*cb)(const char *, uint32_t, void *), void *ctx) {
     return 0;
 }
 int plat_fs_remove(const char *n) { return f_unlink(n) == FR_OK ? 0 : -1; }
+/* Reformatting while a drive is mounted leaves its dw_disk pointed at a
+ * dangling FIL on the old volume; the console's "fs format" checks
+ * g_dw->drives[] and refuses if anything is still mounted. */
 int plat_fs_format(void) { return fs_flash_format(); }
 int plat_fs_export(bool on) { (void)on; return -1; }
 int plat_cfg_read(char *b, size_t m) {
-    static FIL f; /* static: too big for the 2 KB core0 stack */
+    static FIL f; /* static: too big for the 4 KB core0 stack */
     if (f_open(&f, "picoco.cfg", FA_READ) != FR_OK) return -1;
     UINT n = 0;
     FRESULT r = f_read(&f, b, (UINT)m, &n);
@@ -71,7 +74,7 @@ int plat_cfg_read(char *b, size_t m) {
     return r == FR_OK ? (int)n : -1;
 }
 int plat_cfg_write(const char *b, size_t n) {
-    static FIL f; /* static: too big for the 2 KB core0 stack */
+    static FIL f; /* static: too big for the 4 KB core0 stack */
     if (f_open(&f, "picoco.cfg", FA_CREATE_ALWAYS | FA_WRITE) != FR_OK) return -1;
     UINT written = 0;
     FRESULT r = f_write(&f, b, (UINT)n, &written);

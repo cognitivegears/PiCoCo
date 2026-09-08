@@ -34,6 +34,7 @@ if(NOT PICOCO_HOST)
     PICOCO_LOG_LEVEL=3
     PICOCO_VERSION="${PICOCO_VERSION}"
     PICO_FLASH_ASSUME_CORE1_SAFE=1
+    PICO_STACK_SIZE=0x1000
     CFG_TUSB_CONFIG_FILE="tusb_config.h")
   target_link_libraries(picoco
     pico_stdlib pico_unique_id pico_multicore

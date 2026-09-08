@@ -13,7 +13,9 @@ TIMEOUT_S = 6.0
 
 
 def open_port(path):
-    fd = os.open(path, os.O_RDWR | os.O_NOCTTY)
+    # O_NONBLOCK: opening a tty node blocks waiting for carrier detect on
+    # macOS otherwise; the VMIN/VTIME read loop below still works non-blocking.
+    fd = os.open(path, os.O_RDWR | os.O_NOCTTY | os.O_NONBLOCK)
     iflag, oflag, cflag, lflag, ispeed, ospeed, cc = termios.tcgetattr(fd)
     iflag = 0
     oflag = 0
@@ -34,7 +36,7 @@ def send_and_wait(fd, cmd):
     while time.monotonic() < deadline:
         try:
             chunk = os.read(fd, 256)
-        except OSError:
+        except BlockingIOError:
             chunk = b""
         if not chunk:
             time.sleep(0.05)

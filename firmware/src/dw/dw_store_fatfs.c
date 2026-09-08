@@ -4,8 +4,11 @@
 #include <string.h>
 
 /* Pool of FIL objects: 4 drives + capture + rom load. Static: FIL is too big
- * (and FatFS's own FIL pool would be, too) for the 2 KB core0 stack, and
- * dw_file only carries a void* so the real FIL has to live somewhere. */
+ * (and FatFS's own FIL pool would be, too) for the core0 stack, and
+ * dw_file only carries a void* so the real FIL has to live somewhere.
+ * ffconf.h's FF_FS_LOCK (FatFS's own concurrently-open-objects cap) must be
+ * >= FATFS_STORE_SLOTS + 2 (an open dir counts too, plus slack) or opens
+ * fail with FR_TOO_MANY_OPEN_FILES once the pool is near full. */
 #define FATFS_STORE_SLOTS 6
 
 typedef struct { FIL fil; bool used; } fatfs_slot;

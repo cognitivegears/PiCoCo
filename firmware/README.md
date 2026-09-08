@@ -120,18 +120,20 @@ The console appears as the second of two `/dev/tty.usbmodem*` ports; use
 
 `firmware/tools/pconsole.py` is a stdlib-only serial console driver: it opens
 the console port raw at 115200, sends each command, and prints replies until
-a line reading `ok` or starting with `err` (or a 6 s timeout).
+a line reading `ok` or starting with `err` (or a 6 s timeout). Use the
+`/dev/cu.usbmodem*` device, not `/dev/tty.usbmodem*` — opening the `tty`
+node non-interactively blocks waiting for carrier detect on macOS.
 
 ```
-python3 firmware/tools/pconsole.py /dev/tty.usbmodemXXXX2 \
+python3 firmware/tools/pconsole.py /dev/cu.usbmodemXXXX2 \
     'fs format' 'fs ls' 'dw selftest'
 ```
 
 ### Filesystem
 
 The on-flash FAT filesystem (`fs_flash.c`/`dw_store_fatfs.c`) lives at
-`0x180000..0x3FFFFF` of the Pico 2's 4 MB flash, formatted FAT16 with 4 KB
-clusters on first boot. `picoco.cfg` at the root holds the saved console
+`0x180000..0x3FFFFF` of the Pico 2's 4 MB flash, formatted FAT12 (640
+clusters, 4 KB each) on first boot. `picoco.cfg` at the root holds the saved console
 config (see `dw save`/`console_run_config`); DriveWire disk images and `dw
 capture` recordings also live at the root.
 

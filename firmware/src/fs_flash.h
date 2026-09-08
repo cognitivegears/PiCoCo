@@ -12,7 +12,7 @@
 
 int  fs_flash_mount(void);        /* 0 ok; formats first if no valid volume; -1 on failure */
 void fs_flash_unmount(void);
-int  fs_flash_format(void);       /* f_mkfs FAT16 with 4 KB clusters, then mount; 0 ok */
+int  fs_flash_format(void);       /* f_mkfs FAT12 (640 clusters, 4 KB each), then mount; 0 ok */
 bool fs_flash_mounted(void);
 
 /* Raw 512-byte block access shared by diskio.c's FatFS glue and the USB MSC

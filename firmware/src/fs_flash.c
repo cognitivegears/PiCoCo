@@ -4,12 +4,14 @@
 #include "hardware/flash.h"
 #include "hardware/sync.h"
 #include "hardware/regs/addressmap.h"
+#include "log.h"
 #include <string.h>
 
-static FATFS s_fatfs;   /* static: too big for the 2 KB core0 stack */
+static FATFS s_fatfs;   /* static: too big for the 4 KB core0 stack */
 static bool s_mounted;
 
 int fs_flash_read_blocks(uint32_t lba, uint8_t *buf, uint32_t n) {
+    if (n == 0) return 0;
     if (lba >= FS_SECTORS || n > FS_SECTORS - lba) return -1;
     memcpy(buf, (const uint8_t *)(XIP_BASE + PICOCO_FS_OFFSET + lba * FS_SECTOR), (size_t)n * FS_SECTOR);
     return 0;
@@ -18,8 +20,9 @@ int fs_flash_read_blocks(uint32_t lba, uint8_t *buf, uint32_t n) {
 /* ponytail: RMW per 4 KB erase, ~50 ms; capture-to-flash and heavy DW writes
  * feel it. Buffering or a log-structured layer is the upgrade. */
 int fs_flash_write_blocks(uint32_t lba, const uint8_t *buf, uint32_t n) {
+    if (n == 0) return 0;
     if (lba >= FS_SECTORS || n > FS_SECTORS - lba) return -1;
-    static uint8_t blk[4096]; /* static: too big for the 2 KB core0 stack */
+    static uint8_t blk[4096]; /* static: too big for the 4 KB core0 stack */
     uint32_t first_block = (lba * FS_SECTOR) / 4096u;
     uint32_t last_block = ((lba + n - 1) * FS_SECTOR) / 4096u;
     for (uint32_t b = first_block; b <= last_block; b++) {
@@ -69,10 +72,11 @@ bool fs_flash_mounted(void) { return s_mounted; }
 
 int fs_flash_format(void) {
     static uint8_t work[4096]; /* static: f_mkfs's work buffer, too big for the stack */
+    s_mounted = false;
     MKFS_PARM parm = { .fmt = FM_FAT, .n_fat = 1, .align = 0, .n_root = 0, .au_size = 4096 };
     if (f_mkfs("", &parm, work, sizeof(work)) != FR_OK) return -1;
     if (f_mount(&s_fatfs, "", 1) != FR_OK) return -1;
-    f_setlabel("PICOCO");
+    if (f_setlabel("PICOCO") != FR_OK) LOG_E(LOG_M_FS, "f_setlabel failed");
     s_mounted = true;
     return 0;
 }

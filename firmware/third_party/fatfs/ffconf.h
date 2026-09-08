@@ -145,7 +145,7 @@
 /  When LFN is not enabled, this option has no effect. */
 
 
-#define FF_LFN_BUF		255
+#define FF_LFN_BUF		64
 #define FF_SFN_BUF		12
 /* This set of options defines size of file name members in the FILINFO structure
 /  which is used to read out directory items. These values should be suffcient for
@@ -238,7 +238,7 @@
 
 
 #define FF_FS_NORTC		1
-#define FF_NORTC_MON	11
+#define FF_NORTC_MON	1
 #define FF_NORTC_MDAY	1
 #define FF_NORTC_YEAR	2026
 /* The option FF_FS_NORTC switches timestamp feature. If the system does not have
@@ -263,7 +263,7 @@
 */
 
 
-#define FF_FS_LOCK		4
+#define FF_FS_LOCK		8
 /* The option FF_FS_LOCK switches file lock function to control duplicated file open
 /  and illegal operation to open objects. This option must be 0 when FF_FS_READONLY
 /  is 1.
