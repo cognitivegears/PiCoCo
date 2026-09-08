@@ -236,21 +236,21 @@ the 256 data bytes, big-endian.
 
 | Op | Request after opcode | Reply |
 |---|---|---|
-| $00 NOP, $54 TERM, $F8/$FE/$FF RESET | none | none; RESET also zeros `stats` and returns the parser to IDLE |
+| $00 NOP, $54 TERM, $F8/$FE/$FF RESET | none | none; RESET also flushes (syncs) every mounted drive, zeros `stats`, and returns the parser to IDLE |
 | $49 INIT | none | none; ejects nothing, resets the parser to IDLE |
 | $5A DWINIT | client id | protocol version $04 (DW4 sends this; spec requires non-zero). If the client id is < $80 (NitrOS-9 ≤$3F, CoCoBoot $40-$4F, LWOS $60-$6F: real drive numbers), hdbdos mode is turned off, since the drive-by-LSN split is meaningless for those clients |
 | $23 TIME | none | year-1900, month, day, hour, min, sec |
-| $24 SETTIME (DW4) | year-1900, month, day, hour, min, sec | none; calibrates the clock (see §6.7) |
-| $25 TIMER (DW4) | 1 byte (ignored) | now_ms, 4 bytes big-endian |
+| $24 SETTIME (DW4) | year-1900, month, day, hour, min, sec | none; calibrates the clock (see §6.7). Out-of-range month/day/hour/min/sec is ignored silently, clock unchanged |
+| $25 TIMER (DW4) | 1 byte (ignored) | uptime in ms, 4 bytes big-endian; per-timer state is not kept |
 | $26 RESET_TIMER (DW4) | 1 byte (ignored) | none; no per-timer state is kept, so this is a no-op |
 | $52 READ, $72 REREAD | drive, LSN3 | on success: rc 0, cksum2, data256. On error: rc only (1 byte) |
 | $D2 READEX, $F2 REREADEX | drive, LSN3 | data256; then wait cksum2 from client; then rc. If cksum never arrives: no rc, back to IDLE |
 | $57 WRITE, $77 REWRITE | drive, LSN3, data256, cksum2 | rc |
 | $47 GETSTAT, $53 SETSTAT | drive, code | none |
 | $43 SERREAD | none | $00 $00 |
-| $44 SERGETSTAT, $C4 SERSETSTAT, $45 SERINIT, $C5 SERTERM, $C3 SERWRITE, $80..$8F FASTWRITE, $90..$9F FASTWRITE (DW4, window ports) | consumed per layout | none |
-| $64 SERWRITEM | chan, count, data(count, 0 means 256) | none |
-| $63 SERREADM | chan, count (0 means 256) | none; no vserial channels to read from, so nothing is sent back |
+| $44 SERGETSTAT, $C4 SERSETSTAT, $45 SERINIT, $C5 SERTERM, $C3 SERWRITE, $80..$8F FASTWRITE, $90..$9D FASTWRITE (DW4, window ports) | consumed per layout | none |
+| $64 SERWRITEM | chan, count, data(count) | none; count byte 0 means 256, per the spec and the Swift reference (DW4's Java server instead treats 0 as a literal zero-length write) |
+| $63 SERREADM | chan, count | none; no vserial channels to read from, so nothing is sent back |
 | $01/$02 NAMEOBJ, $03 NAMEOBJ_TYPE (DW4) | len, name | $00 (fail) |
 | $50 PRINT, $46 PRINTFLUSH | consumed | none |
 | $41 AARON, $E6 230K230K, $FD 230K115K (DW4) | none | none |
@@ -260,13 +260,14 @@ the 256 data bytes, big-endian.
 manager sub-protocol we don't implement, so it stays an unknown opcode.
 
 Error codes: E_OK 0, E_CRC $F3, E_READ $F4, E_WRITE $F5, E_NOTRDY $F6,
-E_WRPROT $F2, E_EOF $D3 (used internally by `dw_disk_read`/`dw_disk_write`,
-never on the wire; see below). On READ of an unmounted drive: rc
+E_WRPROT $F2, E_EOF $D3: never on the wire for reads (see §6.4); a WRITE
+past the end of an OS-9 image returns E_EOF (OS-9 images don't grow on
+write the way raw/VDK/JVC images do). On READ of an unmounted drive: rc
 E_NOTRDY and nothing else (the spec's Read Failure packet is byte 0 only).
 On READEX of an unmounted drive: 256 zeros, then rc E_NOTRDY after the
 client checksum. On WRITE: E_NOTRDY, E_CRC if the client checksum
-mismatches (data not written), E_WRPROT for read-only mounts, E_WRITE on
-storage failure.
+mismatches (data not written), E_WRPROT for read-only mounts, E_EOF past
+the end of an OS-9 image, E_WRITE on storage failure.
 
 ### 6.4 HDB-DOS mode
 
