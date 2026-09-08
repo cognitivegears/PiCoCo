@@ -5,8 +5,8 @@ with Claude: you do the wiring and meter readings, Claude drives the
 console over USB and records results. Each step says what to do, what
 Claude will run, and what "pass" looks like.
 
-State when this plan was written (2026-09-08): firmware `0.3-pico`
-(`main` at 3675609) is on the Pico 2, saved config is `bus drive off`,
+State (updated 2026-09-08 evening): firmware `0.3-pico` from `main`
+78fb594 (includes the DriveWire conformance fixes) is on the Pico 2, saved config is `bus drive off`,
 no ROM, `becker native`, drives unmounted. Console port is the second
 `/dev/cu.usbmodem*` (was `/dev/cu.usbmodem103`).
 
@@ -108,15 +108,18 @@ Plug the Pico in, then say "resume the bench test plan at step A" (or
 B, C, E). Claude will check the console port, print `status`, and walk
 the steps.
 
-Step 0 on resume: the board still runs the build from before the
-DriveWire conformance fixes (main 3675609). Reflash from current `main`
-first: `bootsel` on the console, wait for `/Volumes/RP2350`, then
+Step 0 on resume (done 2026-09-08 for 78fb594; repeat whenever `main`
+moves): reflash from current `main`: `bootsel` on the console, wait for `/Volumes/RP2350`, then
 `cp -X build-pico/picoco.uf2 /Volumes/RP2350/` (rebuild with
 `ninja -C build-pico` if the UF2 is older than the last commit). Then
 `version` still reads `0.3-pico`; `status` now shows `dw hdbdos`. Results get appended to this file under a dated "Results"
 heading.
 
 ## Results
+
+### 2026-09-08 evening, reflash
+`main` 78fb594 flashed via BOOTSEL; `version 0.3-pico`, config replayed
+(`mode native`, `bus drive off`, `dw hdbdos off`), `dw selftest` ok.
 
 ### 2026-09-08, host validation against a real DW4 disk image
 `picoco-host` with `dw/drivewire4/disks/run-dino-run/DINORUN.dsk` (161280
