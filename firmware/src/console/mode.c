@@ -9,15 +9,16 @@ mode_stats_t mode_stats;
 static picoco_mode g_mode = MODE_DIAG;
 static dw_server *g_bound_dw;
 
-/* Pending DriveWire reply bytes not yet handed to becker_write. Sized for
- * two in-flight replies (259 bytes each): dw_feed() dispatches (and calls
- * mode_dw_send) synchronously for every complete request in whatever batch
- * it's given, with no chance to flush in between, so if becker_read() ever
- * hands it two full pipelined requests at once (a client that doesn't wait
- * for replies — DriveWire is normally request/reply) both land in `pending`
- * before mode_pump() gets to drain either. 1024 covers that; reply_overflow
- * stays as a should-never-happen guard beyond that. */
-static uint8_t pending[1024];
+/* Pending DriveWire reply bytes not yet handed to becker_write. dw_feed()
+ * dispatches (and calls mode_dw_send) synchronously for every complete
+ * request in whatever batch it's given, with no chance to flush in
+ * between, so a single 64-byte becker_read() batch can contain up to 13
+ * complete 5-byte READ requests (opcode + drive + 3-byte LSN: 12 fit in 60
+ * bytes, plus a 13th completed by a byte left over from a previous partial
+ * request) before mode_pump() gets to drain any of them: 13 * 259 = 3367,
+ * so 4096 leaves headroom. reply_overflow is a should-never-happen guard
+ * beyond that. */
+static uint8_t pending[4096];
 static size_t pending_len;
 
 void mode_bind(dw_server *dw) { g_bound_dw = dw; }

@@ -211,23 +211,26 @@ TEST(native_pump_backpressure) {
     setup();
     ASSERT_EQ(console_exec("dw mount 0 raw.dsk"), 0);
     mode_set(MODE_NATIVE);
-    uint8_t req[5] = { 0x52, 0, 0, 0, 5 }; /* READ drive 0, lsn 5 */
-    for (int r = 0; r < 2; r++)
+    /* 12 complete READ requests (60 bytes) fit in one 64-byte becker_read()
+     * batch: the actual worst case, not just two. */
+    for (int r = 0; r < 12; r++) {
+        uint8_t req[5] = { 0x52, 0, 0, 0, (uint8_t)r }; /* READ drive 0, lsn r */
         for (int i = 0; i < 5; i++) bus_on_write(0x3F42, req[i], 0);
+    }
     mode_pump(&dw, 0);
     ASSERT_EQ(mode_stats.reply_overflow, 0);
 
     bus_on_read_done(0x3F41, 0);
-    uint8_t popped[518];
+    uint8_t popped[12 * 259];
     int n = 0;
-    while (becker_stats.reads < 518) {
+    while (becker_stats.reads < 12 * 259) {
         popped[n++] = bus_table[0x3F42];
         bus_on_read_done(0x3F42, 0);
         mode_pump(&dw, 0);
     }
-    ASSERT_EQ(becker_stats.reads, 518);
+    ASSERT_EQ(becker_stats.reads, 12 * 259);
     ASSERT_EQ(mode_stats.reply_overflow, 0);
-    ASSERT_EQ(popped[259], 0); /* rc of the second reply */
+    for (int k = 0; k < 12; k++) ASSERT_EQ(popped[259 * k], 0); /* rc of reply k */
 }
 
 int main(void) {
