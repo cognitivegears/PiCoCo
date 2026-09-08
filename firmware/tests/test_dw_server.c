@@ -68,14 +68,36 @@ TEST(nop_and_reset_send_nothing) {
     setup();
     feed(0x00, 0xFF, 0xFE, 0xF8);
     ASSERT_EQ(outn, 0);
-    ASSERT_EQ(s.stats.ops[0xFF], 1);
+    /* RESET1/2/3 zero stats (item 6), so after all three the op counts
+     * they themselves bumped are gone too. */
+    ASSERT_EQ(s.stats.ops[0xFF], 0);
 }
 
-TEST(dwinit_replies_ff) {
+TEST(reset_zeroes_stats) {
+    setup();
+    feed(0x00);
+    ASSERT_EQ(s.stats.ops[0x00], 1);
+    feed(0xFF);
+    ASSERT_EQ(s.stats.ops[0x00], 0);
+    ASSERT_EQ(s.stats.ops[0xFF], 0);
+    ASSERT_EQ(s.state, DW_IDLE);
+}
+
+TEST(dwinit_replies_version) {
     setup();
     feed(0x5A, 'A');
     ASSERT_EQ(outn, 1);
-    ASSERT_EQ(out[0], 0xFF);
+    ASSERT_EQ(out[0], 4);
+}
+
+TEST(dwinit_low_client_disables_hdbdos) {
+    setup();
+    s.hdbdos = true;
+    feed(0x5A, 1);
+    ASSERT(!s.hdbdos);
+    s.hdbdos = true;
+    feed(0x5A, 0x80);
+    ASSERT(s.hdbdos);
 }
 
 TEST(read_ok) {
@@ -87,19 +109,34 @@ TEST(read_ok) {
     ASSERT_EQ(out[3], 5);
 }
 
-TEST(read_unmounted_is_notrdy_with_full_reply) {
+TEST(read_unmounted_is_one_byte) {
     setup();
     feed(0x52, 2, 0, 0, 0);
-    ASSERT_EQ(outn, 259);
+    ASSERT_EQ(outn, 1);
     ASSERT_EQ(out[0], DW_E_NOTRDY);
-    ASSERT_EQ(out[1] | out[2], 0);
 }
 
 TEST(read_eof) {
     setup();
+    /* raw.dsk (non-hdbdos) is exactly 630 sectors; LSN 630 is one past the
+     * end and must come back as 256 zeros with rc 0 in every mode. */
     feed(0x52, 0, 0, 2, 0x76); /* 630 */
-    ASSERT_EQ(out[0], DW_E_EOF);
+    ASSERT_EQ(out[0], 0);
     ASSERT_EQ(outn, 259);
+    ASSERT_EQ((out[1] << 8) | out[2], 0);
+    for (int i = 0; i < 256; i++) ASSERT_EQ(out[3 + i], 0);
+}
+
+TEST(readex_past_end_is_zeros) {
+    setup();
+    /* Swift testREADEX vector: LSN far beyond the image -> 256 zeros, rc 0. */
+    feed(0xD2, 0, 0x00, 0x27, 0x10); /* LSN 10000 */
+    ASSERT_EQ(outn, 256);
+    for (int i = 0; i < 256; i++) ASSERT_EQ(out[i], 0);
+    outn = 0;
+    feed(0x00, 0x00); /* checksum of 256 zero bytes */
+    ASSERT_EQ(outn, 1);
+    ASSERT_EQ(out[0], 0);
 }
 
 TEST(hdbdos_splits_drive_by_lsn) {
@@ -133,7 +170,7 @@ TEST(hdbdos_drive_wrap_is_notrdy) {
 
     outn = 0;
     feed(0x52, 0, 0x02, 0x76, 0x00);
-    ASSERT_EQ(outn, 259);
+    ASSERT_EQ(outn, 1); /* READ error reply: rc byte only */
     ASSERT_EQ(out[0], DW_E_NOTRDY);
 
     outn = 0;
@@ -225,7 +262,7 @@ TEST(payload_timeout_resets) {
 
 TEST(unknown_op_ignored) {
     setup();
-    feed(0x99);
+    feed(0xA5); /* not in any recognized opcode or range */
     ASSERT_EQ(outn, 0);
     ASSERT_EQ(s.stats.unknown_op, 1);
     feed(0x5A, 0);
@@ -272,11 +309,11 @@ TEST(capture_sees_both_directions) {
     capn = 0;
     dw_set_capture(&s, on_capture, NULL);
     feed(0x5A, 'A');
-    /* rx: 2 bytes (op + payload byte), then tx: 1 byte (0xFF reply) */
+    /* rx: 2 bytes (op + payload byte), then tx: 1 byte (version reply) */
     ASSERT_EQ(capn, 6);
     ASSERT_EQ(cap[0], 0); ASSERT_EQ(cap[1], 0x5A);
     ASSERT_EQ(cap[2], 0); ASSERT_EQ(cap[3], 'A');
-    ASSERT_EQ(cap[4], 1); ASSERT_EQ(cap[5], 0xFF);
+    ASSERT_EQ(cap[4], 1); ASSERT_EQ(cap[5], 4);
 }
 
 TEST(readex_ok) {
@@ -358,7 +395,7 @@ TEST(sersetstat_comst_consumes_26_more) {
     ASSERT_EQ(s.stats.unknown_op, 0);
     feed(0x5A, 'A');
     ASSERT_EQ(outn, 1);
-    ASSERT_EQ(out[0], 0xFF);
+    ASSERT_EQ(out[0], 4);
 }
 
 TEST(sersetstat_other_code) {
@@ -367,7 +404,7 @@ TEST(sersetstat_other_code) {
     ASSERT_EQ(outn, 0);
     feed(0x5A, 'A');
     ASSERT_EQ(outn, 1);
-    ASSERT_EQ(out[0], 0xFF);
+    ASSERT_EQ(out[0], 4);
 }
 
 TEST(serwritem_consumes_count) {
@@ -376,7 +413,7 @@ TEST(serwritem_consumes_count) {
     ASSERT_EQ(outn, 0);
     feed(0x5A, 'A');
     ASSERT_EQ(outn, 1);
-    ASSERT_EQ(out[0], 0xFF);
+    ASSERT_EQ(out[0], 4);
 }
 
 TEST(nameobj_replies_zero) {
@@ -390,6 +427,89 @@ TEST(fastwrite_and_print_consumed) {
     setup();
     feed(0x81, 'x', 0x50, 'y', 0x46, 0x47, 0, 0, 0x53, 0, 0);
     ASSERT_EQ(outn, 0);
+}
+
+TEST(wirebug_packet_consumed) {
+    setup();
+    uint8_t pkt[24] = {0x42, 0x02, 0x08};
+    dw_feed(&s, pkt, sizeof(pkt), 0);
+    ASSERT_EQ(outn, 0);
+    ASSERT_EQ(s.stats.unknown_op, 0);
+    feed(0x5A, 0x01);
+    ASSERT_EQ(outn, 1);
+}
+
+TEST(fastwrite_window_consumed) {
+    setup();
+    feed(0x91, 0x52);
+    ASSERT_EQ(outn, 0);
+    feed(0x5A, 0x01);
+    ASSERT_EQ(outn, 1);
+}
+
+TEST(timer_replies_ms) {
+    setup();
+    feed_at(0x00010203u, 0x25, 0x00);
+    ASSERT_EQ(outn, 4);
+    ASSERT_EQ(out[0], 0x00);
+    ASSERT_EQ(out[1], 0x01);
+    ASSERT_EQ(out[2], 0x02);
+    ASSERT_EQ(out[3], 0x03);
+}
+
+TEST(settime_sets_clock) {
+    setup();
+    uint32_t now_ms = 0x00010203u;
+    feed_at(now_ms, 0x24, 0x7E, 0x09, 0x07, 0x0C, 0x22, 0x38);
+    ASSERT_EQ(outn, 0);
+    feed_at(now_ms, 0x23);
+    ASSERT_EQ(outn, 6);
+    ASSERT_EQ(out[0], 0x7E);
+    ASSERT_EQ(out[1], 0x09);
+    ASSERT_EQ(out[2], 0x07);
+    ASSERT_EQ(out[3], 0x0C);
+    ASSERT_EQ(out[4], 0x22);
+    ASSERT_EQ(out[5], 0x38);
+}
+
+TEST(dw4_single_byte_ops_counted) {
+    setup();
+    feed(0x41, 0xE6, 0xFD);
+    ASSERT_EQ(outn, 0);
+    ASSERT_EQ(s.stats.unknown_op, 0);
+    ASSERT_EQ(s.stats.ops[0x41], 1);
+}
+
+TEST(serreadm_replies_nothing) {
+    setup();
+    feed(0x63, 0x01, 0x04);
+    ASSERT_EQ(outn, 0);
+}
+
+TEST(serwritem_count_zero_is_256) {
+    setup();
+    uint8_t pkt[3 + 256] = {0x64, 0x01, 0x00};
+    dw_feed(&s, pkt, sizeof(pkt), 0);
+    ASSERT_EQ(outn, 0);
+    /* The 256 filler (0x00) bytes must be swallowed as SERWRITEM's data,
+     * not re-parsed as 256 separate NOP opcodes. */
+    ASSERT_EQ(s.stats.ops[0x00], 0);
+    feed(0x5A, 0x01);
+    ASSERT_EQ(outn, 1);
+}
+
+TEST(write_all_ff_checksum_is_ff00) {
+    setup();
+    uint8_t d[256];
+    memset(d, 0xFF, sizeof(d));
+    uint8_t msg[1 + 1 + 3 + 256 + 2];
+    msg[0] = 0x57; msg[1] = 0; msg[2] = 0; msg[3] = 0; msg[4] = 4;
+    memcpy(msg + 5, d, 256);
+    msg[261] = 0xFF;
+    msg[262] = 0x00;
+    dw_feed(&s, msg, sizeof(msg), 0);
+    ASSERT_EQ(outn, 1);
+    ASSERT_EQ(out[0], 0);
 }
 
 TEST(mount_long_name_fails) {
@@ -409,10 +529,13 @@ int main(void) {
     dw_store_posix_init(&st, g_dir);
 
     RUN(nop_and_reset_send_nothing);
-    RUN(dwinit_replies_ff);
+    RUN(reset_zeroes_stats);
+    RUN(dwinit_replies_version);
+    RUN(dwinit_low_client_disables_hdbdos);
     RUN(read_ok);
-    RUN(read_unmounted_is_notrdy_with_full_reply);
+    RUN(read_unmounted_is_one_byte);
     RUN(read_eof);
+    RUN(readex_past_end_is_zeros);
     RUN(hdbdos_splits_drive_by_lsn);
     RUN(hdbdos_drive_wrap_is_notrdy);
     RUN(hdbdos_past_end_reads_zeros);
@@ -436,6 +559,14 @@ int main(void) {
     RUN(serwritem_consumes_count);
     RUN(nameobj_replies_zero);
     RUN(fastwrite_and_print_consumed);
+    RUN(wirebug_packet_consumed);
+    RUN(fastwrite_window_consumed);
+    RUN(timer_replies_ms);
+    RUN(settime_sets_clock);
+    RUN(dw4_single_byte_ops_counted);
+    RUN(serreadm_replies_nothing);
+    RUN(serwritem_count_zero_is_256);
+    RUN(write_all_ff_checksum_is_ff00);
     RUN(mount_long_name_fails);
     TEST_MAIN_END
 }

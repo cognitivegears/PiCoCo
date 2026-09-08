@@ -24,6 +24,9 @@ static uint16_t payload_len(uint8_t op) {
         case DW_OP_RESET3:
         case DW_OP_RESET2:
         case DW_OP_RESET1:
+        case DW_OP_AARON:
+        case DW_OP_230K230K:
+        case DW_OP_230K115K:
             return 0;
         case DW_OP_READ:
         case DW_OP_REREAD:
@@ -35,10 +38,13 @@ static uint16_t payload_len(uint8_t op) {
             return 262;
         case DW_OP_NAMEOBJ_MOUNT:
         case DW_OP_NAMEOBJ_CREATE:
+        case DW_OP_NAMEOBJ_TYPE:
         case DW_OP_SERINIT:
         case DW_OP_PRINT:
         case DW_OP_DWINIT:
         case DW_OP_SERTERM:
+        case DW_OP_TIMER:
+        case DW_OP_RESET_TIMER:
             return 1;
         case DW_OP_SERGETSTAT:
         case DW_OP_GETSTAT:
@@ -48,10 +54,26 @@ static uint16_t payload_len(uint8_t op) {
         case DW_OP_SERWRITE:
         case DW_OP_SERSETSTAT:
             return 2;
+        case DW_OP_SETTIME:
+            return 6;
+        case DW_OP_WIREBUG_MODE:
+            return 23;
         default:
             if (op >= DW_OP_FASTWRITE_BASE && op <= DW_OP_FASTWRITE_BASE + 0x0F) return 1;
+            if (op >= DW_OP_FASTWRITE_WINDOW_BASE && op <= DW_OP_FASTWRITE_WINDOW_BASE + 0x0F) return 1;
             return DW_UNKNOWN_LEN;
     }
+}
+
+/* Days since 1970-01-01 for a proleptic-Gregorian civil date (Howard
+ * Hinnant's algorithm). Avoids a libc timegm dependency on the Pico. */
+static int64_t days_from_civil(int y, int m, int d) {
+    y -= m <= 2;
+    int64_t era = (y >= 0 ? y : y - 399) / 400;
+    unsigned yoe = (unsigned)(y - era * 400);
+    unsigned doy = (unsigned)((153 * (m + (m > 2 ? -3 : 9)) + 2) / 5 + d - 1);
+    unsigned doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
+    return era * 146097 + (int64_t)doe - 719468;
 }
 
 /* Resolves the target drive/lsn, applying the HDB-DOS drive-by-LSN split. */
@@ -76,16 +98,14 @@ static void read_sector(dw_server *s, const uint8_t *req, uint8_t *rc_out, uint8
         rc = DW_E_NOTRDY;
         s->stats.notrdy++;
     } else {
-        dw_disk *d = &s->drives[drive];
-        if (lsn >= d->sectors) {
-            /* HDB-DOS presents every drive as a full DW_HDBDOS_DISK_SECTORS
-             * image; reads past the physical file are zeros, not EOF. */
-            rc = s->hdbdos ? DW_E_OK : DW_E_EOF;
-        } else {
-            rc = (uint8_t)dw_disk_read(d, lsn, data);
-            if (rc == DW_E_OK) s->stats.reads++;
-            else if (rc == DW_E_READ) s->stats.read_err++;
-        }
+        rc = (uint8_t)dw_disk_read(&s->drives[drive], lsn, data);
+        /* The spec defines no EOF-on-read: reads past the end of an image
+         * come back as a blank (zeroed) sector with rc OK, in every mode.
+         * data[] is already zeroed above; dw_disk_read leaves it untouched
+         * on DW_E_EOF. */
+        if (rc == DW_E_EOF) rc = DW_E_OK;
+        if (rc == DW_E_OK) s->stats.reads++;
+        else if (rc == DW_E_READ) s->stats.read_err++;
     }
     *rc_out = rc;
 }
@@ -95,6 +115,11 @@ static void do_read(dw_server *s, uint32_t now_ms) {
     uint8_t rc, data[256];
     read_sector(s, s->buf, &rc, data);
 
+    if (rc != DW_E_OK) {
+        /* Read Failure packet: byte 0 error code only, no checksum/data. */
+        tx(s, &rc, 1);
+        return;
+    }
     uint16_t sum = dw_checksum(data, 256);
     uint8_t reply[259];
     reply[0] = rc;
@@ -128,6 +153,8 @@ static void do_write(dw_server *s, uint32_t now_ms) {
     tx(s, &rc, 1);
 }
 
+/* UTC via gmtime_r; dw_time_set is the local-time calibration knob
+ * (references use localtime). */
 static void do_time(dw_server *s, uint32_t now_ms) {
     int64_t secs = s->time_base + (int64_t)(uint32_t)(now_ms - s->time_base_ms) / 1000;
     time_t t = (time_t)secs;
@@ -144,9 +171,6 @@ static void dispatch(dw_server *s, uint32_t now_ms) {
     switch (s->op) {
         case DW_OP_NOP:
         case DW_OP_TERM:
-        case DW_OP_RESET1:
-        case DW_OP_RESET2:
-        case DW_OP_RESET3:
         case DW_OP_INIT:
         case DW_OP_SERGETSTAT:
         case DW_OP_SERINIT:
@@ -157,13 +181,39 @@ static void dispatch(dw_server *s, uint32_t now_ms) {
         case DW_OP_GETSTAT:
         case DW_OP_SETSTAT:
             break; /* consume, no reply */
+        case DW_OP_RESET1:
+        case DW_OP_RESET2:
+        case DW_OP_RESET3:
+            memset(&s->stats, 0, sizeof(s->stats)); /* spec: reset statistics */
+            break;
         case DW_OP_DWINIT: {
-            uint8_t r = 0xFF;
+            /* Clients sending a real drive number (< 0x80: NitrOS-9, CoCoBoot,
+             * LWOS) mean HDB-DOS's drive-by-LSN split; turn it off for them. */
+            if (s->buf[0] < 0x80) s->hdbdos = false;
+            uint8_t r = DW_PROTOCOL_VERSION;
             tx(s, &r, 1);
             break;
         }
         case DW_OP_TIME:
             do_time(s, now_ms);
+            break;
+        case DW_OP_SETTIME: {
+            int year = s->buf[0] + 1900, month = s->buf[1], day = s->buf[2];
+            int64_t unix = days_from_civil(year, month, day) * 86400
+                         + s->buf[3] * 3600 + s->buf[4] * 60 + s->buf[5];
+            dw_time_set(s, unix, now_ms);
+            break;
+        }
+        case DW_OP_TIMER: {
+            uint8_t r[4] = {
+                (uint8_t)(now_ms >> 24), (uint8_t)(now_ms >> 16),
+                (uint8_t)(now_ms >> 8), (uint8_t)now_ms,
+            };
+            tx(s, r, sizeof(r));
+            break;
+        }
+        case DW_OP_RESET_TIMER:
+            /* ponytail: no per-timer state kept, so nothing to reset */
             break;
         case DW_OP_READ:
         case DW_OP_REREAD:
@@ -190,12 +240,11 @@ static void dispatch(dw_server *s, uint32_t now_ms) {
             tx(s, r, sizeof(r));
             break;
         }
-        case DW_OP_SERREADM: {
-            /* ponytail: no vserial channels; real reply when networking lands */
-            uint8_t r = 0;
-            tx(s, &r, 1);
+        case DW_OP_SERREADM:
+            /* ponytail: no vserial channels to read from; spec says the
+             * server sends nothing back when it can't supply the bytes
+             * (count byte 0 would mean 256, but there's nothing to count). */
             break;
-        }
         case DW_OP_SERSETSTAT:
             /* buf = [chan, code]; COMST (0x28) carries 26 more status bytes. */
             if (s->have == 2 && s->buf[1] == 0x28) {
@@ -204,14 +253,17 @@ static void dispatch(dw_server *s, uint32_t now_ms) {
             }
             break;
         case DW_OP_SERWRITEM:
-            /* buf = [chan, count]; count <= 255 so 2+count always fits buf[264]. */
-            if (s->have == 2 && s->buf[1] > 0) {
-                s->need = (uint16_t)(2 + s->buf[1]);
+            /* buf = [chan, count]; count byte 0 means 256 (a full block).
+             * 2+256 always fits buf[264]. */
+            if (s->have == 2) {
+                uint16_t cnt = s->buf[1] ? s->buf[1] : 256;
+                s->need = (uint16_t)(2 + cnt);
                 return;
             }
             break;
         case DW_OP_NAMEOBJ_MOUNT:
-        case DW_OP_NAMEOBJ_CREATE: {
+        case DW_OP_NAMEOBJ_CREATE:
+        case DW_OP_NAMEOBJ_TYPE: {
             /* buf = [len, ...name]; len <= 255 so 1+len always fits buf[264]. */
             if (s->have == 1 && s->buf[0] > 0) {
                 s->need = (uint16_t)(1 + s->buf[0]);

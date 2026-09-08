@@ -172,7 +172,7 @@ TEST(capture_writes_file) {
     size_t n = fread(buf, 1, sizeof(buf), fp);
     fclose(fp);
     ASSERT_EQ(n, 9);
-    uint8_t want[9] = { 0, 2, 0, 0x5A, 0x41, 1, 1, 0, 0xFF };
+    uint8_t want[9] = { 0, 2, 0, 0x5A, 0x41, 1, 1, 0, 0x04 };
     ASSERT_MEMEQ(buf, want, 9);
 }
 

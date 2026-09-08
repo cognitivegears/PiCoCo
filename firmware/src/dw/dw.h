@@ -10,11 +10,20 @@
 #define DW_PAYLOAD_TIMEOUT_MS 250
 #define DW_HDBDOS_DISK_SECTORS 630
 
-/* DriveWire opcodes (pyDriveWire dwserver.py). */
+/* DriveWire protocol version we advertise in the DWINIT reply (DW4 sends 4). */
+#define DW_PROTOCOL_VERSION 0x04
+
+/* DriveWire opcodes (pyDriveWire dwserver.py, plus DW4 extras noted below). */
 #define DW_OP_NOP            0x00
 #define DW_OP_NAMEOBJ_MOUNT  0x01
 #define DW_OP_NAMEOBJ_CREATE 0x02
+#define DW_OP_NAMEOBJ_TYPE   0x03 /* DW4 */
 #define DW_OP_TIME           0x23
+#define DW_OP_SETTIME        0x24 /* DW4 */
+#define DW_OP_TIMER          0x25 /* DW4 */
+#define DW_OP_RESET_TIMER    0x26 /* DW4 */
+#define DW_OP_AARON          0x41 /* DW4; no payload, no reply */
+#define DW_OP_WIREBUG_MODE   0x42 /* DW4; 23-byte payload, consumed, no reply */
 #define DW_OP_SERREAD        0x43
 #define DW_OP_SERGETSTAT     0x44
 #define DW_OP_SERINIT        0x45
@@ -32,11 +41,16 @@
 #define DW_OP_REREAD         0x72
 #define DW_OP_REWRITE        0x77
 #define DW_OP_FASTWRITE_BASE 0x80 /* .. 0x8F */
+#define DW_OP_FASTWRITE_WINDOW_BASE 0x90 /* .. 0x9F; DW4 fast-write to window ports */
 #define DW_OP_SERWRITE       0xC3
 #define DW_OP_SERSETSTAT     0xC4
 #define DW_OP_SERTERM        0xC5
 #define DW_OP_READEX         0xD2
+/* DW_OP_RFM (0xD6) is deliberately left unrecognized: it is a variable-length
+ * sub-protocol (remote file manager) we do not implement. */
+#define DW_OP_230K230K       0xE6 /* DW4; no payload, no reply */
 #define DW_OP_REREADEX       0xF2
+#define DW_OP_230K115K       0xFD /* DW4; no payload, no reply */
 #define DW_OP_RESET3         0xF8
 #define DW_OP_RESET2         0xFE
 #define DW_OP_RESET1         0xFF

@@ -83,6 +83,16 @@ TEST(vdk_header_larger_than_file) {
     ASSERT_EQ(dw_disk_open(&st, "vbad.vdk", false, &d), -2);
 }
 
+TEST(vdk_write_protect_flag) {
+    uint8_t h[12] = {'d', 'k', 12, 0, 1, 1, 0, 0, 35, 1, 0x01, 0}; /* flags byte (offset 10) bit 0 set */
+    mk("vwp.vdk", h, 12, 10);
+    dw_disk d;
+    ASSERT_EQ(dw_disk_open(&st, "vwp.vdk", false, &d), 0);
+    uint8_t s[256] = {0};
+    ASSERT_EQ(dw_disk_write(&d, 0, s), DW_E_WRPROT);
+    dw_disk_close(&d);
+}
+
 TEST(os9_detect) {
     uint8_t h[0x13];
     memset(h, 0, sizeof(h));
@@ -182,6 +192,7 @@ int main(void) {
     RUN(jvc_shift_code_out_of_range);
     RUN(vdk_detect);
     RUN(vdk_header_larger_than_file);
+    RUN(vdk_write_protect_flag);
     RUN(os9_detect);
     RUN(os9_needs_full_sector);
     RUN(read_eof_and_zero_fill);

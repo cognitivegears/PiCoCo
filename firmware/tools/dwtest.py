@@ -22,13 +22,19 @@ class DW:
         return buf
 
     def dwinit(self):
-        self.s.sendall(b'\x5aA')
-        assert self.recv(1) == b'\xff'
+        # Client byte 0x80 (not a real drive number, so the server's
+        # hdbdos-auto-off rule for NitrOS-9/CoCoBoot/LWOS clients doesn't
+        # fire and clobber whatever --hdbdos mode this run wants).
+        self.s.sendall(b'\x5a\x80')
+        assert self.recv(1) != b'\x00'
 
     def read(self, drive, lsn):
         self.s.sendall(bytes([0x52, drive]) + lsn.to_bytes(3, 'big'))
-        r = self.recv(259)
-        return r[0], r[1:3], r[3:]
+        rc = self.recv(1)[0]
+        if rc != 0:
+            return rc, None, None
+        r = self.recv(258)
+        return rc, r[0:2], r[2:]
 
     def readex(self, drive, lsn, corrupt=False):
         self.s.sendall(bytes([0xD2, drive]) + lsn.to_bytes(3, 'big'))
@@ -111,7 +117,34 @@ def check_readex_corrupt(dw, drive, hdbdos):
 def check_unmounted(dw, hdbdos):
     d, l = addr(hdbdos, 3, 0)
     rc, cksum, data = dw.read(d, l)
-    return rc == 0xF6 and len(cksum) == 2 and len(data) == 256
+    return rc == 0xF6 and cksum is None and data is None
+
+
+def check_read_unmounted_one_byte(dw, hdbdos):
+    """READ of an unmounted drive replies with exactly one byte (the error
+    code) and nothing else follows on the wire."""
+    d, l = addr(hdbdos, 3, 0)
+    dw.s.sendall(bytes([0x52, d]) + l.to_bytes(3, 'big'))
+    rc = dw.recv(1)[0]
+    if rc != 0xF6:
+        return False
+    dw.s.settimeout(0.5)
+    try:
+        extra = dw.s.recv(4096)
+        silent = len(extra) == 0
+    except socket.timeout:
+        silent = True
+    finally:
+        dw.s.settimeout(2.0)
+    return silent
+
+
+def check_dwinit_nonzero(dw):
+    """DWINIT replies with a non-zero protocol version byte (spec requires
+    non-zero; DW4 sends 4)."""
+    dw.s.sendall(b'\x5a\x80')
+    r = dw.recv(1)
+    return r != b'\x00'
 
 
 def check_scratch(dw, drive, hdbdos):
@@ -169,6 +202,8 @@ def main():
         # brief's integration example (t.dsk on 0, s.dsk on 1).
         run(6, 'scratch write/readex/corrupt', lambda: check_scratch(dw, args.drive + 1, args.hdbdos))
     run(7, 'time', lambda: check_time(dw))
+    run(8, 'read of unmounted drive is exactly one byte', lambda: check_read_unmounted_one_byte(dw, args.hdbdos))
+    run(9, 'dwinit replies non-zero', lambda: check_dwinit_nonzero(dw))
 
     sys.exit(1 if fails else 0)
 

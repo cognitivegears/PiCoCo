@@ -25,12 +25,14 @@ int dw_disk_open(dw_store *store, const char *name, bool read_only, dw_disk *d) 
 
     dw_fmt fmt = DW_FMT_RAW;
     uint32_t byte_offset = 0, sectors = 0;
+    bool vdk_wp = false;
 
     if (hn >= 4 && hdr[0] == 'd' && hdr[1] == 'k') {
         byte_offset = u16le(&hdr[2]);
         if (byte_offset > size) { store->ops->close(&f); return -2; }
         fmt = DW_FMT_VDK;
         sectors = (size - byte_offset) / 256;
+        vdk_wp = (hdr[10] & 1) != 0; /* header flags byte, bit 0 = write protect */
     } else if (size % 256 != 0 && size % 256 <= 5) {
         uint32_t hdrlen = size % 256;
         uint8_t code = hdrlen >= 3 ? hdr[2] : 1;
@@ -57,7 +59,7 @@ int dw_disk_open(dw_store *store, const char *name, bool read_only, dw_disk *d) 
     d->store = store;
     d->f = f;
     d->mounted = true;
-    d->read_only = read_only || (oret == 1);
+    d->read_only = read_only || (oret == 1) || vdk_wp;
     d->fmt = fmt;
     d->byte_offset = byte_offset;
     d->sectors = sectors;
