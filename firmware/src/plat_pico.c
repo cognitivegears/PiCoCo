@@ -45,8 +45,7 @@ size_t plat_bridge_write(const uint8_t *buf, size_t n) {
     return w;
 }
 
-/* Filesystem and config: FatFS on the flash partition mounted by fs_flash.c.
- * Export (USB MSC): Task 4. */
+/* Filesystem and config: FatFS on the flash partition mounted by fs_flash.c. */
 int plat_fs_list(void (*cb)(const char *, uint32_t, void *), void *ctx) {
     DIR dir;
     FILINFO fno;
@@ -66,9 +65,10 @@ int plat_fs_remove(const char *n) { return f_unlink(n) == FR_OK ? 0 : -1; }
  * g_dw->drives[] and refuses if anything is still mounted. */
 int plat_fs_format(void) { return fs_flash_format(); }
 int plat_fs_export(bool on) {
-    if (on) usb_msc_clear_ejected();
+    usb_msc_clear_ejected();
     return fs_flash_export(on);
 }
+bool plat_fs_exporting(void) { return fs_flash_exporting(); }
 bool plat_usb_ejected(void) { return usb_msc_ejected(); }
 int plat_cfg_read(char *b, size_t m) {
     static FIL f; /* static: too big for the 4 KB core0 stack */

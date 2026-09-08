@@ -99,8 +99,7 @@ bool fs_flash_exporting(void) { return s_exporting; }
 
 int fs_flash_export(bool on) {
     if (on) {
-        f_mount(NULL, "", 0);
-        s_mounted = false;
+        fs_flash_unmount();
         s_exporting = true;
         return 0;
     }

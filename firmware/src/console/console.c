@@ -248,6 +248,7 @@ static int cmd_becker(int argc, char **argv) {
 
 static int cmd_dw(int argc, char **argv) {
     if (argc < 2) return cerr("usage: dw mount|eject|hdbdos|stats|capture|selftest ...");
+    if (plat_fs_exporting()) return cerr("fs export active; run fs import first");
     if (strcasecmp(argv[1], "selftest") == 0) return cmd_dw_selftest();
     if (strcasecmp(argv[1], "mount") == 0) {
         if (argc < 4) return cerr("usage: dw mount <n> <file> [ro]");
@@ -302,8 +303,21 @@ static int cmd_dw(int argc, char **argv) {
     return cerr("usage: dw mount|eject|hdbdos|stats|capture|selftest ...");
 }
 
+/* Shared by "fs format" and "fs export": both yank FatFS out from under
+ * anything still using it. A mounted drive holds an open dw_disk FIL; an
+ * open capture holds an open cap_file FIL. */
+static const char *fs_busy_reason(void) {
+    for (int i = 0; i < DW_MAX_DRIVES; i++) {
+        if (g_dw->drives[i].mounted) return "eject all drives first";
+    }
+    if (cap_open) return "dw capture off first";
+    return NULL;
+}
+
 static int cmd_fs(int argc, char **argv) {
     if (argc < 2) return cerr("usage: fs ls|rm|format|export|import");
+    if (plat_fs_exporting() && strcasecmp(argv[1], "import") != 0)
+        return cerr("fs export active; run fs import first");
     if (strcasecmp(argv[1], "ls") == 0) { plat_fs_list(fs_ls_cb, NULL); return 0; }
     if (strcasecmp(argv[1], "rm") == 0) {
         if (argc < 3) return cerr("usage: fs rm <file>");
@@ -311,16 +325,14 @@ static int cmd_fs(int argc, char **argv) {
         return 0;
     }
     if (strcasecmp(argv[1], "format") == 0) {
-        for (int i = 0; i < DW_MAX_DRIVES; i++) {
-            if (g_dw->drives[i].mounted) return cerr("eject all drives first");
-        }
+        const char *busy = fs_busy_reason();
+        if (busy) return cerr(busy);
         if (plat_fs_format() != 0) return cerr("format failed");
         return 0;
     }
     if (strcasecmp(argv[1], "export") == 0) {
-        for (int i = 0; i < DW_MAX_DRIVES; i++) {
-            if (g_dw->drives[i].mounted) return cerr("eject all drives first");
-        }
+        const char *busy = fs_busy_reason();
+        if (busy) return cerr(busy);
         if (plat_fs_export(true) != 0) return cerr("export unsupported");
         outf("usb drive exported; run fs import or reboot when done\n");
         return 0;

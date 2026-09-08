@@ -114,6 +114,9 @@ uint16_t const *tud_descriptor_string_cb(uint8_t index, uint16_t langid) {
 /* ---- MSC: exports the flash FAT volume while fs_flash_exporting() ---- */
 
 static bool s_ejected;
+/* Shared by read10 and write10's unaligned-transfer path: both run only
+ * inside tud_task(), never concurrently. */
+static uint8_t msc_scratch[512];
 
 bool usb_msc_ejected(void) { return s_ejected; }
 void usb_msc_clear_ejected(void) { s_ejected = false; }
@@ -153,17 +156,16 @@ int32_t tud_msc_read10_cb(uint8_t lun, uint32_t lba, uint32_t offset, void *buff
         if (fs_flash_read_blocks(lba, (uint8_t *)buffer, bufsize / 512) != 0) return -1;
         return (int32_t)bufsize;
     }
-    static uint8_t scratch[512]; /* static: too big for the 4 KB core0 stack */
     uint8_t *out = (uint8_t *)buffer;
     uint32_t done = 0;
     while (done < bufsize) {
         uint32_t abs_off = offset + done;
         uint32_t block = lba + abs_off / 512;
         uint32_t in_block = abs_off % 512;
-        if (fs_flash_read_blocks(block, scratch, 1) != 0) return done ? (int32_t)done : -1;
+        if (fs_flash_read_blocks(block, msc_scratch, 1) != 0) return done ? (int32_t)done : -1;
         uint32_t n = 512 - in_block;
         if (n > bufsize - done) n = bufsize - done;
-        memcpy(out + done, scratch + in_block, n);
+        memcpy(out + done, msc_scratch + in_block, n);
         done += n;
     }
     return (int32_t)done;
@@ -176,7 +178,6 @@ int32_t tud_msc_write10_cb(uint8_t lun, uint32_t lba, uint32_t offset, uint8_t *
         if (fs_flash_write_blocks(lba, buffer, bufsize / 512) != 0) return -1;
         return (int32_t)bufsize;
     }
-    static uint8_t scratch[512]; /* static: too big for the 4 KB core0 stack */
     uint8_t *in = (uint8_t *)buffer;
     uint32_t done = 0;
     while (done < bufsize) {
@@ -187,9 +188,9 @@ int32_t tud_msc_write10_cb(uint8_t lun, uint32_t lba, uint32_t offset, uint8_t *
         if (n > bufsize - done) n = bufsize - done;
         if (n < 512) {
             /* partial block: read-modify-write */
-            if (fs_flash_read_blocks(block, scratch, 1) != 0) return done ? (int32_t)done : -1;
-            memcpy(scratch + in_block, in + done, n);
-            if (fs_flash_write_blocks(block, scratch, 1) != 0) return done ? (int32_t)done : -1;
+            if (fs_flash_read_blocks(block, msc_scratch, 1) != 0) return done ? (int32_t)done : -1;
+            memcpy(msc_scratch + in_block, in + done, n);
+            if (fs_flash_write_blocks(block, msc_scratch, 1) != 0) return done ? (int32_t)done : -1;
         } else {
             if (fs_flash_write_blocks(block, in + done, 1) != 0) return done ? (int32_t)done : -1;
         }
