@@ -111,4 +111,9 @@ heading.
 
 ## Results
 
-(none yet beyond the "already verified" table)
+### 2026-09-08, host validation against a real DW4 disk image
+`picoco-host` with `dw/drivewire4/disks/run-dino-run/DINORUN.dsk` (161280
+bytes, RAW) on drive 0 and a scratch copy on drive 1; `tools/dwtest.py`
+in both `--hdbdos off` and `--hdbdos on`: all 7 checks ok (630/630
+sectors match, READ checksum, READEX corrupt → E_CRC, unmounted →
+E_NOTRDY, scratch write/readback/corrupt-write, TIME).
