@@ -172,20 +172,24 @@ Tools worth having before step 2:
 
 Each step is a gate. Do not move on until the check passes. Steps 1-2
 touch no Pico and cannot damage anything; step 6 is the first moment
-the Pico drives the CoCo bus.
+the Pico drives the CoCo bus. The "Console" column names the
+`pconsole.py` commands to run at that step; see `firmware/README.md`
+"Bring-up" for the full expected transcripts and the three debugging
+tools (trace dump, dw capture, status counters).
 
-| # | Do | Pass check | Firmware tag |
-|---|---|---|---|
-| 1 | Breakout alone in the slot, nothing on the ribbon | CoCo boots to BASIC normally; +5 V present at the cobbler | - |
-| 2 | Logic analyzer on E, Q, R/W, /CTS, /SCS, A13 at the cobbler (5 V signals, LA is 5 V tolerant) | `PEEK(&HC000)` shows a /CTS pulse; `PEEK(&HFF41)` shows /SCS. Record whether /CTS and /SCS are already E-qualified on your machine and the exact E-to-select timing. This decides how much of the U15 gate is really needed. | - |
-| 3 | LDO + 1N5819 + Pico on the breadboard, powered only from the CoCo | Pico LED blinks; 3.3 V rail and VSYS ≈ 4.7 V measured | fw-0.1-blink |
-| 4 | Input buffers only (U11/U12/U13 equivalents) into GP8-GP22, GP28. Pico GP0-7 left as inputs. | USB CDC dumps address + R/W on each /CTS or /SCS cycle; `PEEK(&HC123)` prints `0123 R`. Pico still drives nothing. | fw-0.4-bus-capture |
-| 5 | 74HC00 decode: NAND(CTS,SCS) then NAND(that, E) → OE_BUS → GP26 | LA shows OE_BUS low only during the E-high half of cart cycles, never otherwise | - |
-| 6 | Data buffer (U10 equivalent) between GP0-7 and the cart D0-7, /OE from step 5, DIR from RW_BUF. Serve a fixed pattern from a C loop. | `PEEK(&HC000)` returns the pattern; `FOR I=0 TO 255: PRINT PEEK(&HC000+I);: NEXT` returns the sequence. Run on the slowest CoCo you have first; CoCo 3 at 0.89 MHz before `POKE 65497,0`. | fw-0.5-rom-static |
-| 7 | Load a real HDB-DOS/DriveWire 8 KB image | Power-cycle: CoCo autostarts into HDB-DOS via the "DK" check, or `DOS` enters it. `DIR` fails cleanly (no server yet). | fw-0.6-rom-hdbdos |
-| 8 | **Experiment, not a build step:** with the LA, measure time from /RESET release to the first $C000 read, and separately the Pico's cold-boot time to "PIO armed". | If Pico boot is comfortably shorter, drop Q2/R7/R8 and the RUN-from-/RESET path from the design and free GP27. If not, add the 2N7000 circuit now and re-check. | fw-0.3-halt-ctrl |
-| 9 | Becker loopback: $FF41 returns $02, $FF42 echoes last write | `POKE &HFF42,65: PRINT PEEK(&HFF42)` prints 65 | fw-0.7-becker-loop |
-| 10 | Becker ↔ USB CDC bridge; pyDriveWire on the host pointed at the Pico's serial port | `DIR` in HDB-DOS lists a virtual disk; `LOADM` a small program | fw-0.8-bridge |
+| # | Do | Console | Pass check | Firmware tag |
+|---|---|---|---|---|
+| 1 | Breakout alone in the slot, nothing on the ribbon | (none) | CoCo boots to BASIC normally; +5 V present at the cobbler | - |
+| 2 | Logic analyzer on E, Q, R/W, /CTS, /SCS, A13 at the cobbler (5 V signals, LA is 5 V tolerant) | (none) | `PEEK(&HC000)` shows a /CTS pulse; `PEEK(&HFF41)` shows /SCS. Record whether /CTS and /SCS are already E-qualified on your machine and the exact E-to-select timing. This decides how much of the U15 gate is really needed. | - |
+| 3 | LDO + 1N5819 + Pico on the breadboard, powered only from the CoCo | (none) | Pico powered from the CoCo rail: LED blinks 1 Hz; `status` over USB. USB power and CoCo 5 V share only GND on the breadboard (VBUS is NC on the final board): do not back-power the CoCo from USB, use a USB cable with VBUS cut, or accept that the Pico is powered by USB during console sessions. | fw-0.1-blink |
+| 4 | Input buffers only (U11/U12/U13 equivalents) into GP8-GP22, GP28. Pico GP0-7 left as inputs. | `bus drive off`, `trace run`, on the CoCo `PEEK(&HC123)`, then `trace dump 8` | Dump shows an entry `0123 R ff` (idx = $C123 - $C000); `status` bus reads incremented by the number of PEEKs; `PEEK(&HFF41)` shows `3f41 R`. Pico still drives nothing. | fw-0.4-bus-capture |
+| 5 | 74HC00 decode: NAND(CTS,SCS) then NAND(that, E) → OE_BUS → GP26 | (hardware only) | LA: OE_BUS low only during E-high of cart cycles, never otherwise | - |
+| 6 | Data buffer (U10 equivalent) between GP0-7 and the cart D0-7, /OE from step 5, DIR from RW_BUF. | `rom pattern`, `bus drive on`, `save` | `PEEK(&HC000)` = 0, `PEEK(&HC001)` = 1, `FOR I=0 TO 255: PRINT PEEK(&HC000+I);: NEXT` counts up. Run on the slowest CoCo you have first; on CoCo 3 repeat after `POKE 65497,0`. | fw-0.5-rom-static |
+| 7 | Load a real HDB-DOS/DriveWire 8 KB image | `fs export`, copy `hdbdos_dw.rom` (8 KB), `fs import`, `rom load hdbdos_dw.rom`, `save` | Power-cycle: CoCo autostarts HDB-DOS (or `DOS` enters it); `DIR` fails cleanly (no server yet) | fw-0.6-rom-hdbdos |
+| 8 | **Experiment, not a build step:** measure time from /RESET release to the first $C000 read, and separately the Pico's cold-boot time to "core1 up, halt released" | `log main debug`; LA on /RESET and $C000 | Compare the two times; decide Q2/R7/R8 per section 2.3. If Pico boot is comfortably shorter, drop Q2/R7/R8 and the RUN-from-/RESET path and free GP27. If not, add the 2N7000 circuit now and re-check. | fw-0.3-halt-ctrl |
+| 9 | Becker loopback: $FF41 returns $02, $FF42 echoes last write | `becker loop`, `bus drive on` | `POKE &HFF42,65: PRINT PEEK(&HFF41), PEEK(&HFF42)` prints `2 65` (the first `PEEK(&HFF41)` right after the POKE may read 0 once: single-writer rule) | fw-0.7-becker-loop |
+| 10 | Becker ↔ USB CDC bridge; pyDriveWire on the host pointed at the Pico's serial port | `becker bridge`; host: `pyDriveWire --port /dev/tty.usbmodemXXXX1 --speed 115200 <image>` (the CDC0/bridge port) | `DIR` in HDB-DOS lists the image; `LOADM` a small program | fw-0.8-bridge |
+| 11 | Full native DriveWire over the same bridge, no host-side pyDriveWire process | `fs export`, copy a DSK, `fs import`, `dw mount 0 <dsk>`, `becker native`, `save` | `DIR`, `LOADM`, `SAVE` a program, power-cycle, `DIR` still shows it; `dw stats` shows reads/writes, `crc_err 0`, `timeouts 0` | fw-1.0-native |
 
 Optional side experiment after step 7 (cheap, could shrink the BOM):
 the RP2350 datasheet describes its digital GPIOs as 5 V tolerant while

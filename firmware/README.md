@@ -155,6 +155,47 @@ transfer:
 macOS writes `.fseventsd/` and `._*` AppleDouble files to the volume; `fs ls`
 hides any name starting with `.`, so these don't show up and are harmless.
 
+## Bring-up
+
+Breadboard milestones from `docs/breadboard-plan.md` section 6, mapped to
+console commands. Before anything else: on macOS, approve the Pico once
+under System Settings -> Privacy & Security -> "Allow accessories to
+connect", or it enumerates over USB but exposes no serial ports. The
+console is the second `/dev/cu.usbmodem*` device, the Becker bridge port is
+the first. To reflash: send `bootsel` on the console (see `flash.sh` above,
+or `python3 firmware/tools/pconsole.py /dev/cu.usbmodemXXXX2 bootsel`), wait
+for `/Volumes/RP2350` to mount, then `cp -X build-pico/picoco.uf2
+/Volumes/RP2350/`.
+
+Run commands with `pconsole.py` as shown in "Console checks" above. `fs
+export`/`fs import` are the "Export" steps above; use them to move ROM
+images and disk images on and off the board.
+
+| Step | Console | Expected console output | Expected CoCo-side result | Tag |
+|---|---|---|---|---|
+| 3 | `status` | `bus drive off`, `last reset power-on` | Pico powered from the CoCo rail: LED blinks 1 Hz. USB power and CoCo 5 V share only GND on the breadboard (`VBUS` is NC on the final board): don't back-power the CoCo from USB, use a cable with VBUS cut, or accept USB power during console sessions. | fw-0.1-blink |
+| 4 | `bus drive off`, `trace run`, on the CoCo `PEEK(&HC123)`, then `trace dump 8` | dump includes a line `<t_us> 0123 R ff` (idx = $C123 - $C000); `status` bus reads count goes up by the number of PEEKs | `PEEK(&HFF41)` triggers a trace line ending `3f41 R`; the Pico still drives nothing back at the CoCo | fw-0.4-bus-capture |
+| 5 | (hardware only, no console) | - | LA: OE_BUS low only during the E-high half of cart cycles, never otherwise | - |
+| 6 | `rom pattern`, `bus drive on`, `save` | `ok` for each | `PEEK(&HC000)` = 0, `PEEK(&HC001)` = 1, `FOR I=0 TO 255: PRINT PEEK(&HC000+I);: NEXT` counts up. Slowest CoCo first; on CoCo 3 repeat after `POKE 65497,0`. | fw-0.5-rom-static |
+| 7 | `fs export`, drag `hdbdos_dw.rom` (8 KB) onto `PICOCO`, `fs import`, `rom load hdbdos_dw.rom`, `save` | `usb drive exported...`, then `ok` for import/load/save | Power-cycle: CoCo autostarts HDB-DOS (or `DOS` enters it); `DIR` fails cleanly (no server yet) | fw-0.6-rom-hdbdos |
+| 8 | `log main debug`; after a reboot, `log dump` (once the console reconnects) | `log dump` shows `core1 up, halt released` | LA on /RESET and $C000: compare Pico cold-boot time to that log line against CoCo reset to first $C000 read; decide Q2/R7/R8 per breadboard-plan section 2.3 | fw-0.3-halt-ctrl |
+| 9 | `becker loop`, `bus drive on` | `ok` | `POKE &HFF42,65: PRINT PEEK(&HFF41), PEEK(&HFF42)` -> `2 65` (the first `PEEK(&HFF41)` right after the POKE may read 0 once: single-writer rule) | fw-0.7-becker-loop |
+| 10 | `becker bridge`; host: `pyDriveWire --port /dev/tty.usbmodemXXXX1 --speed 115200 <image>` (the first `/dev/cu.usbmodem*`, the bridge port) | `ok` | `DIR` in HDB-DOS lists the image; `LOADM` a small program | fw-0.8-bridge |
+| 11 | `fs export`, copy a DSK onto `PICOCO`, `fs import`, `dw mount 0 <dsk>`, `becker native`, `save` | `ok` for each; `dw stats` afterward | `DIR`, `LOADM`, `SAVE` a program, power-cycle, `DIR` still shows it; `dw stats` shows reads/writes with `crc_err 0` and `timeouts 0` | fw-1.0-native |
+
+Three tools to reach for when a step doesn't pass:
+
+- `trace dump [n]` piped through `tools/tracedump.py` (see above): reach for
+  this when a CoCo-side PEEK/POKE doesn't show the address or data you
+  expect, mainly steps 4-7.
+- `dw capture on <file>` (see "dw capture" in the console commands) plus
+  `picoco-host --replay` (see "picoco-host" above): reach for this when the
+  bridge or native DriveWire session (steps 10-11) is flaky and you want to
+  replay the exact byte stream off the CoCo for debugging.
+- `status`, and `dw stats`/`stats reset`: reach for these for a quick health
+  check at any step, especially the halt-timing decision in step 8 and the
+  error counters in step 11.
+
 ## Licensing
 
 Firmware code is under the top-level project license. Vendored third-party
