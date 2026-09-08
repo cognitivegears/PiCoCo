@@ -2,12 +2,17 @@ cmake_minimum_required(VERSION 3.20)
 option(PICOCO_HOST "Build host library, tests and picoco-host instead of Pico firmware" OFF)
 
 if(NOT PICOCO_HOST)
-  # Pico branch is completed and verified in Plan B. Kept minimal here.
   set(PICO_BOARD pico2 CACHE STRING "")
+  set(PICO_PLATFORM rp2350-arm-s CACHE STRING "")
   include(pico_sdk_import.cmake)
   project(picoco C CXX ASM)
+  set(CMAKE_C_STANDARD 11)
+  if(NOT CMAKE_BUILD_TYPE)
+    set(CMAKE_BUILD_TYPE Release)     # -O2: keeps ring.h inlines inline
+  endif()
   pico_sdk_init()
   add_executable(picoco src/main.c)
+  target_compile_options(picoco PRIVATE -Wall -Wextra)
   target_link_libraries(picoco pico_stdlib)
   pico_add_extra_outputs(picoco)
   return()

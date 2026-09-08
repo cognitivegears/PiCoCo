@@ -95,4 +95,23 @@ same log) are skipped.
 
 ## Pico build
 
-Not wired up yet in this task; see Plan B for the RP2350 target.
+Cross-builds `build-pico/picoco.uf2` for the Pico 2 (RP2350) using the Pico
+SDK, cloned outside the repo:
+
+```
+cd /Users/cognitivegears/projects
+git clone --branch 2.3.1 --depth 1 --recurse-submodules --shallow-submodules \
+    https://github.com/raspberrypi/pico-sdk.git
+
+cmake -B build-pico -G Ninja -DPICO_SDK_PATH=/Users/cognitivegears/projects/pico-sdk firmware
+ninja -C build-pico
+```
+
+Flash a Pico 2 that's in BOOTSEL mode (hold BOOTSEL while plugging it in):
+
+```
+firmware/tools/flash.sh build-pico/picoco.uf2
+```
+
+The console appears as the second of two `/dev/tty.usbmodem*` ports; use
+`screen /dev/tty.usbmodemXXXX2` or `picocom` to talk to it.
