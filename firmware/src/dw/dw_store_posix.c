@@ -31,6 +31,17 @@ static int posix_open(void *ctx, const char *name, bool write, dw_file *f) {
     return ret;
 }
 
+static int posix_create(void *ctx, const char *name, dw_file *f) {
+    (void)ctx;
+    if (strchr(name, '/')) return -1;
+    char path[512];
+    snprintf(path, sizeof(path), "%s/%s", s_dir, name);
+    int fd = open(path, O_RDWR | O_CREAT | O_TRUNC, 0644);
+    if (fd < 0) return -1;
+    f->h = (void *)(intptr_t)fd;
+    return 0;
+}
+
 static int posix_read(dw_file *f, uint32_t off, void *buf, uint32_t n) {
     int fd = (int)(intptr_t)f->h;
     ssize_t r = pread(fd, buf, n, off);
@@ -61,7 +72,7 @@ static void posix_close(dw_file *f) {
 }
 
 static const dw_store_ops s_posix_ops = {
-    .open = posix_open, .read = posix_read, .write = posix_write,
+    .open = posix_open, .create = posix_create, .read = posix_read, .write = posix_write,
     .size = posix_size, .sync = posix_sync, .close = posix_close,
 };
 

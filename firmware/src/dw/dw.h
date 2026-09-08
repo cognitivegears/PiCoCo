@@ -69,4 +69,5 @@ void dw_tick(dw_server *s, uint32_t now_ms);
 int  dw_mount(dw_server *s, int drive, const char *name, bool read_only);   /* dw_disk_open result */
 void dw_eject(dw_server *s, int drive);
 void dw_time_set(dw_server *s, int64_t unix_secs, uint32_t now_ms);
+int64_t dw_time_get(dw_server *s, uint32_t now_ms);
 void dw_set_capture(dw_server *s, dw_capture_fn fn, void *ctx);

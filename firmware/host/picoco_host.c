@@ -1,8 +1,10 @@
 /* picoco-host: TCP-socket DriveWire server for bring-up/testing on the Mac.
  * Wraps the platform-independent dw_server in a Becker-port-style TCP
  * listener (default port 65504) so dwtest.py, XRoar, etc. can talk to it. */
+#include "console.h"
 #include "dw.h"
 #include "dw_store.h"
+#include "log.h"
 #include "plat.h"
 
 #include <arpa/inet.h>
@@ -30,6 +32,20 @@ static void send_sock(void *ctx, const uint8_t *buf, size_t n) {
             return; /* peer gone; dw_server has no error channel for this */
         }
         sent += (size_t)w;
+    }
+}
+
+static void print_stdout(void *ctx, const char *s) {
+    (void)ctx;
+    fputs(s, stdout);
+}
+
+static void drain_log(void) {
+    char buf[4096];
+    size_t n = log_drain(buf, sizeof(buf) - 1);
+    if (n) {
+        buf[n] = '\0';
+        fputs(buf, stderr);
     }
 }
 
@@ -93,11 +109,15 @@ static int run_server(dw_server *srv, int port) {
     printf("picoco-host: listening on port %d\n", port);
 
     int client_fd = -1;
+    bool stdin_open = true;
     while (!g_stop) {
-        struct pollfd pfds[2];
+        struct pollfd pfds[3];
         int npfd = 0;
         pfds[npfd].fd = listen_fd; pfds[npfd].events = POLLIN; npfd++;
-        if (client_fd >= 0) { pfds[npfd].fd = client_fd; pfds[npfd].events = POLLIN; npfd++; }
+        int client_idx = -1;
+        if (client_fd >= 0) { client_idx = npfd; pfds[npfd].fd = client_fd; pfds[npfd].events = POLLIN; npfd++; }
+        int stdin_idx = -1;
+        if (stdin_open) { stdin_idx = npfd; pfds[npfd].fd = STDIN_FILENO; pfds[npfd].events = POLLIN; npfd++; }
 
         int pr = poll(pfds, (nfds_t)npfd, 50);
         if (pr < 0) {
@@ -106,14 +126,15 @@ static int run_server(dw_server *srv, int port) {
             break;
         }
 
-        if (client_fd < 0 && (pfds[0].revents & POLLIN)) {
+        if (pfds[0].revents & POLLIN) {
             int fd = accept(listen_fd, NULL, NULL);
             if (fd >= 0) {
                 client_fd = fd;
                 srv->send_ctx = &client_fd;
                 printf("picoco-host: client connected\n");
             }
-        } else if (client_fd >= 0 && npfd > 1 && (pfds[1].revents & (POLLIN | POLLHUP | POLLERR))) {
+        }
+        if (client_idx >= 0 && (pfds[client_idx].revents & (POLLIN | POLLHUP | POLLERR))) {
             uint8_t buf[512];
             ssize_t n = recv(client_fd, buf, sizeof(buf), 0);
             if (n > 0) {
@@ -125,8 +146,19 @@ static int run_server(dw_server *srv, int port) {
                 srv->state = DW_IDLE;
             }
         }
+        if (stdin_idx >= 0 && (pfds[stdin_idx].revents & (POLLIN | POLLHUP | POLLERR))) {
+            uint8_t buf[256];
+            ssize_t n = read(STDIN_FILENO, buf, sizeof(buf));
+            if (n > 0) {
+                console_feed(buf, (size_t)n);
+            } else {
+                stdin_open = false; /* EOF: stop reading stdin, but keep serving */
+                g_stop = 1;         /* treat stdin EOF as quit, per manual-check contract */
+            }
+        }
 
         dw_tick(srv, plat_now_ms());
+        drain_log();
     }
 
     if (client_fd >= 0) close(client_fd);
@@ -209,7 +241,9 @@ int main(int argc, char **argv) {
                mounts[i].read_only ? " (ro)" : "");
     }
 
-    // Task 9: console_feed(stdin bytes)
+    console_init(print_stdout, NULL, &srv, &store);
+    int cfg_lines = console_run_config();
+    if (cfg_lines >= 0) printf("picoco-host: config ran %d lines\n", cfg_lines);
 
     if (replay) return run_replay(&srv, replay);
 

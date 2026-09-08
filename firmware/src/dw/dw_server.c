@@ -305,6 +305,10 @@ void dw_time_set(dw_server *s, int64_t unix_secs, uint32_t now_ms) {
     s->time_base_ms = now_ms;
 }
 
+int64_t dw_time_get(dw_server *s, uint32_t now_ms) {
+    return s->time_base + (int64_t)(uint32_t)(now_ms - s->time_base_ms) / 1000;
+}
+
 void dw_set_capture(dw_server *s, dw_capture_fn fn, void *ctx) {
     s->capture = fn;
     s->capture_ctx = ctx;
