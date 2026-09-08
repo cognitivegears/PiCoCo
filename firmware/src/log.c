@@ -44,7 +44,7 @@ void log_write(int module, int level, const char *fmt, ...) {
     static const char levelch[] = {'?', 'E', 'I', 'D'};
     char line[160]; /* built as "<t_us> <module> <E|I|D> <msg>\n" */
 
-    int n = snprintf(line, sizeof(line), "%u %s %c ", plat_now_us(), log_module_names[module],
+    int n = snprintf(line, sizeof(line), "%u %s %c ", (unsigned)plat_now_us(), log_module_names[module],
                       levelch[level & 3]);
     if (n < 0) return;
     if ((size_t)n >= sizeof(line)) n = (int)sizeof(line) - 1; /* ponytail: prefix is always short; belt-and-suspenders only */

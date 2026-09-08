@@ -1,5 +1,15 @@
 cmake_minimum_required(VERSION 3.20)
 option(PICOCO_HOST "Build host library, tests and picoco-host instead of Pico firmware" OFF)
+set(PICOCO_VERSION "0.2-usb" CACHE STRING "")
+
+set(CORE_SRC
+  src/dw/dw_util.c src/dw/dw_disk.c src/dw/dw_server.c
+  src/bus/bus.c src/dev/device.c src/dev/rom.c src/dev/becker.c
+  src/log.c src/console/console.c src/console/mode.c)
+# dw_store_posix.c is the host filesystem backend (fopen/unistd); it also
+# collides with newlib's own posix_close() declaration under arm-none-eabi.
+# Host-only: added to picoco_core below, never to the picoco (Pico) target.
+set(HOST_ONLY_SRC src/dw/dw_store_posix.c)
 
 if(NOT PICOCO_HOST)
   set(PICO_BOARD pico2 CACHE STRING "")
@@ -11,9 +21,20 @@ if(NOT PICOCO_HOST)
     set(CMAKE_BUILD_TYPE Release)     # -O2: keeps ring.h inlines inline
   endif()
   pico_sdk_init()
-  add_executable(picoco src/main.c)
+  add_executable(picoco ${CORE_SRC} src/plat_pico.c src/usb/usb_descriptors.c src/main.c)
+  set(PICOCO_BOARD pico2_breadboard CACHE STRING "")
+  target_include_directories(picoco PRIVATE src src/usb src/dw src/bus src/dev src/console boards)
   target_compile_options(picoco PRIVATE -Wall -Wextra)
-  target_link_libraries(picoco pico_stdlib)
+  target_compile_definitions(picoco PRIVATE
+    PICOCO_BOARD_H="${PICOCO_BOARD}.h"
+    PICOCO_LOG_LEVEL=3
+    PICOCO_VERSION="${PICOCO_VERSION}"
+    PICO_FLASH_ASSUME_CORE1_SAFE=1
+    CFG_TUSB_CONFIG_FILE="tusb_config.h")
+  target_link_libraries(picoco
+    pico_stdlib pico_unique_id pico_multicore
+    hardware_flash hardware_watchdog
+    tinyusb_device tinyusb_board)
   pico_add_extra_outputs(picoco)
   return()
 endif()
@@ -22,20 +43,9 @@ project(picoco_host C)
 set(CMAKE_C_STANDARD 11)
 add_compile_options(-Wall -Wextra -g -fsanitize=address,undefined -fno-omit-frame-pointer)
 add_link_options(-fsanitize=address,undefined)
-add_compile_definitions(PICOCO_HOST=1 PICOCO_LOG_LEVEL=3)
+add_compile_definitions(PICOCO_HOST=1 PICOCO_LOG_LEVEL=3 PICOCO_VERSION="${PICOCO_VERSION}")
 
-set(CORE_SRC
-  src/dw/dw_util.c src/dw/dw_disk.c src/dw/dw_store_posix.c src/dw/dw_server.c
-  src/bus/bus.c src/dev/device.c src/dev/rom.c src/dev/becker.c
-  src/log.c src/console/console.c src/console/mode.c)
-# Only files that exist are compiled, so early tasks build.
-set(CORE_EXISTING)
-foreach(f ${CORE_SRC})
-  if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/${f})
-    list(APPEND CORE_EXISTING ${f})
-  endif()
-endforeach()
-add_library(picoco_core STATIC ${CORE_EXISTING} host/plat_host.c)
+add_library(picoco_core STATIC ${CORE_SRC} ${HOST_ONLY_SRC} host/plat_host.c)
 target_include_directories(picoco_core PUBLIC src src/dw src/bus src/dev src/console host)
 
 enable_testing()
