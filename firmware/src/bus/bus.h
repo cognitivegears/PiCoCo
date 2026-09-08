@@ -21,6 +21,11 @@ typedef struct { uint32_t cycles, reads, writes, write_overrun; } bus_stats_t;
 
 extern uint8_t bus_table[BUS_TABLE_SIZE];
 extern volatile bus_stats_t bus_stats;
+extern volatile bool bus_drive;   /* false = never drive D0..D7 (capture-only, milestone 0.4); read by core1 each cycle */
+
+void bus_drive_set(bool on);
+bool bus_drive_get(void);
+void bus_core1_main(void);                              /* BUS_HOT; never returns; core1 entry (launched from main.c) */
 
 void bus_init(void);                                   /* table = 0xFF, rings empty, trace running */
 void bus_set_read(uint16_t idx, uint8_t v);

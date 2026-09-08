@@ -16,6 +16,8 @@ int  plat_cfg_write(const char *buf, size_t n);
 void plat_reboot(bool bootsel);
 void plat_halt(bool assert_halt);
 void plat_smoke(void);                        /* GPIO toggle test; host: no-op */
+void plat_crash_test(void);                   /* deliberately fault (Pico); no-op (host) */
+const char *plat_last_reset(void);            /* "power-on" | "watchdog" | "hardfault pc=0x... ..." | "panic pc=0x... ..." | "host" */
 size_t plat_bridge_read(uint8_t *buf, size_t n);   /* CDC0 in bridge mode; host: 0 */
 size_t plat_bridge_write(const uint8_t *buf, size_t n);
 const char *plat_fs_dir(void);                /* host only: directory backing the "filesystem" */

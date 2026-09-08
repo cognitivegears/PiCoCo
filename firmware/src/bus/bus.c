@@ -3,6 +3,7 @@
 
 uint8_t bus_table[BUS_TABLE_SIZE];
 volatile bus_stats_t bus_stats;
+volatile bool bus_drive;
 
 typedef struct { uint16_t idx; uint8_t data; } bus_write_ev_t;
 #define WEV_SIZE 256
@@ -29,7 +30,11 @@ void bus_init(void) {
     bus_stats.reads = 0;
     bus_stats.writes = 0;
     bus_stats.write_overrun = 0;
+    bus_drive = false;
 }
+
+void bus_drive_set(bool on) { bus_drive = on; }
+bool bus_drive_get(void) { return bus_drive; }
 
 BUS_HOT void bus_set_read(uint16_t idx, uint8_t v) {
     if (idx >= BUS_TABLE_SIZE) return;

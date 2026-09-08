@@ -173,12 +173,35 @@ static int cmd_dw_selftest(void) {
     return 0;
 }
 
+static int cmd_bus(int argc, char **argv) {
+    if (argc < 2) { outf("bus drive %s\n", bus_drive_get() ? "on" : "off"); return 0; }
+    if (strcasecmp(argv[1], "drive") == 0) {
+        if (argc < 3) return cerr("usage: bus drive on|off");
+        if (strcasecmp(argv[2], "on") == 0) { bus_drive_set(true); return 0; }
+        if (strcasecmp(argv[2], "off") == 0) { bus_drive_set(false); return 0; }
+        return cerr("usage: bus drive on|off");
+    }
+    return cerr("usage: bus drive on|off");
+}
+
+static int cmd_crash(void) {
+#ifdef PICOCO_HOST
+    return cerr("crash test is Pico only");
+#else
+    outf("crashing now\n");
+    plat_crash_test();
+    return 0;   /* unreachable on Pico: plat_crash_test() never returns */
+#endif
+}
+
 static int cmd_status(void) {
     outf("mode %s\n", mode_name(mode_get()));
     outf("mode reply_overflow %u\n", mode_stats.reply_overflow);
     outf("uptime_ms %u\n", plat_now_ms());
     outf("bus cycles %u reads %u writes %u write_overrun %u\n",
          bus_stats.cycles, bus_stats.reads, bus_stats.writes, bus_stats.write_overrun);
+    outf("bus drive %s\n", bus_drive_get() ? "on" : "off");
+    outf("last reset %s\n", plat_last_reset());
     outf("becker reads %u writes %u underrun %u overrun %u\n",
          becker_stats.reads, becker_stats.writes, becker_stats.underrun, becker_stats.overrun);
     outf("log_dropped %u\n", log_dropped);
@@ -402,6 +425,8 @@ static int cmd_save(void) {
         return cerr("config too large");
     if (rom_cmd[0] && !cfg_append(cfg, sizeof(cfg), &len, "rom %s\n", rom_cmd))
         return cerr("config too large");
+    if (bus_drive_get() && !cfg_append(cfg, sizeof(cfg), &len, "bus drive on\n"))
+        return cerr("config too large");
     if (!cfg_append(cfg, sizeof(cfg), &len, "dw hdbdos %s\n", g_dw->hdbdos ? "on" : "off"))
         return cerr("config too large");
     for (int i = 0; i < DW_MAX_DRIVES; i++) {
@@ -426,12 +451,18 @@ static int cmd_save(void) {
 static int dispatch(int argc, char **argv) {
     const char *v = argv[0];
     if (strcasecmp(v, "help") == 0) {
-        outf("commands: help status version smoke halt trace rom becker dw fs time log stats save reboot bootsel\n");
+        outf("commands: help status version smoke halt trace rom becker bus crash dw fs time log stats save reboot bootsel\n");
         return 0;
     }
     if (strcasecmp(v, "status") == 0) return cmd_status();
     if (strcasecmp(v, "version") == 0) { outf("version %s\n", PICOCO_VERSION); return 0; }
-    if (strcasecmp(v, "smoke") == 0) { plat_smoke(); return 0; }
+    if (strcasecmp(v, "smoke") == 0) {
+        if (bus_drive_get()) return cerr("bus drive on");
+        plat_smoke();
+        return 0;
+    }
+    if (strcasecmp(v, "bus") == 0) return cmd_bus(argc, argv);
+    if (strcasecmp(v, "crash") == 0) return cmd_crash();
     if (strcasecmp(v, "halt") == 0) {
         if (argc < 2) return cerr("usage: halt on|off");
         if (strcasecmp(argv[1], "on") == 0) { plat_halt(true); return 0; }

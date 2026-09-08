@@ -24,7 +24,8 @@ if(NOT PICOCO_HOST)
   set(FATFS_SRC third_party/fatfs/ff.c third_party/fatfs/ffunicode.c)
   add_executable(picoco ${CORE_SRC} ${FATFS_SRC}
     src/fs_flash.c src/dw/dw_store_fatfs.c
-    src/plat_pico.c src/usb/usb_descriptors.c src/main.c)
+    src/plat_pico.c src/usb/usb_descriptors.c src/main.c
+    src/crash.c src/bus/bus_core1.c)
   set(PICOCO_BOARD pico2_breadboard CACHE STRING "")
   target_include_directories(picoco PRIVATE src src/usb src/dw src/bus src/dev src/console boards third_party/fatfs)
   target_compile_options(picoco PRIVATE -Wall -Wextra)
@@ -35,6 +36,7 @@ if(NOT PICOCO_HOST)
     PICOCO_VERSION="${PICOCO_VERSION}"
     PICO_FLASH_ASSUME_CORE1_SAFE=1
     PICO_STACK_SIZE=0x1000
+    PICO_PANIC_FUNCTION=picoco_panic
     CFG_TUSB_CONFIG_FILE="tusb_config.h")
   target_link_libraries(picoco
     pico_stdlib pico_unique_id pico_multicore

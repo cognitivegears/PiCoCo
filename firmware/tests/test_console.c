@@ -239,6 +239,20 @@ TEST(selftest_passes) {
     ASSERT(strstr(out, "selftest ok"));
 }
 
+TEST(bus_drive_cmd) {
+    setup();
+    ASSERT(!bus_drive_get());
+    ASSERT_EQ(console_exec("bus drive on"), 0);
+    ASSERT(bus_drive_get());
+    ASSERT_EQ(console_exec("bus"), 0);
+    ASSERT(strstr(out, "bus drive on"));
+    ASSERT_EQ(console_exec("save"), 0);
+    ASSERT(strstr(out, "bus drive on"));
+    ASSERT_EQ(console_exec("bus drive sideways"), -1);
+    ASSERT_EQ(console_exec("bus drive off"), 0);
+    ASSERT(!bus_drive_get());
+}
+
 int main(void) {
     char tmpl[300];
     const char *tmpdir = getenv("TMPDIR");
@@ -262,5 +276,6 @@ int main(void) {
     RUN(native_pump_end_to_end);
     RUN(native_pump_backpressure);
     RUN(selftest_passes);
+    RUN(bus_drive_cmd);
     TEST_MAIN_END
 }

@@ -85,6 +85,15 @@ TEST(stats) {
     ASSERT_EQ(bus_stats.writes, 1);
 }
 
+TEST(drive_flag) {
+    bus_init();
+    ASSERT(!bus_drive_get());
+    bus_drive_set(true);
+    ASSERT(bus_drive_get());
+    bus_drive_set(false);
+    ASSERT(!bus_drive_get());
+}
+
 int main(void) {
     RUN(table_defaults_ff);
     RUN(set_read_and_range_clipped);
@@ -94,5 +103,6 @@ int main(void) {
     RUN(trace_records_and_wraps);
     RUN(trace_freeze);
     RUN(stats);
+    RUN(drive_flag);
     TEST_MAIN_END
 }

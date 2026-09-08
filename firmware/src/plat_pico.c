@@ -7,6 +7,8 @@
 #include "fs_flash.h"
 #include "usb_descriptors.h"
 #include "ff.h"
+#include "crash.h"
+#include <stdio.h>
 
 uint32_t plat_now_us(void) { return time_us_32(); }
 uint32_t plat_now_ms(void) { return to_ms_since_boot(get_absolute_time()); }
@@ -20,18 +22,33 @@ void plat_reboot(bool bootsel) {
 void plat_halt(bool assert_halt) { gpio_put(PIN_HALT, assert_halt); }   /* HIGH = Q2 on = /HALT low */
 
 void plat_smoke(void) {
-    /* Toggle every header GPIO at 10 Hz for 5 s; core1 is not running yet in Task 2.
-       ponytail: after Task 5 this must only run with bus drive off; the console enforces it. */
+    /* Toggle only GP0..GP22 (D0..D7, A0..A13, R/W) at 10 Hz for 5 s. GP26..28
+       (OE_BUS in, HALT, E) are left alone: core1 polls OE_BUS continuously
+       once launched, and driving it low here would fake a cart cycle. The
+       console refuses this command outright while bus drive is on. */
     for (int t = 0; t < 50; t++) {
-        for (int g = 0; g <= 28; g++) if (g < 23 || g > 25) { gpio_set_dir(g, GPIO_OUT); gpio_put(g, t & 1); }
+        for (int g = 0; g <= 22; g++) { gpio_set_dir(g, GPIO_OUT); gpio_put(g, t & 1); }
         gpio_put(PIN_LED, t & 1);   /* the main loop's own blink is stalled while smoke runs */
         sleep_ms(50); tud_task();
     }
-    /* PIN_HALT must come back out as an asserted output, not an input: leaving
-       it floating/input would silently disable plat_halt() until reboot. */
-    for (int g = 0; g <= 28; g++) if ((g < 23 || g > 25) && g != PIN_HALT) gpio_set_dir(g, GPIO_IN);
-    gpio_set_dir(PIN_HALT, GPIO_OUT);
-    gpio_put(PIN_HALT, 1);
+    for (int g = 0; g <= 22; g++) gpio_set_dir(g, GPIO_IN);
+}
+
+void plat_crash_test(void) {
+    ((void (*)(void))0xFFFFFFF1)();
+}
+
+const char *plat_last_reset(void) {
+    static char buf[96];
+    const crash_rec_t *c = crash_last();
+    if (c) {
+        const char *what = c->reason == CRASH_REASON_PANIC ? "panic" : "hardfault";
+        snprintf(buf, sizeof(buf), "%s pc=0x%08x lr=0x%08x cfsr=0x%08x mode=%u up=%ums",
+                 what, (unsigned)c->pc, (unsigned)c->lr, (unsigned)c->cfsr,
+                 (unsigned)c->mode, (unsigned)c->uptime_ms);
+        return buf;
+    }
+    return watchdog_caused_reboot() ? "watchdog" : "power-on";
 }
 
 size_t plat_bridge_read(uint8_t *buf, size_t n) { return tud_cdc_n_connected(0) ? tud_cdc_n_read(0, buf, n) : 0; }

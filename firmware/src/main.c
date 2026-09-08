@@ -1,4 +1,5 @@
 #include "pico/stdlib.h"
+#include "pico/multicore.h"
 #include "hardware/watchdog.h"
 #include <string.h>
 #include "tusb.h"
@@ -14,9 +15,12 @@
 #include "mode.h"
 #include "plat.h"
 #include "fs_flash.h"
+#include "crash.h"
 
 static dw_server g_dw;
 static dw_store  g_store;
+
+static uint32_t mode_get_u32(void) { return (uint32_t)mode_get(); }
 
 static void console_out(void *ctx, const char *s) {
     (void)ctx;
@@ -44,7 +48,7 @@ static void gpio_setup(void) {
         if (g >= 23 && g <= 25) continue;             /* internal on the module */
         gpio_init(g); gpio_set_dir(g, GPIO_IN); gpio_pull_up(g);
     }
-    gpio_init(PIN_HALT); gpio_set_dir(PIN_HALT, GPIO_OUT); gpio_put(PIN_HALT, 1);   /* keep /HALT asserted until Task 5 releases it */
+    gpio_init(PIN_HALT); gpio_set_dir(PIN_HALT, GPIO_OUT); gpio_put(PIN_HALT, 1);   /* keep /HALT asserted until released after core1 launch, below */
     gpio_init(PIN_LED);  gpio_set_dir(PIN_LED, GPIO_OUT);
 }
 int main(void) {
@@ -55,6 +59,8 @@ int main(void) {
     dw_store_fatfs_init(&g_store);
     dw_init(&g_dw, &g_store, mode_dw_send, NULL);
     console_init(console_out, NULL, &g_dw, &g_store);
+    crash_init();
+    crash_mode_hook = mode_get_u32;
     watchdog_enable(8000, true);
     LOG_I(LOG_M_MAIN, "boot");
     if (fs_flash_mount() == 0) {
@@ -63,7 +69,9 @@ int main(void) {
     } else {
         LOG_E(LOG_M_FS, "fs mount failed");
     }
-    /* Task 5: crash_report(), core1 launch, halt release. */
+    multicore_launch_core1(bus_core1_main);
+    gpio_put(PIN_HALT, 0);   /* release /HALT: spec 8.1 */
+    LOG_I(LOG_M_MAIN, "core1 up, halt released");
     uint32_t last_blink = 0; bool led = false;
     for (;;) {
         tud_task();
