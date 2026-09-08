@@ -1,8 +1,7 @@
 #pragma once
 /* PiCoCo breadboard bring-up wiring on Pico 2 (RP2350 module).
- * See docs/firmware-architecture.md sec 3.2 for the pin table and PIO rationale.
- * Include pico/stdlib.h (or another header that pulls in the SDK's boards/pico2.h)
- * before this one so PICO_DEFAULT_LED_PIN is already defined. */
+ * See docs/firmware-architecture.md sec 3.2 for the pin table and PIO rationale. */
+#include "pico/stdlib.h"   /* pulls in the SDK's boards/pico2.h, defining PICO_DEFAULT_LED_PIN */
 
 #define PIN_D0      0    /* D0..D7  = GP0..GP7 */
 #define PIN_A0      8    /* A0..A13 = GP8..GP21 */

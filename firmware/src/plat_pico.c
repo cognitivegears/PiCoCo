@@ -21,9 +21,14 @@ void plat_smoke(void) {
        ponytail: after Task 5 this must only run with bus drive off; the console enforces it. */
     for (int t = 0; t < 50; t++) {
         for (int g = 0; g <= 28; g++) if (g < 23 || g > 25) { gpio_set_dir(g, GPIO_OUT); gpio_put(g, t & 1); }
+        gpio_put(PIN_LED, t & 1);   /* the main loop's own blink is stalled while smoke runs */
         sleep_ms(50); tud_task();
     }
-    for (int g = 0; g <= 28; g++) if (g < 23 || g > 25) gpio_set_dir(g, GPIO_IN);
+    /* PIN_HALT must come back out as an asserted output, not an input: leaving
+       it floating/input would silently disable plat_halt() until reboot. */
+    for (int g = 0; g <= 28; g++) if ((g < 23 || g > 25) && g != PIN_HALT) gpio_set_dir(g, GPIO_IN);
+    gpio_set_dir(PIN_HALT, GPIO_OUT);
+    gpio_put(PIN_HALT, 1);
 }
 
 size_t plat_bridge_read(uint8_t *buf, size_t n) { return tud_cdc_n_connected(0) ? tud_cdc_n_read(0, buf, n) : 0; }

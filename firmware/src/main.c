@@ -1,6 +1,6 @@
 #include "pico/stdlib.h"
-#include "pico/unique_id.h"
 #include "hardware/watchdog.h"
+#include <string.h>
 #include "tusb.h"
 #include PICOCO_BOARD_H
 #include "bus.h"
@@ -44,7 +44,23 @@ static const dw_store_ops none_ops = {
 static void console_out(void *ctx, const char *s) {
     (void)ctx;
     if (!tud_cdc_n_connected(1)) return;              /* drop when nobody is listening */
-    tud_cdc_n_write_str(1, s); tud_cdc_n_write_flush(1);
+    size_t len = strlen(s), off = 0;
+    while (off < len) {
+        uint32_t avail = tud_cdc_n_write_available(1);
+        if (avail == 0) {
+            /* ponytail: bounded 50 ms wait for the host to drain its FIFO
+             * (status/stats/trace dump can exceed the 512-byte TX buffer in
+             * one console_feed call); past the deadline drop the rest rather
+             * than block the main loop indefinitely. */
+            uint32_t deadline = plat_now_ms() + 50;
+            do { tud_task(); watchdog_update(); avail = tud_cdc_n_write_available(1); }
+            while (avail == 0 && plat_now_ms() < deadline);
+            if (avail == 0) break;
+        }
+        uint32_t chunk = avail < (uint32_t)(len - off) ? avail : (uint32_t)(len - off);
+        off += tud_cdc_n_write(1, s + off, chunk);
+        tud_cdc_n_write_flush(1);
+    }
 }
 static void gpio_setup(void) {
     for (int g = 0; g <= 28; g++) {

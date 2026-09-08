@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.20)
 option(PICOCO_HOST "Build host library, tests and picoco-host instead of Pico firmware" OFF)
-set(PICOCO_VERSION "0.2-usb" CACHE STRING "")
+set(PICOCO_VERSION "0.2-usb")
 
 set(CORE_SRC
   src/dw/dw_util.c src/dw/dw_disk.c src/dw/dw_server.c
