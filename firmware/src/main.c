@@ -34,6 +34,7 @@ static void console_out(void *ctx, const char *s) {
              * one console_feed call); past the deadline drop the rest rather
              * than block the main loop indefinitely. */
             uint32_t deadline = plat_now_ms() + 50;
+            // ponytail: re-enters tud_task(); safe only while no TinyUSB callback prints or logs-with-drain
             do { tud_task(); watchdog_update(); avail = tud_cdc_n_write_available(1); }
             while (avail == 0 && plat_now_ms() < deadline);
             if (avail == 0) break;
@@ -66,7 +67,8 @@ int main(void) {
     LOG_I(LOG_M_MAIN, "boot");
     if (fs_flash_mount() == 0) {
         int n = console_run_config();
-        LOG_I(LOG_M_MAIN, "fs ok, config lines %d", n);
+        if (n < 0) LOG_I(LOG_M_MAIN, "fs ok, config: none");
+        else LOG_I(LOG_M_MAIN, "fs ok, config lines %d", n);
     } else {
         LOG_E(LOG_M_FS, "fs mount failed");
     }

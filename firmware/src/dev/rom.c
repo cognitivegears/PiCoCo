@@ -22,11 +22,17 @@ void rom_off(void) {
 
 int rom_load_mem(const uint8_t *p, size_t n) {
     if (n != 8192 && n != 16384) return -2;
-    memcpy(&bus_table[0], p, n);
-    /* A 16 K load overwrites bus_table[0x3F41]/[0x3F42] with ROM bytes; the
-     * next $FF41 poll (core1's becker_status_hook) restores them via
-     * becker_refresh(). No core0 write to those entries here — see the
-     * single-writer note in becker.c. */
+    if (n == 8192) {
+        memcpy(&bus_table[0], p, n);
+        return 0;
+    }
+    /* 16 K load: bus_table[0x3F41]/[0x3F42] are becker's, not ROM's, and only
+     * core1's read hooks may write them (single-writer rule, see becker.c).
+     * Copy around those two indices instead of overwriting-then-relying-on
+     * the next $FF41 poll to restore them — no window where a core1 read
+     * would see a transient ROM byte there. */
+    memcpy(&bus_table[0], p, 0x3F41);
+    memcpy(&bus_table[0x3F43], p + 0x3F43, n - 0x3F43);
     return 0;
 }
 

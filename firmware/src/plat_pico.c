@@ -30,7 +30,7 @@ void plat_reboot(bool bootsel) {
 void plat_halt(bool assert_halt) { gpio_put(PIN_HALT, assert_halt); }   /* HIGH = Q2 on = /HALT low */
 
 void plat_smoke(void) {
-    /* Toggle only GP0..GP7 (D0..D7) and the LED at 10 Hz for 5 s. A0..A13
+    /* Toggle only GP0..GP7 (D0..D7) and the LED at 10 Hz for 2.5 s. A0..A13
        and R/W are 74LVC245 outputs on the real board (driven from the CoCo
        side); driving them from the Pico would contend with those buffers.
        GP26..28 (OE_BUS in, HALT, E) are left alone too: core1 polls OE_BUS

@@ -4,6 +4,7 @@
 #include "hardware/flash.h"
 #include "hardware/sync.h"
 #include "hardware/regs/addressmap.h"
+#include "hardware/watchdog.h"
 #include "log.h"
 #include <string.h>
 
@@ -39,6 +40,7 @@ int fs_flash_write_blocks(uint32_t lba, const uint8_t *buf, uint32_t n) {
         flash_range_erase(PICOCO_FS_OFFSET + block_off, sizeof(blk));
         flash_range_program(PICOCO_FS_OFFSET + block_off, blk, sizeof(blk));
         restore_interrupts(irq);
+        watchdog_update();   /* one 4 KB erase/program can run long; keep petting between blocks */
     }
     return 0;
 }

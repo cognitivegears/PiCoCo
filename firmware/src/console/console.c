@@ -248,6 +248,8 @@ static int cmd_trace(int argc, char **argv) {
 
 static int cmd_rom(int argc, char **argv) {
     if (argc < 2) return cerr("usage: rom pattern|off|load <file>");
+    if (plat_fs_exporting() && strcasecmp(argv[1], "load") == 0)
+        return cerr("fs export active; run fs import first");
     if (strcasecmp(argv[1], "pattern") == 0) {
         rom_pattern();
         snprintf(rom_cmd, sizeof(rom_cmd), "pattern");
@@ -372,6 +374,7 @@ static int cmd_fs(int argc, char **argv) {
         return 0;
     }
     if (strcasecmp(argv[1], "import") == 0) {
+        if (!plat_usb_ejected()) return cerr("eject the PICOCO volume on the host first");
         if (plat_fs_export(false) != 0) return cerr("import unsupported");
         return 0;
     }

@@ -392,6 +392,13 @@ TEST(fastwrite_and_print_consumed) {
     ASSERT_EQ(outn, 0);
 }
 
+TEST(mount_long_name_fails) {
+    setup();
+    const char *longname = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"; /* 40 chars, over dw_disk.name[32] */
+    mk(longname, NULL, 0, 1);   /* file exists: without the length guard, open would succeed and truncate */
+    ASSERT_EQ(dw_mount(&s, 1, longname, false), -1);
+}
+
 int main(void) {
     char tmpl[300];
     const char *tmpdir = getenv("TMPDIR");
@@ -429,5 +436,6 @@ int main(void) {
     RUN(serwritem_consumes_count);
     RUN(nameobj_replies_zero);
     RUN(fastwrite_and_print_consumed);
+    RUN(mount_long_name_fails);
     TEST_MAIN_END
 }

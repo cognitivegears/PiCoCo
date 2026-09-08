@@ -128,7 +128,7 @@ TEST(rom_16k_keeps_becker) {
     becker_write((const uint8_t *)"Z", 1);
     ASSERT_EQ(rom_load_mem(img, 16384), 0);
     ASSERT_EQ(bus_table[0x3EFF], 0x11);
-    ASSERT_EQ(bus_table[0x3F42], 0x11); /* stale: ROM bytes until next $FF41 poll */
+    ASSERT_EQ(bus_table[0x3F42], 0xFF); /* rom_load_mem skips this index; never clobbered */
     bus_on_read_done(0x3F41, 0);
     ASSERT_EQ(bus_table[0x3F42], 'Z');
     ASSERT_EQ(bus_table[0x3F41], 2);

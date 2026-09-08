@@ -22,13 +22,13 @@ const crash_rec_t *crash_last(void) { return have_last ? &last : NULL; }
 void crash_clear(void) { have_last = false; }
 
 static void __attribute__((noreturn)) __not_in_flash_func(record_and_reboot)(uint32_t reason, uint32_t pc, uint32_t lr) {
-    rec.magic = CRASH_MAGIC;
     rec.reason = reason;
     rec.pc = pc;
     rec.lr = lr;
     rec.cfsr = scb_hw->cfsr;
     rec.mode = crash_mode_hook ? crash_mode_hook() : 0;
     rec.uptime_ms = to_ms_since_boot(get_absolute_time());
+    rec.magic = CRASH_MAGIC;   /* ponytail: written last so a partial record self-invalidates */
     watchdog_reboot(0, 0, 0);
     for (;;) { }
 }

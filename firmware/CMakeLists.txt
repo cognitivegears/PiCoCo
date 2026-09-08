@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.20)
 option(PICOCO_HOST "Build host library, tests and picoco-host instead of Pico firmware" OFF)
-set(PICOCO_VERSION "0.2-usb")
+set(PICOCO_VERSION "0.3-pico")
 
 set(CORE_SRC
   src/dw/dw_util.c src/dw/dw_disk.c src/dw/dw_server.c
@@ -35,6 +35,7 @@ if(NOT PICOCO_HOST)
     PICOCO_LOG_LEVEL=3
     PICOCO_VERSION="${PICOCO_VERSION}"
     PICO_FLASH_ASSUME_CORE1_SAFE=1
+    PICO_USE_STACK_GUARDS=1
     PICO_STACK_SIZE=0x1000
     PICO_PANIC_FUNCTION=picoco_panic
     PICO_PANIC_FUNCTION_DOES_NOT_RETURN=1

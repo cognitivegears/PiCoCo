@@ -7,6 +7,7 @@ static uint32_t u16be(const uint8_t *p) { return ((uint32_t)p[0] << 8) | (uint32
 static uint32_t u24be(const uint8_t *p) { return ((uint32_t)p[0] << 16) | ((uint32_t)p[1] << 8) | (uint32_t)p[2]; }
 
 int dw_disk_open(dw_store *store, const char *name, bool read_only, dw_disk *d) {
+    if (strlen(name) >= sizeof(d->name)) return -1;
     memset(d, 0, sizeof(*d));
     dw_file f;
     int oret = store->ops->open(store->ctx, name, !read_only, &f);
