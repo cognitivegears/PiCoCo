@@ -457,7 +457,7 @@ After `console_init`: `crash_init(); crash_mode_hook = mode_get_u32;` then after
 
 1. `status` → `last reset power-on`, `bus drive off`, `bus cycles 0`.
 2. Jumper GP26 to GND for a moment (OE_BUS low, R/W high from the pull-up): `status` → `bus cycles` > 0, `reads` > 0; `trace dump 4` shows entries with idx `3fff` (all address pins pulled high) and `R`. Remove the jumper.
-3. `rom pattern`, `bus drive on`, jumper GP26 to GND again: nothing visible without a scope, but `status` counts and `trace dump` shows `data ff`... with idx 0x3FFF the table byte is 0xFF; use `bus drive on` + a jumper from GP8 (A0) to GND as well so idx = 0x3FFE and pattern byte 0xFE: `trace dump 1` → `... 3ffe R fe`. Measure GP0 low / GP1..GP7 high with a meter while the OE jumper is held. Remove jumpers.
+3. `rom pattern`, `bus drive on`. The pattern fills only indices 0x0000..0x1FFF, so A13 (GP21) must be low to land inside it: jumper GP21 (pin 27) and GP8 (pin 11) to GND, then touch GP26 to GND for a fresh cycle and hold it. `trace dump 1` → `... 1ffe R fe`; while GP26 is held, a meter shows GP0 ≈ 0 V and GP1..GP7 ≈ 3.3 V. Remove jumpers. (Bench note 2026-09-08: with only GP8 low the index is 0x3FFE, outside the pattern, and the byte is 0xFF; a held GP26 logs no new cycle until it is re-touched.)
 4. `halt on` → GP27 high (meter), `halt off` → low. Boot state: GP27 high until the release line, then low: confirm with `log main debug` + `log dump` after reboot showing `core1 up, halt released`.
 5. `crash` → console prints `crashing now`, port drops, returns; `status` → `last reset hardfault pc=0x... mode=0 up=...ms`. Tag `fw-0.3-halt-ctrl` (the halt circuit is now controllable; the on-CoCo measurement is milestone step 8 in Task 6).
 
