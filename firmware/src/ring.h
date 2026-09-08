@@ -11,7 +11,7 @@ static inline bool ring_push(ring_t *r, uint8_t b) {
     if (n == r->tail) return false;
     r->buf[h] = b; __atomic_store_n(&r->head, n, __ATOMIC_RELEASE); return true;
 }
-static inline bool ring_peek(const ring_t *r, uint8_t *b) { if (r->head == r->tail) return false; *b = r->buf[r->tail]; return true; }
+static inline bool ring_peek(const ring_t *r, uint8_t *b) { if (__atomic_load_n(&r->head, __ATOMIC_ACQUIRE) == r->tail) return false; *b = r->buf[r->tail]; return true; }
 static inline bool ring_pop(ring_t *r, uint8_t *b) {
     uint32_t t = r->tail; if (__atomic_load_n(&r->head, __ATOMIC_ACQUIRE) == t) return false;
     *b = r->buf[t]; __atomic_store_n(&r->tail, (t + 1) & r->mask, __ATOMIC_RELEASE); return true;

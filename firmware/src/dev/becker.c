@@ -37,7 +37,7 @@ static BUS_HOT void becker_status_hook(void) {
 
 static BUS_HOT void becker_data_hook(void) {
     uint8_t b;
-    if (ring_pop(&to_coco, &b)) {
+    if (bus_table[BUS_IDX_BECKER_STATUS] == 0x02 && ring_pop(&to_coco, &b)) {
         becker_stats.reads++;
     } else {
         becker_stats.underrun++;

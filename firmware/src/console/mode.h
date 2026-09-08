@@ -15,8 +15,9 @@ picoco_mode mode_get(void);
 const char *mode_name(picoco_mode m);         /* "off","loop","bridge","native" (console words) */
 void mode_pump(dw_server *dw, uint32_t now_ms);   /* one iteration: dispatch writes; per-mode pump */
 
-/* dw_init's send fn in NATIVE mode: queues dw's reply bytes into a 512-byte
- * pending FIFO that mode_pump drains into becker_write as tx space frees up
+/* dw_init's send fn in NATIVE mode: queues dw's reply bytes into a
+ * 4096-byte pending FIFO (see mode.c for the bound) that mode_pump drains
+ * into becker_write as tx space frees up
  * (a DriveWire reply can be up to 259 bytes, more than becker's 255-byte
  * to_coco queue holds at once). */
 void mode_dw_send(void *ctx, const uint8_t *buf, size_t n);

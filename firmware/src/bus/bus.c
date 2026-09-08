@@ -1,20 +1,20 @@
 #include "bus.h"
 #include <string.h>
 
-BUS_HOT uint8_t bus_table[BUS_TABLE_SIZE];
+uint8_t bus_table[BUS_TABLE_SIZE];
 volatile bus_stats_t bus_stats;
 
 typedef struct { uint16_t idx; uint8_t data; } bus_write_ev_t;
 #define WEV_SIZE 256
 #define WEV_MASK (WEV_SIZE - 1)
-static BUS_HOT bus_write_ev_t wev[WEV_SIZE];
+static bus_write_ev_t wev[WEV_SIZE];
 static volatile uint32_t wev_head, wev_tail;
 
 typedef struct { uint16_t idx; void (*fn)(void); } bus_hook_t;
 static bus_hook_t hooks[BUS_MAX_HOOKS];
 static int hook_count;
 
-static BUS_HOT bus_trace_entry trace[BUS_TRACE_SIZE];
+static bus_trace_entry trace[BUS_TRACE_SIZE];
 static uint32_t trace_pos;
 static bool trace_frozen;
 
@@ -31,7 +31,8 @@ void bus_init(void) {
     bus_stats.write_overrun = 0;
 }
 
-void bus_set_read(uint16_t idx, uint8_t v) {
+BUS_HOT void bus_set_read(uint16_t idx, uint8_t v) {
+    if (idx >= BUS_TABLE_SIZE) return;
     bus_table[idx] = v;
 }
 
@@ -71,7 +72,7 @@ size_t bus_trace_copy(bus_trace_entry *out, size_t max) {
     return n;
 }
 
-static void trace_record(uint16_t idx, uint8_t rw, uint8_t data, uint32_t t_us) {
+static BUS_HOT void trace_record(uint16_t idx, uint8_t rw, uint8_t data, uint32_t t_us) {
     if (trace_frozen) return;
     trace[trace_pos & (BUS_TRACE_SIZE - 1)] = (bus_trace_entry){ .t_us = t_us, .idx = idx, .rw = rw, .data = data };
     trace_pos++;

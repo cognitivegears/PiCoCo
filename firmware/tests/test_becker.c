@@ -61,6 +61,18 @@ TEST(status_poll_publishes_then_data_read_pops) {
     ASSERT_EQ(bus_table[0x3F41], 0);
 }
 
+TEST(unpolled_data_read_does_not_lose_byte) {
+    setup();
+    becker_write((const uint8_t *)"Q", 1);
+    bus_on_read_done(0x3F42, 0);
+    ASSERT_EQ(becker_stats.underrun, 1);
+    ASSERT_EQ(becker_stats.reads, 0);
+    bus_on_read_done(0x3F41, 0);
+    ASSERT_EQ(bus_table[0x3F42], 'Q');
+    bus_on_read_done(0x3F42, 0);
+    ASSERT_EQ(becker_stats.reads, 1);
+}
+
 TEST(coco_write_reaches_stream) {
     setup();
     bus_on_write(0x3F42, 0x52, 0);
@@ -158,6 +170,7 @@ int main(void) {
     RUN(read_hook_pops_one);
     RUN(status_read_does_not_pop);
     RUN(status_poll_publishes_then_data_read_pops);
+    RUN(unpolled_data_read_does_not_lose_byte);
     RUN(coco_write_reaches_stream);
     RUN(tx_backpressure);
     RUN(rx_overrun_counted);

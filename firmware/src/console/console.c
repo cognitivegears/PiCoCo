@@ -233,7 +233,7 @@ static int cmd_time(int argc, char **argv) {
 static int cmd_log(int argc, char **argv) {
     if (argc < 2) return cerr("usage: log <module> off|error|info|debug | log dump");
     if (strcasecmp(argv[1], "dump") == 0) {
-        char buf[4096];
+        static char buf[4096]; /* static: Pico core0 stack is 2 KB */
         size_t n = log_drain(buf, sizeof(buf) - 1);
         buf[n] = '\0';
         g_out(g_out_ctx, buf);
@@ -261,23 +261,38 @@ static int cmd_stats(int argc, char **argv) {
     return 0;
 }
 
+static bool cfg_append(char *cfg, size_t cap, size_t *len, const char *fmt, ...) {
+    va_list ap;
+    va_start(ap, fmt);
+    int n = vsnprintf(cfg + *len, cap - *len, fmt, ap);
+    va_end(ap);
+    if (n < 0 || (size_t)n >= cap - *len) return false;
+    *len += (size_t)n;
+    return true;
+}
+
 static int cmd_save(void) {
-    char cfg[1024];
+    static char cfg[1024]; /* static: Pico core0 stack is 2 KB */
     size_t len = 0;
-    len += (size_t)snprintf(cfg + len, sizeof(cfg) - len, "becker %s\n", mode_name(mode_get()));
-    if (rom_cmd[0]) len += (size_t)snprintf(cfg + len, sizeof(cfg) - len, "rom %s\n", rom_cmd);
-    len += (size_t)snprintf(cfg + len, sizeof(cfg) - len, "dw hdbdos %s\n", g_dw->hdbdos ? "on" : "off");
+    if (!cfg_append(cfg, sizeof(cfg), &len, "becker %s\n", mode_name(mode_get())))
+        return cerr("config too large");
+    if (rom_cmd[0] && !cfg_append(cfg, sizeof(cfg), &len, "rom %s\n", rom_cmd))
+        return cerr("config too large");
+    if (!cfg_append(cfg, sizeof(cfg), &len, "dw hdbdos %s\n", g_dw->hdbdos ? "on" : "off"))
+        return cerr("config too large");
     for (int i = 0; i < DW_MAX_DRIVES; i++) {
         if (g_dw->drives[i].mounted) {
-            len += (size_t)snprintf(cfg + len, sizeof(cfg) - len, "dw mount %d %s%s\n", i,
-                                     g_dw->drives[i].name, g_dw->drives[i].read_only ? " ro" : "");
+            if (!cfg_append(cfg, sizeof(cfg), &len, "dw mount %d %s%s\n", i,
+                             g_dw->drives[i].name, g_dw->drives[i].read_only ? " ro" : ""))
+                return cerr("config too large");
         }
     }
     for (int m = 0; m < LOG_M_COUNT; m++) {
         int lvl = log_level(m);
         if (lvl == LOG_INFO) continue;
         const char *lvlname = lvl == LOG_OFF ? "off" : lvl == LOG_ERROR ? "error" : "debug";
-        len += (size_t)snprintf(cfg + len, sizeof(cfg) - len, "log %s %s\n", log_module_names[m], lvlname);
+        if (!cfg_append(cfg, sizeof(cfg), &len, "log %s %s\n", log_module_names[m], lvlname))
+            return cerr("config too large");
     }
     if (plat_cfg_write(cfg, len) != 0) return cerr("cfg write failed");
     return 0;

@@ -9,6 +9,7 @@
 #define BUS_TRACE_SIZE 4096
 #define BUS_MAX_HOOKS 4
 
+/* functions only; static data is in SRAM regardless */
 #ifdef PICOCO_HOST
 #define BUS_HOT
 #else

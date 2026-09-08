@@ -57,7 +57,7 @@ typedef struct dw_server {
     bool hdbdos;
     dw_state state; uint8_t op; uint8_t buf[264]; uint16_t have, need;
     uint32_t last_rx_ms;
-    uint8_t sector[256]; uint16_t sector_sum; uint8_t pending_rc;
+    uint16_t sector_sum; uint8_t pending_rc;
     int64_t time_base;      /* unix seconds at time_base_ms */
     uint32_t time_base_ms;
     dw_stats stats;
