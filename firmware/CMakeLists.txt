@@ -43,6 +43,7 @@ foreach(t ${TEST_SRCS})
   endif()
   target_link_libraries(${name} picoco_core)
   target_include_directories(${name} PRIVATE tests)
+  target_compile_definitions(${name} PRIVATE FIXTURE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures")
   add_test(NAME ${name} COMMAND ${name})
 endforeach()
 

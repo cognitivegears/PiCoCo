@@ -27,10 +27,12 @@ of the host build above.
   repeat for multiple drives. Add `,ro` to mount read-only.
 - `--hdbdos on|off`: HDB-DOS drive-by-LSN addressing (default: whatever
   `dw_init` sets — currently on). The effective value is printed at startup.
-- `--replay FILE`: feed `FILE` as a raw stream of CoCo->server bytes (no
-  framing) in 64-byte chunks, print a stats summary, and exit — no socket is
-  opened. Useful for replaying a captured session without XRoar/CoCo
-  hardware attached.
+- `--replay FILE`: replay a `dw capture` recording (see
+  `tests/fixtures/README.md` for the chunk format) — feeds only the dir-0
+  (rx) chunks back into the server, ignoring the dir-1 (tx) chunks it
+  recorded, prints a stats summary, and exits; no socket is opened. Useful
+  for replaying a captured session without XRoar/CoCo hardware attached. A
+  malformed (truncated) capture file prints an error and exits 1.
 - With no `--replay`, listens on `--port` (default 65504, the standard
   Becker port), serving one client at a time; disconnect and reconnect is
   fine. `Ctrl-C` (SIGINT) prints the stats summary and exits.
@@ -73,6 +75,23 @@ xroar -machine coco3 -cart becker -becker-ip 127.0.0.1 -becker-port 65504 \
 (Flags per XRoar's manual for the Becker-port cartridge.) Expected: booting
 into HDB-DOS and running `DIR` lists the files on the image mounted on
 drive 0.
+
+### `tools/tracedump.py`
+
+Decodes `trace dump [n]` console output (lines of `t_us idx R|W data`) into
+a readable log with CoCo addresses and a running DriveWire opcode decoder:
+
+```
+python3 firmware/tools/tracedump.py trace.txt      # or pipe via stdin
+```
+
+Each line becomes `t_us  $ADDR  R/W  data  note`, where `$ADDR = 0xC000 +
+idx`. Notes: `ROM` for ROM-space reads, `BECKER_STATUS`/`BECKER_DATA` for
+Becker-port accesses (status reads add `data avail`/`no data`), and for a
+DriveWire request written to `$FF42`, the opcode name plus, once its 4
+drive/LSN payload bytes arrive, `drive=N lsn=N` on the completing line.
+Non-matching lines (e.g. the console's `ok`/`err ...` replies mixed into the
+same log) are skipped.
 
 ## Pico build
 

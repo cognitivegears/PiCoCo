@@ -76,14 +76,39 @@ static int parse_mount(char *arg, int *drive, const char **name, bool *read_only
     return 0;
 }
 
+/* Replays a "dw capture" file: chunks of dir (0 rx / 1 tx), len_lo, len_hi,
+ * bytes (see tests/fixtures/README.md). Only dir-0 (rx) chunks are fed back
+ * in; dir-1 (tx) chunks are what the server sent when the capture was made
+ * and are ignored here. */
 static int run_replay(dw_server *srv, const char *path) {
     FILE *f = fopen(path, "rb");
     if (!f) { fprintf(stderr, "picoco-host: can't open --replay %s\n", path); return 1; }
-    uint8_t buf[64];
-    size_t n;
-    while ((n = fread(buf, 1, sizeof(buf), f)) > 0) {
-        dw_feed(srv, buf, n, plat_now_ms());
-        dw_tick(srv, plat_now_ms());
+    uint8_t hdr[3];
+    uint8_t chunk[264];
+    while (1) {
+        size_t got = fread(hdr, 1, sizeof(hdr), f);
+        if (got == 0) break;
+        if (got != sizeof(hdr)) {
+            fprintf(stderr, "picoco-host: --replay %s: truncated chunk header\n", path);
+            fclose(f);
+            return 1;
+        }
+        int dir = hdr[0];
+        uint16_t len = (uint16_t)(hdr[1] | (hdr[2] << 8));
+        if (len > sizeof(chunk)) {
+            fprintf(stderr, "picoco-host: --replay %s: chunk too large (%u)\n", path, (unsigned)len);
+            fclose(f);
+            return 1;
+        }
+        if (fread(chunk, 1, len, f) != len) {
+            fprintf(stderr, "picoco-host: --replay %s: truncated chunk body\n", path);
+            fclose(f);
+            return 1;
+        }
+        if (dir == 0) {
+            dw_feed(srv, chunk, len, plat_now_ms());
+            dw_tick(srv, plat_now_ms());
+        }
     }
     fclose(f);
     print_stats(&srv->stats);
