@@ -333,9 +333,12 @@ serve:
 | `smoke` (toggle every GPIO at 10 Hz until a key) | 0.2 |
 | `halt on\|off` | 0.3 / step 8 |
 | `trace dump [n]`, `trace freeze\|run` | 0.4 |
+| `bus drive on\|off` (gate whether core1 ever drives D0-7; off is capture-only) | 0.4, 0.5 |
 | `rom pattern\|load <file>\|off` | 0.5, 0.6 |
 | `becker loop\|bridge\|native\|off` | 0.7, 0.8, native |
 | `dw mount <n> <file> [ro]`, `dw eject <n>`, `dw hdbdos on\|off`, `dw stats`, `dw capture on\|off <file>` | native |
+| `dw selftest` (mounts a flash image, runs READ/WRITE through `dw_feed` internally, checks the replies) | pre-0.1 bench test, no CoCo needed |
+| `crash` (force a HardFault to exercise the crash record; `crash panic` forces a panic record instead) | pre-0.1 bench test, verified across reset |
 | `fs ls`, `fs rm <file>`, `fs export`, `fs import`, `fs format` | |
 | `time set <unix>`, `time` | |
 | `log <module> off\|error\|info\|debug`, `log dump` | |
