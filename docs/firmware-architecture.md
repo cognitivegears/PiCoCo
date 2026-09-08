@@ -36,38 +36,79 @@ hardware it runs on, see [`hardware-design.md`](hardware-design.md).
   protocol layer can be C11 too, or ported from pyDriveWire piece by
   piece.
 
-Repo layout (proposed):
+Repo layout, as built by the Plan A host-testable core
+(`docs/superpowers/plans/2026-09-07-firmware-host-core.md`). Everything
+under `host/` and most of `src/` is implemented and covered by `ctest`.
+Entries marked **Plan B** do not exist yet; they land with the Pico
+target (core1 bus loop, USB, flash storage):
 
 ```
 firmware/
-├── CMakeLists.txt
+├── CMakeLists.txt          # -DPICOCO_HOST=ON builds host lib + tests + picoco-host
 ├── pico_sdk_import.cmake
+├── boards/                 # Plan B: pico2_breadboard.h GPIO map
 ├── src/
-│   ├── main.c              # core0/core1 entry
-│   ├── bus.c / bus.h       # PIO programs + setup for D/A/E
-│   ├── bus.pio             # PIO assembly (bus watcher, data driver, write capture)
-│   ├── rom.c / rom.h       # ROM image store, /CTS read handler
-│   ├── becker.c / becker.h # $FF41/$FF42 register emulation + FIFO
-│   ├── drivewire.c / .h    # DriveWire V3/V4 protocol state machine
-│   ├── usb_cdc.c / .h      # USB CDC for DriveWire server traffic + diag
-│   └── led.c / .h          # Heartbeat, status LEDs
-├── roms/
-│   └── hdbdos_dw.bin       # 16 KB HDB‑DOS + DriveWire build (user‑supplied)
-└── tools/
-    ├── build.sh            # one‑shot build
-    └── flash.sh            # SWD flash via picoprobe
+│   ├── main.c              # Plan B target only today: Pico LED blink stub
+│   ├── plat.h              # platform functions, resolved at link time
+│   ├── plat_pico.c         # Plan B: RP2350 implementation of plat.h
+│   ├── ring.h              # SPSC byte ring, shared by bus and becker
+│   ├── log.h / log.c       # ring-buffered leveled logging
+│   ├── bus/
+│   │   ├── bus.h / bus.c   # response table, write ring, read hooks, trace ring, stats
+│   │   └── bus_core1.c     # Plan B: the core1 loop; the only file that touches SIO GPIO
+│   ├── dev/
+│   │   ├── device.h / device.c   # device registry, write-event dispatch
+│   │   ├── rom.h / rom.c         # ROM device
+│   │   └── becker.h / becker.c   # Becker port device
+│   ├── dw/
+│   │   ├── dw_util.h / dw_util.c       # checksum, LSN pack/unpack
+│   │   ├── dw_store.h                  # storage ops struct
+│   │   ├── dw_store_posix.c            # host implementation (also used by picoco-host)
+│   │   ├── dw_store_fatfs.c            # Plan B: Pico implementation
+│   │   ├── dw_disk.h / dw_disk.c       # image format detection, LSN mapping
+│   │   └── dw.h / dw_server.c          # DriveWire protocol state machine
+│   ├── console/
+│   │   ├── console.h / console.c  # line parser + commands
+│   │   └── mode.h / mode.c        # mode switch (diag/loop/bridge/native) + pump
+│   ├── fs_flash.c          # Plan B: FatFS diskio over the flash partition; USB MSC glue
+│   ├── crash.c             # Plan B: hard fault + panic record in noinit RAM
+│   └── usb_descriptors.c, tusb_config.h   # Plan B
+├── host/
+│   ├── plat_host.c         # POSIX implementation of plat.h
+│   ├── picoco_host.c       # TCP 65504 server + stdin console around dw_server
+│   └── sim_bus.h / sim_bus.c   # virtual CoCo for host-side tests
+├── tests/
+│   ├── test.h              # ~30-line TEST/ASSERT macros
+│   ├── test_*.c            # one file per module, see section 10
+│   └── fixtures/           # synthetic images, captured byte streams, trace dumps
+├── tools/
+│   ├── dwtest.py           # DriveWire client exerciser (TCP)
+│   └── tracedump.py        # decodes `trace dump` output
+└── roms/                   # user-supplied ROM images, gitignored
 ```
 
 ## 3. Runtime architecture
 
 ### 3.1 Core split
 
-- **core0** — PIO/DMA orchestration, Becker port read/write service,
-  USB CDC pump.
-- **core1** — DriveWire protocol engine (parses commands from the
-  host‑side DriveWire server, maintains virtual drive state).
+Reversed from the original proposal above: the bus service is the
+time-critical job, so it gets its own core with nothing else running
+on it.
 
-Inter‑core comm via Pico SDK's `queue_t` (lock‑free MPSC).
+- **core1** — the bus loop only (`src/bus/bus_core1.c`, Plan B).
+  Flash-free: never executes from or reads flash, runs with interrupts
+  disabled from SRAM (`BUS_HOT` section attribute), so the build sets
+  `PICOCO_FLASH_ASSUME_CORE1_SAFE`. It serves `bus_table[]` on reads,
+  pushes write events into the write ring, and runs read hooks
+  in-place (see section 5).
+- **core0** — everything else: USB (2x CDC + MSC), the console, the
+  DriveWire server, storage (flash/FatFS or the host POSIX
+  equivalent), and device write dispatch (`device_dispatch_writes()`
+  in `mode_pump()`). Core0 is free to touch flash; core1 never is.
+
+Communication is the response table, write ring and read hooks in
+`src/bus/bus.h` (SPSC, no locks) — not the Pico SDK `queue_t` mentioned
+in the original proposal.
 
 ### 3.2 Pin map (Pico 2 header numbering)
 
@@ -89,7 +130,16 @@ address‑valid window). Firmware disambiguates by **A13**:
 - `OE_BUS` low with `A13=0` ⇒ ROM read in $C000–$DFFF window.
 - `OE_BUS` low with `A13=1` ⇒ Becker access in $FF40–$FF5F window.
 
-### 3.3 PIO block usage
+### 3.3 PIO block usage (v2 bus engine)
+
+The bus engine actually being built (Plan B) is a plain C loop on
+core1 polling GPIO in a tight `for(;;)` (spec section 4.3), not PIO+DMA.
+It is simpler to debug and was judged fast enough: about 70 ns from
+`OE_BUS` low to data driven at 150 MHz against a 280 ns CoCo 3 window.
+The PIO/DMA design below is kept as the v2 engine, to be adopted only
+if the hardware logic analyzer shows jitter in the C loop once it's
+running on real hardware. Everything in 3.3, 3.4 and section 4 (PIO
+programs) describes that fallback, not the current implementation.
 
 PIO0 hosts three state machines:
 
@@ -242,6 +292,15 @@ NitrOS‑9 boot, Cloud9 ROMs).
 - Optional: a small settings page at the end of flash for config
   (selected ROM slot, DriveWire server URL, etc.).
 
+**Config, as built:** not a settings page of key/value fields.
+`picoco.cfg` is a plain list of console commands (the same commands
+from section 9's bring-up table), replayed line by line at boot by
+`console_run_config()`; `save` writes the current state back out as
+that command list. Same information, no separate config parser. On
+the host it lives at `<dir>/picoco.cfg` next to the disk images; on
+the Pico it's Plan B (a small file on the flash-backed filesystem in
+section 7).
+
 ## 6. Becker port protocol
 
 The Becker port convention, per CoCo3FPGA / XRoar and used by
@@ -254,70 +313,74 @@ DriveWire client code:
 | `$FF42` | R | Next byte from server. Always safe to read; if no byte available, implementation‑defined (we return 0xFF). |
 | `$FF42` | W | Byte to server. Pushed into the outgoing queue. |
 
-### 6.1 State
+As built, the filter is not the 5-bit `/SCS` window (A0..A4) described
+in earlier drafts of this section — it is the full 14-bit `bus_table`
+index, since every device shares one 16384-entry table indexed by
+A0..A13. `$FF41` is index `BUS_IDX_BECKER_STATUS` (0x3F41) and `$FF42`
+is `BUS_IDX_BECKER_DATA` (0x3F42); the becker device claims the whole
+`0x3F40..0x3F5F` range for write dispatch but only reacts to 0x3F42.
 
-```c
-struct becker_state {
-    ring_u8 rx_from_server;  // bytes the CoCo will read via $FF42
-    ring_u8 tx_to_server;    // bytes the CoCo has written to $FF42
-};
-```
+### 6.1 Response-table model
 
-### 6.2 Read service (hot path)
+There is no per-device state struct or bus snapshot callback. Instead
+(spec section 5, `firmware/src/bus/bus.h` and `bus/bus.c`):
 
-For Becker reads (`A13 = 1` when `OE_BUS` asserts), core0's IRQ
-handler sees the bus_watcher snapshot and dispatches:
+- `bus_table[16384]` holds the byte core1 drives for any cart-selected
+  read, indexed by A0..A13. Devices call `bus_set_read(idx, byte)` to
+  publish a value; core1 never computes anything, it just serves the
+  table.
+- `read_hooks[]` run on core1 immediately after a read cycle at a
+  registered index completes. The becker device registers hooks on
+  **both** 0x3F41 and 0x3F42 (not just 0x3F42) — see the single-writer
+  rule below.
+- A single-producer/single-consumer write-event ring carries
+  `(idx, data)` pairs from core1 to core0; core0 drains it in its main
+  loop (`device_dispatch_writes()`) and calls the owning device's
+  `on_write`.
 
-```c
-#define SNAP_RW   (1u << 14)
-#define SNAP_A13  (1u << 13)
-#define BECKER_MASK 0x001F   // A0..A4 within the /SCS window
+This lets the bus engine become the PIO+DMA design in section 3.3
+later without any device code changing.
 
-void on_bus_snapshot(uint16_t snap) {
-    if (!(snap & SNAP_A13)) return;       // ROM cycle, handled by DMA chain
-    if (!(snap & SNAP_RW)) return;        // write, handled by SM2
-    switch (snap & BECKER_MASK) {
-    case 0x01:  // $FF41 status
-        pio_sm_put(pio0, SM_DATA,
-                   ring_empty(&rx_from_server) ? 0x00 : 0x02);
-        break;
-    case 0x02:  // $FF42 data
-        pio_sm_put(pio0, SM_DATA,
-                   ring_empty(&rx_from_server) ? 0xFF
-                                               : ring_pop(&rx_from_server));
-        break;
-    default:
-        // $FF40, $FF43..$FF5F — not ours; don't drive data bus.
-        // U10 /OE is hardware-gated so no contention either way; we
-        // just skip the pio_sm_put.
-        break;
-    }
-}
-```
+### 6.2 Becker device (`firmware/src/dev/becker.c`)
 
-Address filter matches exactly the 32‑byte /SCS window (A0..A4), so
-PiCoCo never aliases $FF41 onto $FF43/$FF45/etc. the way legacy
-Becker carts sometimes did.
+Two byte queues, `to_coco` (256 bytes: CoCo-bound) and `from_coco`
+(1024 bytes: CoCo-written), implemented as plain SPSC rings
+(`src/ring.h`). The status and data table entries are always derived
+from `to_coco`'s state: `0x3F41` is 0x00 when empty else 0x02; `0x3F42`
+is 0xFF when empty else the head byte. Reading `0x3F42` pops one byte
+first, then both entries are refreshed; reading `0x3F41` refreshes
+without popping. Writing `0x3F42` pushes onto `from_coco` (counted as
+`overrun` if full); writes to any other address in the claimed range,
+including `0x3F41`, are ignored. Core0-facing stream API:
+`becker_read`, `becker_write`, `becker_rx_avail`, `becker_tx_free`, plus
+a loopback pump (`becker_loopback_pump`) that copies `from_coco` back
+into `to_coco` for the bring-up "loop" mode. Stats: `reads`, `writes`,
+`underrun` (data read with nothing queued), `overrun` (write queue
+full).
 
-A future optimization pre‑computes a 32‑entry lookup table of
-response bytes indexed by A0..A4 and lets a second DMA chain serve
-Becker reads without core0 IRQ, matching the ROM path's pattern.
+### 6.3 Single writer rule
 
-### 6.3 Write service
+Ruled during implementation (spec section 5, Task 7 of the plan): only
+core1 writes the two Becker table entries, from the two read hooks.
+Core0 (`becker_write` and the loopback pump) only pushes into
+`to_coco` and never touches `bus_table[0x3F41]`/`[0x3F42]` directly.
+A 16 KB `rom_load_mem` overwrites those two entries with ROM bytes; the
+next `$FF41` poll restores them, so a ROM load while the CoCo is
+running is briefly visible, which is acceptable since the ROM contents
+change under it anyway. A byte core0 pushes becomes visible to the CoCo on its next
+`$FF41` poll, about one extra poll of latency (roughly 10 µs). Two
+writers touching those entries independently had a race where the
+status byte could read "data ready" while the data byte still held
+0xFF; registering the refresh on both indices and keeping core0 out of
+it removes that race. See `firmware/src/dev/becker.c` for the
+implementation and its `ponytail:` comment documenting this ceiling.
 
-`write_capture` (§4.3) pushes a 16‑bit word per cart write cycle:
-`(A4..A0) << 8 | D7..D0`. ARM pops and filters:
-
-```c
-void on_write_capture(uint16_t word) {
-    uint8_t addr_lo = (word >> 8) & 0x1F;
-    uint8_t data = word & 0xFF;
-    if (addr_lo == 0x02) {          // $FF42 only
-        ring_push(&tx_to_server, data);
-    }
-    // Other addresses in /SCS window are not ours; ignore.
-}
-```
+The DriveWire server's replies do not go straight to `becker_write`,
+either: because a single `dw_feed` call can produce up to 259 bytes for
+one request while `to_coco` only holds 256, `mode_pump()`
+(`firmware/src/console/mode.c`) buffers pending reply bytes and drains
+them into `becker_write` as space frees up across calls, one
+`becker_tx_free()`-sized slice at a time.
 
 ## 7. DriveWire integration
 
@@ -333,38 +396,89 @@ Later: run the DriveWire server *on the Pico itself* (no host
 needed) and back virtual disks with FatFS on an SD card over SPI, or
 with files served from the Pico flash.
 
-### 7.2 Protocol state machine (core1)
+### 7.2 Protocol state machine
 
-DriveWire V3 and V4 are byte‑oriented request/response protocols.
-core1 implements the standard op‑code handlers:
+The DriveWire server (`firmware/src/dw/dw.h`, `dw_server.c`) is a
+push-style, transport-agnostic state machine — not a core1 handler and
+not a CDC proxy. Bytes are pushed in with `dw_feed(s, buf, n, now_ms)`
+from whatever transport is in use (Becker stream on the Pico, a TCP
+socket on the host); replies go out through a `dw_send_fn` callback
+(`becker_write` on the Pico via `mode_pump`, `write(2)` to the socket
+on the host); `dw_tick(s, now_ms)` handles the 250 ms payload timeout.
+The same C code runs unchanged on both platforms, which is what makes
+the host build a faithful test of the wire protocol.
 
-| Op | Meaning | Handler |
-|----|---------|---------|
-| `OP_NOP` (`0x00`)        | No‑op                       | ack |
-| `OP_TIME` (`0x23`)       | Get current time            | respond with 6‑byte time |
-| `OP_INIT` (`0x49`, `0x5a`) | Initialize                  | ack |
-| `OP_READ` (`0x52`)       | Read 256‑byte sector        | pull sector from VFS |
-| `OP_READEX` (`0xd2`)     | Read with checksum          | pull sector + CRC |
-| `OP_WRITE` (`0x57`)      | Write 256‑byte sector       | push sector to VFS |
-| `OP_REWRITE` (`0xd7`)    | Write with retry handshake  | push + ack |
-| `OP_GETSTAT` / `OP_SETSTAT` | Status queries           | stubs |
-| `OP_RESET1/2/3`          | Protocol reset              | re‑sync |
+Opcode coverage, byte-for-byte against pyDriveWire (`dwconstants.py`,
+`dwserver.py`):
 
-In MVP the VFS just proxies every op to the host over CDC and
-forwards the response — so all file handling lives in the
-host‑side pyDriveWire. In v2 the Pico can host the VFS itself.
+- **Implemented with full request/response semantics:** READ, REREAD,
+  READEX, REREADEX (checksum handshake with a `DW_READEX_CKSUM` state),
+  WRITE, REWRITE, TIME, INIT, DWINIT, NOP, RESET1/2/3, TERM.
+- **Consumed as stubs** (payload read and discarded, correct reply
+  shape sent where pyDriveWire sends one, no real behaviour): SERREAD,
+  SERGETSTAT, SERINIT, SERTERM, SERWRITE, SERWRITEM, SERREADM,
+  SERSETSTAT (including the 26-byte COMST extension), FASTWRITE,
+  PRINT, PRINTFLUSH, NAMEOBJ_MOUNT/CREATE. These exist so a real CoCo
+  client doesn't desync waiting for bytes that never come; they carry
+  no virtual-serial or named-object behaviour yet (`// ponytail:` in
+  `dw_server.c` names that ceiling — real replies wait on networking).
+- Unknown opcodes are counted (`stats.unknown_op`) and otherwise
+  ignored; a stalled payload wait past 250 ms resets to `DW_IDLE` and
+  counts `stats.timeouts`, matching pyDriveWire.
 
-### 7.3 pyDriveWire port path
+HDB-DOS mode (`dw->hdbdos`, on by default) maps `drive = lsn / 630`,
+`lsn %= 630` for READ/READEX/WRITE and ignores the drive byte, per
+pyDriveWire. `dw hdbdos off` uses the drive byte directly for OS-9.
 
-pyDriveWire is pure Python, modular by protocol version. A realistic
-port path:
+Disk image formats (`dw_disk.c`): VDK, JVC, OS9 and raw are
+autodetected in that order from the file header; all read/write goes
+through `dw_store_ops` (below), so LSN-to-byte-offset math is the same
+regardless of what's backing the file.
 
-1. **Phase 1** — Pico is a dumb Becker↔CDC bridge. Host runs
-   pyDriveWire unchanged; just point it at the Pico's CDC port.
-2. **Phase 2** — port pyDriveWire's `pyDwProtocolHandler` to C,
-   running on core1. Transport is still CDC (host provides files).
-3. **Phase 3** — add SPI SD card + FatFS, move VFS to Pico, remove
-   host dependency.
+Storage (`dw_store.h`) is a small vtable — `open/read/write/size/
+sync/close` — with a POSIX implementation (`dw_store_posix.c`, used by
+both `ctest` and `picoco-host`) today and a FatFS implementation
+(`dw_store_fatfs.c`) as Plan B for the Pico's flash partition.
+
+### 7.3 Host build and test tools
+
+The host build (`cmake -B build-host -DPICOCO_HOST=ON firmware`)
+compiles the entire stack above plus:
+
+- `picoco-host` (`firmware/host/picoco_host.c`): a standalone
+  DriveWire server listening on TCP port 65504 (the standard Becker
+  port), backed by `dw_store_posix`, with a stdin console
+  (`console_feed`) and a `--replay FILE` mode that feeds a captured
+  session back through `dw_feed` with no socket at all.
+- `firmware/tools/dwtest.py`: a stdlib-only Python client that mounts
+  images, compares full-image READEX against the file on disk, checks
+  READ checksums, forces bad-checksum READEX/WRITE (expects `E_CRC`),
+  checks an unmounted-drive read (`E_NOTRDY`), round-trips a
+  scratch-drive WRITE/READEX, and checks TIME.
+- A documented manual check: XRoar (`-cart becker`) pointed at
+  `picoco-host`, booting a real HDB-DOS DriveWire ROM and running
+  `DIR`/`LOADM` against a mounted image.
+
+See `firmware/README.md` for exact commands. This is the "host first"
+principle from spec section 9: everything except GPIO access is
+verified on the Mac before it ever touches hardware.
+
+The same build carries the full debuggability set from the design
+spec (`docs/superpowers/specs/2026-09-07-firmware-design.md` section
+9), all exercised by the host tests before Plan B puts them on real
+hardware: the always-on bus trace ring (section 6.1's `bus.c`, frozen
+for a consistent `trace dump`); per-module stats structs (`bus_stats`,
+`becker_stats`, `dw_stats`) printed by the console's `status`/`dw
+stats`; `dw capture on <file>` / `off`, which appends one
+length-prefixed chunk per `dw_feed`/send call — `dir` (0 rx, 1 tx),
+`len_lo`, `len_hi`, then that many bytes — to a file via `dw_store`;
+`picoco-host --replay FILE` and the `firmware/tests/fixtures/*.cap`
+regression captures, which feed only the dir-0 chunks back through
+`dw_feed`; `firmware/tools/tracedump.py`, which decodes `trace dump`
+output into symbolic addresses and groups consecutive `$FF41`/`$FF42`
+cycles into decoded DriveWire transactions; and the ring-buffered
+leveled logger (`firmware/src/log.c`) that is never called from the
+core1-equivalent hot paths.
 
 ## 8. Timing analysis
 
@@ -435,7 +549,14 @@ That's the safer failure mode.
 
 ## 9. Bring‑up plan (firmware side)
 
-Each milestone is a firmware git tag.
+Milestones `fw-0.1` onward are driven from the console commands listed
+in spec section 8 (`help`, `smoke`, `halt on/off`, `trace dump`, `rom
+pattern/load`, `becker loop/bridge/native`, `dw mount`, etc.), not from
+bespoke test firmware per milestone. The host-side stack each of these
+commands exercises — bus tables, devices, DriveWire server, console —
+is already verified by `ctest`'s `test_stack`, `test_replay`, and
+`firmware/tools/dwtest.py` before any of it runs on a Pico. Each
+milestone is a firmware git tag.
 
 | Tag | Description |
 |-----|-------------|
@@ -477,6 +598,12 @@ These are not MVP blockers but tracked as next‑board items:
 
 - Keep the Pico in the cart for normal dev; flash over SWD with
   picoprobe so you don't have to unplug.
+- USB exposes two CDC interfaces (Plan B, `usb_descriptors.c`): CDC0
+  carries raw DriveWire bytes in bridge mode (the host's DriveWire
+  server talks to CDC0 as if it were a serial cable); CDC1 is the
+  console (`console_feed`/`console_exec`, section 9's commands and the
+  boot-time `picoco.cfg` replay). No in-band escape sequences share a
+  channel between the two.
 - `core0` keeps a stream of bus‑snapshot lines open on USB CDC for
   `picocom /dev/ttyACM1` debugging.
 - Add a `#define BUS_TRACE 1` gate around the diag ring so it can be
