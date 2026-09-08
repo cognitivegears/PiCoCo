@@ -21,7 +21,7 @@ void crash_init(void) {
 const crash_rec_t *crash_last(void) { return have_last ? &last : NULL; }
 void crash_clear(void) { have_last = false; }
 
-static void __attribute__((noreturn)) record_and_reboot(uint32_t reason, uint32_t pc, uint32_t lr) {
+static void __attribute__((noreturn)) __not_in_flash_func(record_and_reboot)(uint32_t reason, uint32_t pc, uint32_t lr) {
     rec.magic = CRASH_MAGIC;
     rec.reason = reason;
     rec.pc = pc;
@@ -33,7 +33,7 @@ static void __attribute__((noreturn)) record_and_reboot(uint32_t reason, uint32_
     for (;;) { }
 }
 
-void __attribute__((naked)) isr_hardfault(void) {
+void __attribute__((naked)) __not_in_flash_func(isr_hardfault)(void) {
     __asm volatile(
         "tst lr, #4\n"
         "ite eq\n"
@@ -45,14 +45,14 @@ void __attribute__((naked)) isr_hardfault(void) {
 
 /* not inlined: hardfault_c must be a real callable symbol for the naked
  * isr_hardfault's "b hardfault_c" to branch to. */
-void __attribute__((noinline)) hardfault_c(uint32_t *frame) {
+void __attribute__((noinline)) __not_in_flash_func(hardfault_c)(uint32_t *frame) {
     record_and_reboot(CRASH_REASON_HARDFAULT, frame[6], frame[5]);
 }
 
 /* Installed as PICO_PANIC_FUNCTION: replaces the SDK's default panic() body
  * (which prints and breakpoints) so an assert/panic also survives as a
  * crash record instead of hanging with the debugger detached. */
-void picoco_panic(const char *fmt, ...) {
+void __attribute__((noreturn)) picoco_panic(const char *fmt, ...) {
     (void)fmt;
     record_and_reboot(CRASH_REASON_PANIC, (uint32_t)__builtin_return_address(0), 0);
 }

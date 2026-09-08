@@ -97,6 +97,7 @@ void plat_smoke(void) {
 
 void plat_crash_test(void) { /* ponytail: no hardfault path on host, no-op */ }
 const char *plat_last_reset(void) { return "host"; }
+void plat_reset_latch(void) { }
 
 size_t plat_bridge_read(uint8_t *buf, size_t n) { (void)buf; (void)n; return 0; }
 size_t plat_bridge_write(const uint8_t *buf, size_t n) { (void)buf; (void)n; return 0; }

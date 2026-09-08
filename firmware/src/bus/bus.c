@@ -84,7 +84,7 @@ static BUS_HOT void trace_record(uint16_t idx, uint8_t rw, uint8_t data, uint32_
 }
 
 BUS_HOT void bus_on_read_done(uint16_t idx, uint32_t t_us) {
-    uint8_t data = bus_table[idx];
+    uint8_t data = bus_table[idx];   /* what the table holds, i.e. what would have been driven, even with bus drive off */
     for (int i = 0; i < hook_count; i++) {
         if (hooks[i].idx == idx) hooks[i].fn();
     }

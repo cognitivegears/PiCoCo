@@ -247,7 +247,9 @@ TEST(bus_drive_cmd) {
     ASSERT_EQ(console_exec("bus"), 0);
     ASSERT(strstr(out, "bus drive on"));
     ASSERT_EQ(console_exec("save"), 0);
-    ASSERT(strstr(out, "bus drive on"));
+    bus_drive_set(false);
+    ASSERT(console_run_config() > 0);
+    ASSERT(bus_drive_get());
     ASSERT_EQ(console_exec("bus drive sideways"), -1);
     ASSERT_EQ(console_exec("bus drive off"), 0);
     ASSERT(!bus_drive_get());

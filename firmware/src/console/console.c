@@ -10,6 +10,9 @@
 #include <stdlib.h>
 #include <string.h>
 #include <strings.h>
+#ifndef PICOCO_HOST
+#include "pico/platform/panic.h"
+#endif
 
 #ifndef PICOCO_VERSION
 #define PICOCO_VERSION "dev"
@@ -184,10 +187,18 @@ static int cmd_bus(int argc, char **argv) {
     return cerr("usage: bus drive on|off");
 }
 
-static int cmd_crash(void) {
+/* "crash panic" is a hidden subcommand (not in help): exercises the
+ * PICO_PANIC_FUNCTION path via panic() instead of the hardfault path. */
+static int cmd_crash(int argc, char **argv) {
 #ifdef PICOCO_HOST
+    (void)argc; (void)argv;
     return cerr("crash test is Pico only");
 #else
+    if (argc >= 2 && strcasecmp(argv[1], "panic") == 0) {
+        outf("crashing now\n");
+        panic("console");
+        return 0;   /* unreachable: panic() never returns */
+    }
     outf("crashing now\n");
     plat_crash_test();
     return 0;   /* unreachable on Pico: plat_crash_test() never returns */
@@ -462,7 +473,7 @@ static int dispatch(int argc, char **argv) {
         return 0;
     }
     if (strcasecmp(v, "bus") == 0) return cmd_bus(argc, argv);
-    if (strcasecmp(v, "crash") == 0) return cmd_crash();
+    if (strcasecmp(v, "crash") == 0) return cmd_crash(argc, argv);
     if (strcasecmp(v, "halt") == 0) {
         if (argc < 2) return cerr("usage: halt on|off");
         if (strcasecmp(argv[1], "on") == 0) { plat_halt(true); return 0; }

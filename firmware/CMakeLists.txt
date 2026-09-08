@@ -37,6 +37,7 @@ if(NOT PICOCO_HOST)
     PICO_FLASH_ASSUME_CORE1_SAFE=1
     PICO_STACK_SIZE=0x1000
     PICO_PANIC_FUNCTION=picoco_panic
+    PICO_PANIC_FUNCTION_DOES_NOT_RETURN=1
     CFG_TUSB_CONFIG_FILE="tusb_config.h")
   target_link_libraries(picoco
     pico_stdlib pico_unique_id pico_multicore

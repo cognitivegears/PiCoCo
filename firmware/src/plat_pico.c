@@ -13,6 +13,14 @@
 uint32_t plat_now_us(void) { return time_us_32(); }
 uint32_t plat_now_ms(void) { return to_ms_since_boot(get_absolute_time()); }
 
+/* watchdog_enable() unconditionally re-stamps the scratch register that
+ * watchdog_enable_caused_reboot() reads, and main.c calls watchdog_enable()
+ * on every boot before any console command runs - so a live call from
+ * plat_last_reset() would always read true after any non-power-on reset.
+ * Latch it once, right after boot, before watchdog_enable() clobbers it. */
+static bool s_watchdog_enable_caused_reboot;
+void plat_reset_latch(void) { s_watchdog_enable_caused_reboot = watchdog_enable_caused_reboot(); }
+
 void plat_reboot(bool bootsel) {
     if (bootsel) reset_usb_boot(0, 0);
     watchdog_reboot(0, 0, 0);
@@ -22,16 +30,19 @@ void plat_reboot(bool bootsel) {
 void plat_halt(bool assert_halt) { gpio_put(PIN_HALT, assert_halt); }   /* HIGH = Q2 on = /HALT low */
 
 void plat_smoke(void) {
-    /* Toggle only GP0..GP22 (D0..D7, A0..A13, R/W) at 10 Hz for 5 s. GP26..28
-       (OE_BUS in, HALT, E) are left alone: core1 polls OE_BUS continuously
-       once launched, and driving it low here would fake a cart cycle. The
-       console refuses this command outright while bus drive is on. */
+    /* Toggle only GP0..GP7 (D0..D7) and the LED at 10 Hz for 5 s. A0..A13
+       and R/W are 74LVC245 outputs on the real board (driven from the CoCo
+       side); driving them from the Pico would contend with those buffers.
+       GP26..28 (OE_BUS in, HALT, E) are left alone too: core1 polls OE_BUS
+       continuously once launched, and driving it low here would fake a
+       cart cycle. The console refuses this command outright while bus
+       drive is on. */
     for (int t = 0; t < 50; t++) {
-        for (int g = 0; g <= 22; g++) { gpio_set_dir(g, GPIO_OUT); gpio_put(g, t & 1); }
+        for (int g = 0; g <= 7; g++) { gpio_set_dir(g, GPIO_OUT); gpio_put(g, t & 1); }
         gpio_put(PIN_LED, t & 1);   /* the main loop's own blink is stalled while smoke runs */
         sleep_ms(50); tud_task();
     }
-    for (int g = 0; g <= 22; g++) gpio_set_dir(g, GPIO_IN);
+    for (int g = 0; g <= 7; g++) gpio_set_dir(g, GPIO_IN);
 }
 
 void plat_crash_test(void) {
@@ -48,7 +59,13 @@ const char *plat_last_reset(void) {
                  (unsigned)c->mode, (unsigned)c->uptime_ms);
         return buf;
     }
-    return watchdog_caused_reboot() ? "watchdog" : "power-on";
+    /* s_watchdog_enable_caused_reboot (latched pre-boot, see plat_reset_latch)
+     * is true only for a real timeout after watchdog_enable(); a commanded
+     * watchdog_reboot() (our "reboot" console command, and the crash path
+     * above before it stamps a record) clears that marker, so it falls
+     * through to watchdog_caused_reboot() alone here and reads as "reboot". */
+    if (s_watchdog_enable_caused_reboot) return "watchdog";
+    return watchdog_caused_reboot() ? "reboot" : "power-on";
 }
 
 size_t plat_bridge_read(uint8_t *buf, size_t n) { return tud_cdc_n_connected(0) ? tud_cdc_n_read(0, buf, n) : 0; }

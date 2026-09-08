@@ -61,6 +61,7 @@ int main(void) {
     console_init(console_out, NULL, &g_dw, &g_store);
     crash_init();
     crash_mode_hook = mode_get_u32;
+    plat_reset_latch();   /* before watchdog_enable() below clobbers the marker it reads */
     watchdog_enable(8000, true);
     LOG_I(LOG_M_MAIN, "boot");
     if (fs_flash_mount() == 0) {
@@ -78,8 +79,12 @@ int main(void) {
         uint32_t now = plat_now_ms();
         mode_pump(&g_dw, now);
         if (tud_cdc_n_available(1)) { uint8_t b[64]; uint32_t n = tud_cdc_n_read(1, b, sizeof b); console_feed(b, n); }
-        char lb[256]; size_t ln = log_drain(lb, sizeof lb - 1);
-        if (ln) { lb[ln] = 0; console_out(NULL, lb); }
+        if (tud_cdc_n_connected(1)) {
+            /* Only drain (i.e. pop) log lines with a host attached, so boot
+             * lines survive a reboot's reconnect gap for "log dump". */
+            char lb[256]; size_t ln = log_drain(lb, sizeof lb - 1);
+            if (ln) { lb[ln] = 0; console_out(NULL, lb); }
+        }
         if (fs_flash_exporting()) {
             gpio_put(PIN_LED, 1);   /* solid while the USB drive is exported */
         } else {

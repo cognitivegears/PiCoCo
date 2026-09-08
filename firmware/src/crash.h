@@ -11,8 +11,8 @@ typedef struct { uint32_t magic, reason, pc, lr, cfsr, mode, uptime_ms; } crash_
 #define CRASH_REASON_PANIC     2u
 
 /* Set by main.c to a wrapper around mode_get(); called from the hardfault/
- * panic path with interrupts already off, so it must not touch flash, log,
- * or any plat_* call. NULL is handled (mode field is left 0). */
+ * panic path with interrupts already off, so it must not block, log, or
+ * write flash. NULL is handled (mode field is left 0). */
 extern uint32_t (*crash_mode_hook)(void);
 
 void crash_init(void);                  /* validates the record left by a previous run, clears it */

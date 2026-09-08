@@ -17,7 +17,9 @@ void plat_reboot(bool bootsel);
 void plat_halt(bool assert_halt);
 void plat_smoke(void);                        /* GPIO toggle test; host: no-op */
 void plat_crash_test(void);                   /* deliberately fault (Pico); no-op (host) */
-const char *plat_last_reset(void);            /* "power-on" | "watchdog" | "hardfault pc=0x... ..." | "panic pc=0x... ..." | "host" */
+const char *plat_last_reset(void);            /* "power-on" | "watchdog" | "reboot" | "hardfault pc=0x... ..." | "panic pc=0x... ..." | "host" */
+void plat_reset_latch(void);                  /* Pico: call once, before watchdog_enable() re-arms and clobbers the
+                                                  marker plat_last_reset() needs; host: no-op */
 size_t plat_bridge_read(uint8_t *buf, size_t n);   /* CDC0 in bridge mode; host: 0 */
 size_t plat_bridge_write(const uint8_t *buf, size_t n);
 const char *plat_fs_dir(void);                /* host only: directory backing the "filesystem" */
