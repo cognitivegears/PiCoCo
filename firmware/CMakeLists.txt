@@ -21,10 +21,14 @@ if(NOT PICOCO_HOST)
     set(CMAKE_BUILD_TYPE Release)     # -O2: keeps ring.h inlines inline
   endif()
   pico_sdk_init()
-  add_executable(picoco ${CORE_SRC} src/plat_pico.c src/usb/usb_descriptors.c src/main.c)
+  set(FATFS_SRC third_party/fatfs/ff.c third_party/fatfs/ffunicode.c)
+  add_executable(picoco ${CORE_SRC} ${FATFS_SRC}
+    src/fs_flash.c src/dw/dw_store_fatfs.c
+    src/plat_pico.c src/usb/usb_descriptors.c src/main.c)
   set(PICOCO_BOARD pico2_breadboard CACHE STRING "")
-  target_include_directories(picoco PRIVATE src src/usb src/dw src/bus src/dev src/console boards)
+  target_include_directories(picoco PRIVATE src src/usb src/dw src/bus src/dev src/console boards third_party/fatfs)
   target_compile_options(picoco PRIVATE -Wall -Wextra)
+  set_source_files_properties(${FATFS_SRC} PROPERTIES COMPILE_OPTIONS -w)
   target_compile_definitions(picoco PRIVATE
     PICOCO_BOARD_H="${PICOCO_BOARD}.h"
     PICOCO_LOG_LEVEL=3
@@ -33,7 +37,7 @@ if(NOT PICOCO_HOST)
     CFG_TUSB_CONFIG_FILE="tusb_config.h")
   target_link_libraries(picoco
     pico_stdlib pico_unique_id pico_multicore
-    hardware_flash hardware_watchdog
+    hardware_flash hardware_sync hardware_watchdog
     tinyusb_device tinyusb_board)
   pico_add_extra_outputs(picoco)
   return()

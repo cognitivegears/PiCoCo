@@ -115,3 +115,30 @@ firmware/tools/flash.sh build-pico/picoco.uf2
 
 The console appears as the second of two `/dev/tty.usbmodem*` ports; use
 `screen /dev/tty.usbmodemXXXX2` or `picocom` to talk to it.
+
+### Console checks
+
+`firmware/tools/pconsole.py` is a stdlib-only serial console driver: it opens
+the console port raw at 115200, sends each command, and prints replies until
+a line reading `ok` or starting with `err` (or a 6 s timeout).
+
+```
+python3 firmware/tools/pconsole.py /dev/tty.usbmodemXXXX2 \
+    'fs format' 'fs ls' 'dw selftest'
+```
+
+### Filesystem
+
+The on-flash FAT filesystem (`fs_flash.c`/`dw_store_fatfs.c`) lives at
+`0x180000..0x3FFFFF` of the Pico 2's 4 MB flash, formatted FAT16 with 4 KB
+clusters on first boot. `picoco.cfg` at the root holds the saved console
+config (see `dw save`/`console_run_config`); DriveWire disk images and `dw
+capture` recordings also live at the root.
+
+## Licensing
+
+Firmware code is under the top-level project license. Vendored third-party
+code: `third_party/fatfs/` is FatFs R0.15a by ChaN, under the FatFs license
+(BSD-style; see `third_party/fatfs/LICENSE.txt`). The Pico build also links
+the Raspberry Pi Pico SDK and TinyUSB, each under their own upstream
+licenses (BSD-3-Clause and MIT respectively).

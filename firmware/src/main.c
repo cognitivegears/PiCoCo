@@ -13,33 +13,10 @@
 #include "console.h"
 #include "mode.h"
 #include "plat.h"
+#include "fs_flash.h"
 
 static dw_server g_dw;
 static dw_store  g_store;
-
-/* ponytail: no storage backend yet (Task 3 replaces this with FatFS). Every
- * op fails cleanly instead of leaving g_store->ops NULL, so dw_disk_open,
- * rom_load_file and the console's capture/rom-load paths (which call
- * store->ops->* unguarded) get an error return rather than a NULL deref. */
-static int none_open(void *ctx, const char *name, bool write, dw_file *f) {
-    (void)ctx; (void)name; (void)write; (void)f; return -1;
-}
-static int none_create(void *ctx, const char *name, dw_file *f) {
-    (void)ctx; (void)name; (void)f; return -1;
-}
-static int none_read(dw_file *f, uint32_t off, void *buf, uint32_t n) {
-    (void)f; (void)off; (void)buf; (void)n; return -1;
-}
-static int none_write(dw_file *f, uint32_t off, const void *buf, uint32_t n) {
-    (void)f; (void)off; (void)buf; (void)n; return -1;
-}
-static int none_size(dw_file *f, uint32_t *out) { (void)f; (void)out; return -1; }
-static int none_sync(dw_file *f) { (void)f; return -1; }
-static void none_close(dw_file *f) { (void)f; }
-static const dw_store_ops none_ops = {
-    .open = none_open, .create = none_create, .read = none_read,
-    .write = none_write, .size = none_size, .sync = none_sync, .close = none_close,
-};
 
 static void console_out(void *ctx, const char *s) {
     (void)ctx;
@@ -75,13 +52,18 @@ int main(void) {
     tusb_init();
     log_init();
     bus_init(); device_reset(); rom_init(); becker_init(); device_init_all();
-    g_store.ops = &none_ops;
-    g_store.ctx = NULL;
+    dw_store_fatfs_init(&g_store);
     dw_init(&g_dw, &g_store, mode_dw_send, NULL);
     console_init(console_out, NULL, &g_dw, &g_store);
     watchdog_enable(8000, true);
     LOG_I(LOG_M_MAIN, "boot");
-    /* Task 3: mount fs, console_run_config().  Task 5: crash_report(), core1 launch, halt release. */
+    if (fs_flash_mount() == 0) {
+        int n = console_run_config();
+        LOG_I(LOG_M_MAIN, "fs ok, config lines %d", n);
+    } else {
+        LOG_E(LOG_M_FS, "fs mount failed");
+    }
+    /* Task 5: crash_report(), core1 launch, halt release. */
     uint32_t last_blink = 0; bool led = false;
     for (;;) {
         tud_task();

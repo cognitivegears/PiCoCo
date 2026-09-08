@@ -4,6 +4,8 @@
 #include "hardware/watchdog.h"
 #include "tusb.h"
 #include PICOCO_BOARD_H
+#include "fs_flash.h"
+#include "ff.h"
 
 uint32_t plat_now_us(void) { return time_us_32(); }
 uint32_t plat_now_ms(void) { return to_ms_since_boot(get_absolute_time()); }
@@ -42,12 +44,39 @@ size_t plat_bridge_write(const uint8_t *buf, size_t n) {
     return w;
 }
 
-/* Filesystem and config: Task 3. Export: Task 4. */
-int plat_fs_list(void (*cb)(const char *, uint32_t, void *), void *ctx) { (void)cb; (void)ctx; return -1; }
-int plat_fs_remove(const char *n) { (void)n; return -1; }
-int plat_fs_format(void) { return -1; }
+/* Filesystem and config: FatFS on the flash partition mounted by fs_flash.c.
+ * Export (USB MSC): Task 4. */
+int plat_fs_list(void (*cb)(const char *, uint32_t, void *), void *ctx) {
+    DIR dir;
+    FILINFO fno;
+    if (f_opendir(&dir, "/") != FR_OK) return -1;
+    for (;;) {
+        if (f_readdir(&dir, &fno) != FR_OK) { f_closedir(&dir); return -1; }
+        if (fno.fname[0] == '\0') break;   /* end of directory */
+        if ((fno.fattrib & AM_DIR) || fno.fname[0] == '.') continue;
+        cb(fno.fname, (uint32_t)fno.fsize, ctx);
+    }
+    f_closedir(&dir);
+    return 0;
+}
+int plat_fs_remove(const char *n) { return f_unlink(n) == FR_OK ? 0 : -1; }
+int plat_fs_format(void) { return fs_flash_format(); }
 int plat_fs_export(bool on) { (void)on; return -1; }
-int plat_cfg_read(char *b, size_t m) { (void)b; (void)m; return -1; }
-int plat_cfg_write(const char *b, size_t n) { (void)b; (void)n; return -1; }
+int plat_cfg_read(char *b, size_t m) {
+    static FIL f; /* static: too big for the 2 KB core0 stack */
+    if (f_open(&f, "picoco.cfg", FA_READ) != FR_OK) return -1;
+    UINT n = 0;
+    FRESULT r = f_read(&f, b, (UINT)m, &n);
+    f_close(&f);
+    return r == FR_OK ? (int)n : -1;
+}
+int plat_cfg_write(const char *b, size_t n) {
+    static FIL f; /* static: too big for the 2 KB core0 stack */
+    if (f_open(&f, "picoco.cfg", FA_CREATE_ALWAYS | FA_WRITE) != FR_OK) return -1;
+    UINT written = 0;
+    FRESULT r = f_write(&f, b, (UINT)n, &written);
+    f_close(&f);
+    return (r == FR_OK && written == n) ? 0 : -1;
+}
 const char *plat_fs_dir(void) { return ""; }
 void plat_host_set_dir(const char *d) { (void)d; }

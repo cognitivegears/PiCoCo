@@ -70,6 +70,104 @@ static void capture_close(void) {
     cap_open = false;
 }
 
+/* "dw selftest": drives dw_feed() directly against the live store on drive 3
+ * (scratch), so it exercises READ/WRITE/READEX end to end with no CoCo and
+ * no USB host attached. ponytail: clobbers whatever is mounted on drive 3;
+ * fine for a diagnostic command run standalone. */
+static uint8_t st_buf[300];
+static size_t st_len;
+static void selftest_send(void *ctx, const uint8_t *buf, size_t n) {
+    (void)ctx;
+    size_t cp = n > sizeof(st_buf) ? sizeof(st_buf) : n;
+    memcpy(st_buf, buf, cp);
+    st_len = cp;
+}
+
+static int cmd_dw_selftest(void) {
+    if (!g_store->ops->create) { outf("selftest FAIL create\n"); return -1; }
+
+    dw_file f;
+    if (g_store->ops->create(g_store->ctx, "selftest.dsk", &f) != 0) {
+        outf("selftest FAIL create\n");
+        return -1;
+    }
+    uint8_t sec[256];
+    bool write_ok = true;
+    for (int n = 0; n < 10 && write_ok; n++) {
+        memset(sec, 0, sizeof(sec));
+        sec[0] = (uint8_t)n;
+        if (g_store->ops->write(&f, (uint32_t)n * 256, sec, 256) != 256) write_ok = false;
+    }
+    g_store->ops->sync(&f);
+    g_store->ops->close(&f);
+    if (!write_ok) { outf("selftest FAIL create\n"); return -1; }
+
+    if (dw_mount(g_dw, 3, "selftest.dsk", false) != 0) {
+        outf("selftest FAIL mount\n");
+        return -1;
+    }
+
+    dw_send_fn old_send = g_dw->send;
+    void *old_send_ctx = g_dw->send_ctx;
+    bool old_hdbdos = g_dw->hdbdos;
+    g_dw->send = selftest_send;
+    g_dw->send_ctx = NULL;
+    g_dw->hdbdos = false; /* direct drive/lsn addressing, not the HDB-DOS split */
+
+    uint32_t now = plat_now_ms();
+    const char *fail = NULL;
+
+    /* READ drive 3 LSN 5: expect rc 0, data[0] == 5. */
+    uint8_t read_req[5] = { DW_OP_READ, 3, 0, 0, 5 };
+    st_len = 0;
+    dw_feed(g_dw, read_req, sizeof(read_req), now);
+    if (st_len != 259 || st_buf[0] != DW_E_OK || st_buf[3] != 5) fail = "read";
+
+    /* WRITE drive 3 LSN 7 with a 0x5A fill: expect rc 0. */
+    if (!fail) {
+        uint8_t data[256];
+        memset(data, 0x5A, sizeof(data));
+        uint16_t sum = dw_checksum(data, sizeof(data));
+        uint8_t write_req[1 + 4 + 256 + 2];
+        write_req[0] = DW_OP_WRITE;
+        write_req[1] = 3; write_req[2] = 0; write_req[3] = 0; write_req[4] = 7;
+        memcpy(write_req + 5, data, sizeof(data));
+        write_req[261] = (uint8_t)(sum >> 8);
+        write_req[262] = (uint8_t)sum;
+        st_len = 0;
+        dw_feed(g_dw, write_req, sizeof(write_req), now);
+        if (st_len != 1 || st_buf[0] != DW_E_OK) fail = "write";
+    }
+
+    /* READEX drive 3 LSN 7 + client checksum: expect data all 0x5A, then rc 0. */
+    if (!fail) {
+        uint8_t readex_req[5] = { DW_OP_READEX, 3, 0, 0, 7 };
+        st_len = 0;
+        dw_feed(g_dw, readex_req, sizeof(readex_req), now);
+        bool data_ok = st_len == 256;
+        for (size_t i = 0; data_ok && i < 256; i++) if (st_buf[i] != 0x5A) data_ok = false;
+        if (!data_ok) {
+            fail = "readex";
+        } else {
+            uint16_t sum = dw_checksum(st_buf, 256);
+            uint8_t cksum[2] = { (uint8_t)(sum >> 8), (uint8_t)sum };
+            st_len = 0;
+            dw_feed(g_dw, cksum, sizeof(cksum), now);
+            if (st_len != 1 || st_buf[0] != DW_E_OK) fail = "readex";
+        }
+    }
+
+    g_dw->send = old_send;
+    g_dw->send_ctx = old_send_ctx;
+    g_dw->hdbdos = old_hdbdos;
+    dw_eject(g_dw, 3);
+    plat_fs_remove("selftest.dsk");
+
+    if (fail) { outf("selftest FAIL %s\n", fail); return -1; }
+    outf("selftest ok\n");
+    return 0;
+}
+
 static int cmd_status(void) {
     outf("mode %s\n", mode_name(mode_get()));
     outf("mode reply_overflow %u\n", mode_stats.reply_overflow);
@@ -143,7 +241,8 @@ static int cmd_becker(int argc, char **argv) {
 }
 
 static int cmd_dw(int argc, char **argv) {
-    if (argc < 2) return cerr("usage: dw mount|eject|hdbdos|stats|capture ...");
+    if (argc < 2) return cerr("usage: dw mount|eject|hdbdos|stats|capture|selftest ...");
+    if (strcasecmp(argv[1], "selftest") == 0) return cmd_dw_selftest();
     if (strcasecmp(argv[1], "mount") == 0) {
         if (argc < 4) return cerr("usage: dw mount <n> <file> [ro]");
         int n = atoi(argv[2]);
@@ -194,7 +293,7 @@ static int cmd_dw(int argc, char **argv) {
         }
         return cerr("usage: dw capture on <file>|off");
     }
-    return cerr("usage: dw mount|eject|hdbdos|stats|capture ...");
+    return cerr("usage: dw mount|eject|hdbdos|stats|capture|selftest ...");
 }
 
 static int cmd_fs(int argc, char **argv) {

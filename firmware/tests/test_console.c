@@ -233,6 +233,12 @@ TEST(native_pump_backpressure) {
     for (int k = 0; k < 12; k++) ASSERT_EQ(popped[259 * k], 0); /* rc of reply k */
 }
 
+TEST(selftest_passes) {
+    setup();
+    ASSERT_EQ(console_exec("dw selftest"), 0);
+    ASSERT(strstr(out, "selftest ok"));
+}
+
 int main(void) {
     char tmpl[300];
     const char *tmpdir = getenv("TMPDIR");
@@ -255,5 +261,6 @@ int main(void) {
     RUN(capture_writes_file);
     RUN(native_pump_end_to_end);
     RUN(native_pump_backpressure);
+    RUN(selftest_passes);
     TEST_MAIN_END
 }

@@ -25,3 +25,7 @@ typedef struct { const dw_store_ops *ops; void *ctx; } dw_store;
 
 /* Names resolve to dir/name; rejects names containing '/'. */
 void dw_store_posix_init(dw_store *s, const char *dir);
+
+/* Pico only (links against FatFS). Names are FAT paths at the root; rejects
+ * names containing '/'. */
+void dw_store_fatfs_init(dw_store *s);
