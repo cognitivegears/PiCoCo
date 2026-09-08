@@ -49,6 +49,7 @@ static void replay_one(const char *path) {
     FILE *f = fopen(path, "rb");
     ASSERT(f != NULL);
 
+    mk_raw_dsk(); /* fresh per fixture: a WRITE fixture must not leak into the next */
     out_len = 0;
     dw_store store;
     dw_store_posix_init(&store, g_dir);
@@ -63,6 +64,7 @@ static void replay_one(const char *path) {
     uint8_t hdr[3];
     while (fread(hdr, 1, sizeof(hdr), f) == sizeof(hdr)) {
         int dir = hdr[0];
+        ASSERT(dir == 0 || dir == 1);
         uint16_t len = (uint16_t)(hdr[1] | (hdr[2] << 8));
         uint8_t chunk[264];
         ASSERT(len <= sizeof(chunk));
@@ -110,7 +112,6 @@ int main(void) {
     snprintf(tmpl, sizeof(tmpl), "%s/replayXXXXXX", tmpdir);
     char *dir = mkdtemp(tmpl);
     snprintf(g_dir, sizeof(g_dir), "%s", dir);
-    mk_raw_dsk();
 
     RUN(all_fixtures_replay_identically);
     TEST_MAIN_END

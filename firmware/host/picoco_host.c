@@ -94,6 +94,11 @@ static int run_replay(dw_server *srv, const char *path) {
             return 1;
         }
         int dir = hdr[0];
+        if (dir != 0 && dir != 1) {
+            fprintf(stderr, "picoco-host: --replay %s: bad dir byte\n", path);
+            fclose(f);
+            return 1;
+        }
         uint16_t len = (uint16_t)(hdr[1] | (hdr[2] << 8));
         if (len > sizeof(chunk)) {
             fprintf(stderr, "picoco-host: --replay %s: chunk too large (%u)\n", path, (unsigned)len);
