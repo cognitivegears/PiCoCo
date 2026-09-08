@@ -658,7 +658,7 @@ TEST(save_and_run_config_round_trip) { console_exec("becker native"); console_ex
     ASSERT(console_run_config() > 0); ASSERT_EQ(mode_get(), MODE_NATIVE); ASSERT(dw.drives[1].mounted && dw.drives[1].read_only); ASSERT(!dw.hdbdos); ASSERT_EQ(log_level(LOG_M_DW), LOG_DEBUG); }
 TEST(config_bad_line_continues) { plat_cfg_write("frob\nbecker loop\n", ...); console_run_config(); ASSERT_EQ(mode_get(), MODE_LOOP); }
 TEST(capture_writes_file) { console_exec("dw capture on cap.bin"); mode_set(MODE_NATIVE); bus_on_write(0x3F42, 0x5A, 0); bus_on_write(0x3F42, 0x41, 0); mode_pump(&dw, 0); console_exec("dw capture off"); /* file = chunks of dir, len_lo, len_hi, bytes: rx chunk {0,2,0,0x5A,0x41} then tx chunk {1,1,0,0xFF}; assert 9 bytes exactly */ }
-TEST(native_pump_end_to_end) { console_exec("dw mount 0 raw.dsk"); mode_set(MODE_NATIVE); bus_on_write(0x3F42, 0x52, 0); for b in {0,0,0,5}: bus_on_write(0x3F42, b, 0); mode_pump(&dw, 0); ASSERT_EQ(bus_table[0x3F41], 2); ASSERT_EQ(bus_table[0x3F42], 0) /* rc */; bus_on_read_done(0x3F42,0); bus_on_read_done(0x3F42,0); bus_on_read_done(0x3F42,0); ASSERT_EQ(bus_table[0x3F42], 5) /* first data byte */; }
+TEST(native_pump_end_to_end) { console_exec("dw mount 0 raw.dsk"); mode_set(MODE_NATIVE); bus_on_write(0x3F42, 0x52, 0); for b in {0,0,0,5}: bus_on_write(0x3F42, b, 0); mode_pump(&dw, 0); bus_on_read_done(0x3F41, 0) /* status poll publishes (single-writer rule) */; ASSERT_EQ(bus_table[0x3F41], 2); ASSERT_EQ(bus_table[0x3F42], 0) /* rc */; bus_on_read_done(0x3F42,0); bus_on_read_done(0x3F42,0); bus_on_read_done(0x3F42,0); ASSERT_EQ(bus_table[0x3F42], 5) /* first data byte */; }
 ```
 Note for `native_pump_end_to_end`: the 259-byte reply exceeds the 255-byte `to_coco` queue, so `mode_pump` must hold unsent reply bytes. Implement that in `mode.c` with a 512-byte pending buffer: `dw` sends into `pending`, `mode_pump` moves as much as `becker_tx_free()` allows each call. Test asserts that after draining 259 bytes through read hooks (loop `bus_on_read_done` and `mode_pump`) the queue is empty and the bytes were rc, sum hi, sum lo, then data with `data[0]==5`.
 - [ ] **Step 2: Build, confirm failure.** **Step 3: Implement** `mode.c`, `console.c`. Tokenizer: `strtok_r` on a copy, max 6 tokens. `// ponytail: linear if-chain dispatch; table when >30 commands`. **Step 4: `ctest` passes.**
@@ -690,11 +690,11 @@ TEST(coco_read_259) { putc 0x52,0,0,0,9; ASSERT_EQ(getc, 0); hi=getc; lo=getc; r
 TEST(coco_write_then_read_back) { 0x57 to drive 1 lsn 4 with 0x3C fill; ASSERT_EQ(getc, 0); readex drive 1 lsn 4 -> all 0x3C }
 TEST(coco_bad_checksum_gets_crc) { readex with corrupted sum -> getc == 0xF3 }
 TEST(unmounted_drive) { readex drive 3 -> 256 zeros then 0xF6 }
-TEST(loopback_mode) { mode_set(MODE_LOOP); sim_write(0xFF42, 0x77); mode_pump(&dw, 0); ASSERT_EQ(sim_read(0xFF41), 2); ASSERT_EQ(sim_read(0xFF42), 0x77); }
+TEST(loopback_mode) { mode_set(MODE_LOOP); sim_write(0xFF42, 0x77); mode_pump(&dw, 0); sim_read(0xFF41) /* first poll returns stale 0 and publishes */; ASSERT_EQ(sim_read(0xFF41), 2); ASSERT_EQ(sim_read(0xFF42), 0x77); }
 TEST(status_when_idle_is_zero_and_data_ff) { ASSERT_EQ(sim_read(0xFF41), 0); ASSERT_EQ(sim_read(0xFF42), 0xFF); ASSERT(becker_stats.underrun >= 1); }
 TEST(trace_shows_transaction) { bus_trace_entry e[8]; size_t n = bus_trace_copy(e, 8); ASSERT(n > 0); ASSERT_EQ(e[n-1].idx, 0x3F42); }
 ```
-`sim_becker_getc`: loop up to `max_polls` (use 1000): `mode_pump(dw, plat_now_ms())`; `if (sim_read(0xFF41) & 2) return sim_read(0xFF42);` return -1.
+`sim_becker_getc`: loop up to `max_polls` (use 1000): `mode_pump(dw, plat_now_ms())`; `if (sim_read(0xFF41) & 2) return sim_read(0xFF42);` return -1. (Under the single-writer rule the first poll after a push returns stale 0x00 and publishes; the loop absorbs that.)
 
 - [ ] **Step 2: Build, confirm failure. Step 3: Implement sim_bus.c. Step 4: pass.**
 - [ ] **Step 5: Replay fixtures.** Generate `tests/fixtures/readex_boot.cap` by running `test_stack` with `console_exec("dw capture on readex_boot.cap")` in `coco_readex_sector` once (then copy the file into fixtures and remove the capture call), and write `test_replay.c`: for each `*.cap` in `fixtures/` (path from `FIXTURE_DIR` compile definition set in CMake to `${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures`), mount `raw.dsk`, feed all dir-0 chunks through `dw_feed`, assert `stats.timeouts == 0 && stats.unknown_op == 0` and that the bytes sent equal the dir-1 chunks in the file. `fixtures/README.md` documents the chunk format from Task 9: `dir (0 rx / 1 tx), len_lo, len_hi, bytes`.
@@ -710,4 +710,5 @@ Pico target: `src/plat_pico.c`, `bus_core1.c` loop with `PICOCO_BOARD` header, T
 
 - Spec coverage: 4.2 → Task 6; 5 → Task 7; 6 → Tasks 3-4; 6.5-6.6 → Task 2; 8 → Task 9; 9 (host first, flight recorder, counters, capture/replay, logging) → Tasks 6, 8, 9, 10; 9 crash record and 4.3/4.4/7 → Plan B. Spec 10 test table → one task each.
 - Interface names are consistent across tasks: `bus_on_read_done`, `bus_on_write`, `becker_refresh`, `mode_pump(dw, now_ms)`, `dw_feed(s, buf, n, now_ms)`.
-- Deviation from spec: config file is a list of console commands (Task 9); capture files use length-prefixed chunks (Task 9). Update the spec's section 7 and 9 wording when Plan A is done.
+- Deviation from spec: config file is a list of console commands (Task 9); capture files use length-prefixed chunks (Task 9).
+- Ruling during execution (Task 7): single-writer Becker table entries, hooks on both $FF41 and $FF42, core0 never writes them. Spec section 5 updated. Update the spec's section 7 and 9 wording when Plan A is done.

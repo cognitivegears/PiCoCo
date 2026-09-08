@@ -190,6 +190,15 @@ The `to_coco` producer is core0 and the consumer is the core1 hook;
 `from_coco` is filled only from core0's write-event dispatch. Both are
 plain SPSC rings with no locks.
 
+**Single writer rule (ruled 2026-09-07 during Plan A, Task 7):** only
+core1 writes the two Becker table entries. Read hooks are registered on
+both 0x3F41 and 0x3F42; the status hook refreshes the entries, the data
+hook pops one byte then refreshes. Core0 (`becker_write`, the loopback
+pump, `rom_load_mem`) only pushes and never touches those entries. A
+byte pushed by core0 becomes visible on the CoCo's next $FF41 poll, one
+poll of latency (about 10 µs). Two writers had a race where the status
+could read "data ready" while the data entry still held 0xFF.
+
 ## 6. DriveWire server (dw/)
 
 ### 6.1 Interface
