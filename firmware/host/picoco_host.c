@@ -126,7 +126,7 @@ static int run_server(dw_server *srv, int port) {
             break;
         }
 
-        if (pfds[0].revents & POLLIN) {
+        if (client_fd < 0 && (pfds[0].revents & POLLIN)) {
             int fd = accept(listen_fd, NULL, NULL);
             if (fd >= 0) {
                 client_fd = fd;

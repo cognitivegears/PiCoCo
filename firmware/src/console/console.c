@@ -72,6 +72,7 @@ static void capture_close(void) {
 
 static int cmd_status(void) {
     outf("mode %s\n", mode_name(mode_get()));
+    outf("mode reply_overflow %u\n", mode_stats.reply_overflow);
     outf("uptime_ms %u\n", plat_now_ms());
     outf("bus cycles %u reads %u writes %u write_overrun %u\n",
          bus_stats.cycles, bus_stats.reads, bus_stats.writes, bus_stats.write_overrun);
@@ -176,6 +177,7 @@ static int cmd_dw(int argc, char **argv) {
         if (argc < 3) return cerr("usage: dw capture on <file>|off");
         if (strcasecmp(argv[2], "on") == 0) {
             if (argc < 4) return cerr("usage: dw capture on <file>");
+            if (!g_store->ops->create) return cerr("capture unsupported");
             capture_close();
             if (g_store->ops->create(g_store->ctx, argv[3], &cap_file) != 0) {
                 return cerr("capture open failed");
@@ -255,6 +257,7 @@ static int cmd_stats(int argc, char **argv) {
     bus_stats.cycles = 0; bus_stats.reads = 0; bus_stats.writes = 0; bus_stats.write_overrun = 0;
     becker_stats = (becker_stats_t){ 0 };
     memset(&g_dw->stats, 0, sizeof(g_dw->stats));
+    mode_stats.reply_overflow = 0;
     return 0;
 }
 

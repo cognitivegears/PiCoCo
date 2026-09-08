@@ -9,8 +9,15 @@ mode_stats_t mode_stats;
 static picoco_mode g_mode = MODE_DIAG;
 static dw_server *g_bound_dw;
 
-/* Pending DriveWire reply bytes not yet handed to becker_write. */
-static uint8_t pending[512];
+/* Pending DriveWire reply bytes not yet handed to becker_write. Sized for
+ * two in-flight replies (259 bytes each): dw_feed() dispatches (and calls
+ * mode_dw_send) synchronously for every complete request in whatever batch
+ * it's given, with no chance to flush in between, so if becker_read() ever
+ * hands it two full pipelined requests at once (a client that doesn't wait
+ * for replies — DriveWire is normally request/reply) both land in `pending`
+ * before mode_pump() gets to drain either. 1024 covers that; reply_overflow
+ * stays as a should-never-happen guard beyond that. */
+static uint8_t pending[1024];
 static size_t pending_len;
 
 void mode_bind(dw_server *dw) { g_bound_dw = dw; }
@@ -67,9 +74,14 @@ void mode_pump(dw_server *dw, uint32_t now_ms) {
             break;
         }
         case MODE_NATIVE: {
-            uint8_t buf[64];
-            size_t n = becker_read(buf, sizeof(buf));
-            if (n) dw_feed(dw, buf, n, now_ms);
+            /* Only feed more RX once the previous reply is fully flushed:
+             * without this, a slow-draining reply plus fresh RX across
+             * repeated calls could grow `pending` without bound. */
+            if (pending_len == 0) {
+                uint8_t buf[64];
+                size_t n = becker_read(buf, sizeof(buf));
+                if (n) dw_feed(dw, buf, n, now_ms);
+            }
             if (pending_len > 0) {
                 size_t free_n = becker_tx_free();
                 size_t take = free_n < pending_len ? free_n : pending_len;

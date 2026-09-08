@@ -196,8 +196,38 @@ TEST(native_pump_end_to_end) {
         mode_pump(&dw, 0);
     }
     ASSERT_EQ(popped[0], 0);      /* rc */
+    ASSERT_EQ(popped[1], 0);      /* checksum hi (sector sum = 5) */
+    ASSERT_EQ(popped[2], 5);      /* checksum lo */
     ASSERT_EQ(popped[3], 5);      /* first data byte */
+    ASSERT_EQ(popped[258], 0);    /* last data byte (sector is all zero past byte 0) */
+    ASSERT_EQ(mode_stats.reply_overflow, 0);
     ASSERT_EQ(bus_table[0x3F41], 0); /* drained */
+}
+
+/* Two complete READ requests queued before any pump ("pipelined"; real
+ * DriveWire clients wait for a reply before sending the next command, but
+ * the pump must not corrupt/overflow if one doesn't). */
+TEST(native_pump_backpressure) {
+    setup();
+    ASSERT_EQ(console_exec("dw mount 0 raw.dsk"), 0);
+    mode_set(MODE_NATIVE);
+    uint8_t req[5] = { 0x52, 0, 0, 0, 5 }; /* READ drive 0, lsn 5 */
+    for (int r = 0; r < 2; r++)
+        for (int i = 0; i < 5; i++) bus_on_write(0x3F42, req[i], 0);
+    mode_pump(&dw, 0);
+    ASSERT_EQ(mode_stats.reply_overflow, 0);
+
+    bus_on_read_done(0x3F41, 0);
+    uint8_t popped[518];
+    int n = 0;
+    while (becker_stats.reads < 518) {
+        popped[n++] = bus_table[0x3F42];
+        bus_on_read_done(0x3F42, 0);
+        mode_pump(&dw, 0);
+    }
+    ASSERT_EQ(becker_stats.reads, 518);
+    ASSERT_EQ(mode_stats.reply_overflow, 0);
+    ASSERT_EQ(popped[259], 0); /* rc of the second reply */
 }
 
 int main(void) {
@@ -221,5 +251,6 @@ int main(void) {
     RUN(config_bad_line_continues);
     RUN(capture_writes_file);
     RUN(native_pump_end_to_end);
+    RUN(native_pump_backpressure);
     TEST_MAIN_END
 }
