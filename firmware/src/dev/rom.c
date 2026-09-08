@@ -1,7 +1,6 @@
 #include "rom.h"
 #include "device.h"
 #include "bus.h"
-#include "becker.h"
 #include <string.h>
 
 #define ROM_LO 0x0000
@@ -24,10 +23,15 @@ void rom_off(void) {
 int rom_load_mem(const uint8_t *p, size_t n) {
     if (n != 8192 && n != 16384) return -2;
     memcpy(&bus_table[0], p, n);
-    if (n == 16384) becker_refresh();
+    /* A 16 K load overwrites bus_table[0x3F41]/[0x3F42] with ROM bytes; the
+     * next $FF41 poll (core1's becker_status_hook) restores them via
+     * becker_refresh(). No core0 write to those entries here — see the
+     * single-writer note in becker.c. */
     return 0;
 }
 
+/* ponytail: 16 KB staging buffer; could read straight into bus_table since
+ * size is validated first. */
 static uint8_t rom_file_buf[16384];
 
 int rom_load_file(dw_store *st, const char *name) {

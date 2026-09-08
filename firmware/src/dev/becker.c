@@ -14,6 +14,12 @@ static uint8_t to_coco_buf[TO_COCO_SIZE];
 static uint8_t from_coco_buf[FROM_COCO_SIZE];
 static ring_t to_coco, from_coco;
 
+/* ponytail: single writer — only core1 (the two read hooks below) writes
+ * bus_table[0x3F41]/[0x3F42]; core0 (becker_write/becker_loopback_pump) only
+ * pushes into the ring. Two writers racing on those table entries could
+ * publish a stale data byte alongside a fresh "ready" status and drop a
+ * byte. Ceiling: a freshly pushed byte becomes visible on the poll after
+ * the push — one extra $FF41 poll of latency, no lost bytes. */
 BUS_HOT void becker_refresh(void) {
     uint8_t b;
     if (ring_peek(&to_coco, &b)) {
@@ -25,7 +31,11 @@ BUS_HOT void becker_refresh(void) {
     }
 }
 
-static BUS_HOT void becker_read_hook(void) {
+static BUS_HOT void becker_status_hook(void) {
+    becker_refresh();
+}
+
+static BUS_HOT void becker_data_hook(void) {
     uint8_t b;
     if (ring_pop(&to_coco, &b)) {
         becker_stats.reads++;
@@ -53,7 +63,8 @@ void becker_init(void) {
     ring_init(&from_coco, from_coco_buf, FROM_COCO_SIZE);
     becker_stats = (becker_stats_t){ 0 };
     device_register(&becker_device);
-    bus_add_read_hook(BUS_IDX_BECKER_DATA, becker_read_hook);
+    bus_add_read_hook(BUS_IDX_BECKER_STATUS, becker_status_hook);
+    bus_add_read_hook(BUS_IDX_BECKER_DATA, becker_data_hook);
     becker_refresh();
 }
 
@@ -70,7 +81,6 @@ size_t becker_write(const uint8_t *buf, size_t n) {
     for (; i < n; i++) {
         if (!ring_push(&to_coco, buf[i])) break;
     }
-    becker_refresh();
     return i;
 }
 
@@ -82,5 +92,4 @@ void becker_loopback_pump(void) {
     while (ring_free(&to_coco) > 0 && ring_pop(&from_coco, &b)) {
         ring_push(&to_coco, b);
     }
-    becker_refresh();
 }

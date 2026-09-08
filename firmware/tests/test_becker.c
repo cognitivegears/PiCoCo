@@ -22,6 +22,10 @@ TEST(status_follows_queue) {
     ASSERT_EQ(bus_table[0x3F42], 0xFF);
     uint8_t b = 0x41;
     ASSERT_EQ(becker_write(&b, 1), 1);
+    /* core0 push alone must not touch the table (single writer is core1) */
+    ASSERT_EQ(bus_table[0x3F41], 0);
+    ASSERT_EQ(bus_table[0x3F42], 0xFF);
+    bus_on_read_done(0x3F41, 0);
     ASSERT_EQ(bus_table[0x3F41], 2);
     ASSERT_EQ(bus_table[0x3F42], 0x41);
 }
@@ -29,6 +33,7 @@ TEST(status_follows_queue) {
 TEST(read_hook_pops_one) {
     setup();
     becker_write((const uint8_t *)"AB", 2);
+    bus_on_read_done(0x3F41, 0);
     bus_on_read_done(0x3F42, 0);
     ASSERT_EQ(bus_table[0x3F42], 'B');
     bus_on_read_done(0x3F42, 0);
@@ -43,6 +48,17 @@ TEST(status_read_does_not_pop) {
     becker_write((const uint8_t *)"A", 1);
     bus_on_read_done(0x3F41, 0);
     ASSERT_EQ(bus_table[0x3F42], 'A');
+    ASSERT_EQ(becker_stats.reads, 0);
+}
+
+TEST(status_poll_publishes_then_data_read_pops) {
+    setup();
+    becker_write((const uint8_t *)"Q", 1);
+    bus_on_read_done(0x3F41, 0);
+    ASSERT_EQ(bus_table[0x3F41], 2);
+    bus_on_read_done(0x3F42, 0);
+    ASSERT_EQ(becker_stats.reads, 1);
+    ASSERT_EQ(bus_table[0x3F41], 0);
 }
 
 TEST(coco_write_reaches_stream) {
@@ -79,6 +95,8 @@ TEST(loopback) {
     bus_on_write(0x3F42, 65, 0);
     device_dispatch_writes();
     becker_loopback_pump();
+    bus_on_read_done(0x3F41, 0);
+    ASSERT_EQ(bus_table[0x3F41], 2);
     ASSERT_EQ(bus_table[0x3F42], 65);
 }
 
@@ -98,7 +116,10 @@ TEST(rom_16k_keeps_becker) {
     becker_write((const uint8_t *)"Z", 1);
     ASSERT_EQ(rom_load_mem(img, 16384), 0);
     ASSERT_EQ(bus_table[0x3EFF], 0x11);
+    ASSERT_EQ(bus_table[0x3F42], 0x11); /* stale: ROM bytes until next $FF41 poll */
+    bus_on_read_done(0x3F41, 0);
     ASSERT_EQ(bus_table[0x3F42], 'Z');
+    ASSERT_EQ(bus_table[0x3F41], 2);
     ASSERT_EQ(rom_load_mem(img, 100), -2);
 }
 
@@ -125,7 +146,7 @@ TEST(rom_load_file_test) {
     ASSERT_EQ(rom_load_file(&st, "x"), -1);
 }
 
-TEST(dispatch_ignores_unowned) {
+TEST(dispatch_skips_device_without_on_write) {
     setup();
     bus_on_write(0x1000, 1, 0);
     ASSERT_EQ(device_dispatch_writes(), 1);
@@ -136,6 +157,7 @@ int main(void) {
     RUN(status_follows_queue);
     RUN(read_hook_pops_one);
     RUN(status_read_does_not_pop);
+    RUN(status_poll_publishes_then_data_read_pops);
     RUN(coco_write_reaches_stream);
     RUN(tx_backpressure);
     RUN(rx_overrun_counted);
@@ -143,6 +165,6 @@ int main(void) {
     RUN(rom_pattern_and_off);
     RUN(rom_16k_keeps_becker);
     RUN(rom_load_file_test);
-    RUN(dispatch_ignores_unowned);
+    RUN(dispatch_skips_device_without_on_write);
     TEST_MAIN_END
 }
