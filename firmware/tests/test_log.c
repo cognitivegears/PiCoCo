@@ -71,11 +71,28 @@ TEST(truncates_long_line) {
     ASSERT_EQ(out[n - 4], '.');
 }
 
+TEST(bad_module_is_ignored) {
+    log_init();
+    log_set_level(-1, LOG_DEBUG);
+    log_set_level(LOG_M_COUNT, LOG_DEBUG);
+    ASSERT_EQ(log_level(-1), LOG_OFF);
+
+    log_write(-1, LOG_ERROR, "x");
+    char out[4096];
+    size_t n = log_drain(out, sizeof(out));
+    ASSERT_EQ(n, 0);
+    ASSERT_EQ(log_dropped, 0);
+
+    log_set_level(LOG_M_DW, LOG_DEBUG);
+    ASSERT_EQ(log_level(LOG_M_DW), LOG_DEBUG);
+}
+
 int main(void) {
     RUN(level_filter);
     RUN(format_has_module_and_level);
     RUN(drop_when_full);
     RUN(module_by_name);
     RUN(truncates_long_line);
+    RUN(bad_module_is_ignored);
     TEST_MAIN_END
 }

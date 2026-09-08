@@ -21,8 +21,16 @@ void log_init(void) {
     log_dropped = 0;
 }
 
-void log_set_level(int module, int level) { log_levels[module] = level; }
-int log_level(int module) { return log_levels[module]; }
+void log_set_level(int module, int level) {
+    if (module < 0 || module >= LOG_M_COUNT) return; /* ponytail: -1 flows in from log_module_by_name */
+    if (level < LOG_OFF) level = LOG_OFF;
+    if (level > LOG_DEBUG) level = LOG_DEBUG;
+    log_levels[module] = level;
+}
+int log_level(int module) {
+    if (module < 0 || module >= LOG_M_COUNT) return LOG_OFF;
+    return log_levels[module];
+}
 
 int log_module_by_name(const char *name) {
     for (int i = 0; i < LOG_M_COUNT; i++) {
@@ -32,8 +40,9 @@ int log_module_by_name(const char *name) {
 }
 
 void log_write(int module, int level, const char *fmt, ...) {
+    if (module < 0 || module >= LOG_M_COUNT) return; /* direct callers must be as safe as the LOG_* macros */
     static const char levelch[] = {'?', 'E', 'I', 'D'};
-    char line[160];
+    char line[160]; /* built as "<t_us> <module> <E|I|D> <msg>\n" */
 
     int n = snprintf(line, sizeof(line), "%u %s %c ", plat_now_us(), log_module_names[module],
                       levelch[level & 3]);
