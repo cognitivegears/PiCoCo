@@ -106,7 +106,14 @@ CoCo test:
 
 Plug the Pico in, then say "resume the bench test plan at step A" (or
 B, C, E). Claude will check the console port, print `status`, and walk
-the steps. Results get appended to this file under a dated "Results"
+the steps.
+
+Step 0 on resume: the board still runs the build from before the
+DriveWire conformance fixes (main 3675609). Reflash from current `main`
+first: `bootsel` on the console, wait for `/Volumes/RP2350`, then
+`cp -X build-pico/picoco.uf2 /Volumes/RP2350/` (rebuild with
+`ninja -C build-pico` if the UF2 is older than the last commit). Then
+`version` still reads `0.3-pico`; `status` now shows `dw hdbdos`. Results get appended to this file under a dated "Results"
 heading.
 
 ## Results
