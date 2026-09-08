@@ -9,6 +9,7 @@ int  plat_fs_list(void (*cb)(const char *name, uint32_t size, void *ctx), void *
 int  plat_fs_remove(const char *name);
 int  plat_fs_format(void);
 int  plat_fs_export(bool on);                 /* USB MSC export; host: no-op returning -1 */
+bool plat_usb_ejected(void);                  /* host has ejected the MSC volume; host: always false */
 int  plat_cfg_read(char *buf, size_t max);    /* bytes read, <0 none */
 int  plat_cfg_write(const char *buf, size_t n);
 void plat_reboot(bool bootsel);

@@ -1,7 +1,9 @@
-/* Composite USB device: CDC0 (DriveWire bridge), CDC1 (console), MSC (Task 4
- * fills in the actual storage; here it always reports "no medium"). */
+/* Composite USB device: CDC0 (DriveWire bridge), CDC1 (console), MSC exports
+ * the flash FAT volume while fs_flash_exporting() is true. */
 #include "tusb.h"
 #include "pico/unique_id.h"
+#include "fs_flash.h"
+#include "usb_descriptors.h"
 #include <string.h>
 
 /* PID 0x2E8A:0x1042 is a placeholder pending real VID/PID assignment/policy. */
@@ -109,7 +111,12 @@ uint16_t const *tud_descriptor_string_cb(uint8_t index, uint16_t langid) {
     return _desc_str;
 }
 
-/* ---- MSC stubs: no medium until Task 4 ---- */
+/* ---- MSC: exports the flash FAT volume while fs_flash_exporting() ---- */
+
+static bool s_ejected;
+
+bool usb_msc_ejected(void) { return s_ejected; }
+void usb_msc_clear_ejected(void) { s_ejected = false; }
 
 void tud_msc_inquiry_cb(uint8_t lun, uint8_t vendor_id[8], uint8_t product_id[16], uint8_t product_rev[4]) {
     (void)lun;
@@ -119,27 +126,86 @@ void tud_msc_inquiry_cb(uint8_t lun, uint8_t vendor_id[8], uint8_t product_id[16
 }
 
 bool tud_msc_test_unit_ready_cb(uint8_t lun) {
-    (void)lun;
-    return false; /* ponytail: no medium until Task 4 wires FatFS in */
+    bool ready = fs_flash_exporting();
+    if (!ready) tud_msc_set_sense(lun, SCSI_SENSE_NOT_READY, 0x3A, 0x00); /* medium not present */
+    return ready;
 }
 
 void tud_msc_capacity_cb(uint8_t lun, uint32_t *block_count, uint16_t *block_size) {
     (void)lun;
-    *block_count = 0;
+    *block_count = FS_SECTORS;
     *block_size = 512;
 }
 
+bool tud_msc_is_writable_cb(uint8_t lun) {
+    (void)lun;
+    return fs_flash_exporting();
+}
+
+/* CFG_TUD_MSC_EP_BUFSIZE is 512, matching the sector size, so read10/write10
+ * see at most one block per call except when offset/bufsize aren't
+ * block-aligned; the scratch loop below handles that generally rather than
+ * assuming a single-block span. */
 int32_t tud_msc_read10_cb(uint8_t lun, uint32_t lba, uint32_t offset, void *buffer, uint32_t bufsize) {
-    (void)lun; (void)lba; (void)offset; (void)buffer; (void)bufsize;
-    return -1;
+    (void)lun;
+    if (!fs_flash_exporting()) return -1;
+    if (offset == 0 && bufsize % 512 == 0) {
+        if (fs_flash_read_blocks(lba, (uint8_t *)buffer, bufsize / 512) != 0) return -1;
+        return (int32_t)bufsize;
+    }
+    static uint8_t scratch[512]; /* static: too big for the 4 KB core0 stack */
+    uint8_t *out = (uint8_t *)buffer;
+    uint32_t done = 0;
+    while (done < bufsize) {
+        uint32_t abs_off = offset + done;
+        uint32_t block = lba + abs_off / 512;
+        uint32_t in_block = abs_off % 512;
+        if (fs_flash_read_blocks(block, scratch, 1) != 0) return done ? (int32_t)done : -1;
+        uint32_t n = 512 - in_block;
+        if (n > bufsize - done) n = bufsize - done;
+        memcpy(out + done, scratch + in_block, n);
+        done += n;
+    }
+    return (int32_t)done;
 }
 
 int32_t tud_msc_write10_cb(uint8_t lun, uint32_t lba, uint32_t offset, uint8_t *buffer, uint32_t bufsize) {
-    (void)lun; (void)lba; (void)offset; (void)buffer; (void)bufsize;
-    return -1;
+    (void)lun;
+    if (!fs_flash_exporting()) return -1;
+    if (offset == 0 && bufsize % 512 == 0) {
+        if (fs_flash_write_blocks(lba, buffer, bufsize / 512) != 0) return -1;
+        return (int32_t)bufsize;
+    }
+    static uint8_t scratch[512]; /* static: too big for the 4 KB core0 stack */
+    uint8_t *in = (uint8_t *)buffer;
+    uint32_t done = 0;
+    while (done < bufsize) {
+        uint32_t abs_off = offset + done;
+        uint32_t block = lba + abs_off / 512;
+        uint32_t in_block = abs_off % 512;
+        uint32_t n = 512 - in_block;
+        if (n > bufsize - done) n = bufsize - done;
+        if (n < 512) {
+            /* partial block: read-modify-write */
+            if (fs_flash_read_blocks(block, scratch, 1) != 0) return done ? (int32_t)done : -1;
+            memcpy(scratch + in_block, in + done, n);
+            if (fs_flash_write_blocks(block, scratch, 1) != 0) return done ? (int32_t)done : -1;
+        } else {
+            if (fs_flash_write_blocks(block, in + done, 1) != 0) return done ? (int32_t)done : -1;
+        }
+        done += n;
+    }
+    return (int32_t)done;
+}
+
+bool tud_msc_start_stop_cb(uint8_t lun, uint8_t power_condition, bool start, bool load_eject) {
+    (void)lun; (void)power_condition;
+    if (load_eject && !start) s_ejected = true; /* informational; "fs import" re-mounts */
+    return true;
 }
 
 int32_t tud_msc_scsi_cb(uint8_t lun, uint8_t const scsi_cmd[16], void *buffer, uint16_t bufsize) {
-    (void)lun; (void)scsi_cmd; (void)buffer; (void)bufsize;
+    (void)scsi_cmd; (void)buffer; (void)bufsize;
+    tud_msc_set_sense(lun, SCSI_SENSE_ILLEGAL_REQUEST, 0x20, 0x00); /* invalid command */
     return -1;
 }

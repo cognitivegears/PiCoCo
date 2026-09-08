@@ -72,8 +72,12 @@ int main(void) {
         if (tud_cdc_n_available(1)) { uint8_t b[64]; uint32_t n = tud_cdc_n_read(1, b, sizeof b); console_feed(b, n); }
         char lb[256]; size_t ln = log_drain(lb, sizeof lb - 1);
         if (ln) { lb[ln] = 0; console_out(NULL, lb); }
-        uint32_t period = mode_get() == MODE_NATIVE ? 250 : 500;      /* 2 Hz native, 1 Hz otherwise */
-        if (now - last_blink >= period) { last_blink = now; led = !led; gpio_put(PIN_LED, led); }
+        if (fs_flash_exporting()) {
+            gpio_put(PIN_LED, 1);   /* solid while the USB drive is exported */
+        } else {
+            uint32_t period = mode_get() == MODE_NATIVE ? 250 : 500;  /* 2 Hz native, 1 Hz otherwise */
+            if (now - last_blink >= period) { last_blink = now; led = !led; gpio_put(PIN_LED, led); }
+        }
         watchdog_update();
     }
 }

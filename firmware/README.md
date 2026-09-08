@@ -137,6 +137,24 @@ clusters, 4 KB each) on first boot. `picoco.cfg` at the root holds the saved con
 config (see `dw save`/`console_run_config`); DriveWire disk images and `dw
 capture` recordings also live at the root.
 
+### Export
+
+The on-flash FAT volume can be exported to the Mac (or any USB host) as a
+removable drive, e.g. to drag `.dsk` images on/off without a DriveWire
+transfer:
+
+1. `dw eject 0`..`dw eject 3` (or whichever drives are mounted) — `fs export`
+   refuses with `err eject all drives first` while any DriveWire drive is
+   mounted, since FatFS can't be unmounted out from under an open `FIL`.
+2. `fs export` — unmounts FatFS and presents the partition over USB MSC as a
+   volume named `PICOCO`; the board's LED goes solid while exporting.
+3. Drag disk images onto the `PICOCO` volume in Finder, then eject it there
+   (or `diskutil eject /Volumes/PICOCO`).
+4. `fs import` (or `reboot`) re-mounts FatFS for DriveWire/console use.
+
+macOS writes `.fseventsd/` and `._*` AppleDouble files to the volume; `fs ls`
+hides any name starting with `.`, so these don't show up and are harmless.
+
 ## Licensing
 
 Firmware code is under the top-level project license. Vendored third-party

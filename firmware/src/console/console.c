@@ -182,6 +182,7 @@ static int cmd_status(void) {
     outf("becker reads %u writes %u underrun %u overrun %u\n",
          becker_stats.reads, becker_stats.writes, becker_stats.underrun, becker_stats.overrun);
     outf("log_dropped %u\n", log_dropped);
+    if (plat_usb_ejected()) outf("usb ejected\n");
     for (int i = 0; i < DW_MAX_DRIVES; i++) {
         if (g_dw->drives[i].mounted) {
             outf("drive %d %s%s\n", i, g_dw->drives[i].name,
@@ -317,7 +318,11 @@ static int cmd_fs(int argc, char **argv) {
         return 0;
     }
     if (strcasecmp(argv[1], "export") == 0) {
+        for (int i = 0; i < DW_MAX_DRIVES; i++) {
+            if (g_dw->drives[i].mounted) return cerr("eject all drives first");
+        }
         if (plat_fs_export(true) != 0) return cerr("export unsupported");
+        outf("usb drive exported; run fs import or reboot when done\n");
         return 0;
     }
     if (strcasecmp(argv[1], "import") == 0) {

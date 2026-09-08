@@ -15,6 +15,12 @@ void fs_flash_unmount(void);
 int  fs_flash_format(void);       /* f_mkfs FAT12 (640 clusters, 4 KB each), then mount; 0 ok */
 bool fs_flash_mounted(void);
 
+/* USB MSC export: on unmounts FatFS and hands the raw blocks to the host;
+ * off re-mounts FatFS. Caller (console) must refuse export while DriveWire
+ * drives are mounted. */
+int  fs_flash_export(bool on);
+bool fs_flash_exporting(void);
+
 /* Raw 512-byte block access shared by diskio.c's FatFS glue and the USB MSC
  * export (Task 4). */
 int  fs_flash_read_blocks(uint32_t lba, uint8_t *buf, uint32_t n);       /* memcpy from XIP */

@@ -5,6 +5,7 @@
 #include "tusb.h"
 #include PICOCO_BOARD_H
 #include "fs_flash.h"
+#include "usb_descriptors.h"
 #include "ff.h"
 
 uint32_t plat_now_us(void) { return time_us_32(); }
@@ -64,7 +65,11 @@ int plat_fs_remove(const char *n) { return f_unlink(n) == FR_OK ? 0 : -1; }
  * dangling FIL on the old volume; the console's "fs format" checks
  * g_dw->drives[] and refuses if anything is still mounted. */
 int plat_fs_format(void) { return fs_flash_format(); }
-int plat_fs_export(bool on) { (void)on; return -1; }
+int plat_fs_export(bool on) {
+    if (on) usb_msc_clear_ejected();
+    return fs_flash_export(on);
+}
+bool plat_usb_ejected(void) { return usb_msc_ejected(); }
 int plat_cfg_read(char *b, size_t m) {
     static FIL f; /* static: too big for the 4 KB core0 stack */
     if (f_open(&f, "picoco.cfg", FA_READ) != FR_OK) return -1;

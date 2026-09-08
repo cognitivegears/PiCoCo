@@ -62,6 +62,7 @@ int plat_fs_format(void) {
 }
 
 int plat_fs_export(bool on) { (void)on; return -1; }
+bool plat_usb_ejected(void) { return false; }
 
 int plat_cfg_read(char *buf, size_t max) {
     char path[1024];

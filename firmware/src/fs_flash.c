@@ -9,6 +9,7 @@
 
 static FATFS s_fatfs;   /* static: too big for the 4 KB core0 stack */
 static bool s_mounted;
+static bool s_exporting;
 
 int fs_flash_read_blocks(uint32_t lba, uint8_t *buf, uint32_t n) {
     if (n == 0) return 0;
@@ -92,4 +93,17 @@ int fs_flash_mount(void) {
 void fs_flash_unmount(void) {
     f_mount(NULL, "", 0);
     s_mounted = false;
+}
+
+bool fs_flash_exporting(void) { return s_exporting; }
+
+int fs_flash_export(bool on) {
+    if (on) {
+        f_mount(NULL, "", 0);
+        s_mounted = false;
+        s_exporting = true;
+        return 0;
+    }
+    s_exporting = false;
+    return fs_flash_mount();
 }
