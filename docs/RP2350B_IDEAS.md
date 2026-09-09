@@ -223,34 +223,234 @@ cart claim any address on both reads and writes. Also verify that
 
 ---
 
-## 4. Graphics card — CoCo 1/2 YES via bus snooping, CoCo 3 much harder
+## 4. Graphics card — CoCo 1/2 via bus snooping; CoCo 3 not planned
+
+**Decision (2026-09-08):** build the VDG snoop for CoCo 1/2 only. The
+HSTX/HDMI hardware stays on the board for two reasons: the CoCo 1/2
+snoop below, and the WordPak-RS 80-column renderer (§12), which is the
+only HDMI feature that applies to a CoCo 3. Full GIME video emulation
+is dropped, not deferred.
+
+**Why CoCo 1/2 and not 3.** A stock CoCo 1/2 has RF out only; composite
+needs a soldering mod before any cheap dongle helps. A cart that gives
+HDMI with no mod is the only no-solder path and nothing else offers
+it. A CoCo 3 already has composite and analog RGB, so a composite
+dongle or RGB2HDMI is cheaper than firmware that must mirror the MMU,
+16 palette registers, 40/80-column text, and the raster tricks that
+CoCo 3 demos and games use everywhere. Low value, high cost.
+
+**Why it is worth having on a CoCo 1/2.**
+
+- **A display at all.** Modern TVs are dropping analog tuners, and RF
+  through the ones that remain is blurry enough that 32-column text is
+  hard to read. HDMI from the cart gives a pixel-exact picture with no
+  soldering inside a 40-year-old machine, and it comes out when the cart
+  does.
+- **Sound on the same cable.** A stock CoCo 1/2 has no audio output
+  except the TV. Snooping the $FF20 DAC (and mixing the cart's own
+  synth, §5) puts picture and sound on one HDMI cable.
+- **Chosen artifact phase.** Real hardware picks the artifact phase at
+  random on power-up, and people power-cycle until the colours come out
+  right. Here it is a setting (§4.1).
+- **Real lowercase.** The renderer can apply the Lowerkit/Dragon 200e
+  rule and show true lowercase for Color BASIC's inverse-video
+  convention, with no VDG socket work (§10).
+- **Capture and remote use.** A pixel-exact frame already in SRAM makes
+  screenshots over USB, video capture, and a browser-based remote CoCo
+  (§9, keyboard injection over WiFi) nearly free. Today that needs a
+  capture card on RF or composite.
+- **Dual display with WordPak-RS.** The 80-column console renders to
+  HDMI while the VDG picture stays on the TV, or both go to HDMI. On a
+  CoCo 1/2 that is an 80-column NitrOS-9 console with no monitor at all.
 
 **No video signal reaches the cart edge.** The VDG fetches from RAM
 through the SAM on cycles the cart never sees. "Intercepting video" is
-not possible from the slot. If the goal is HDMI from a CoCo 3, an
-external RGB-to-HDMI converter on the video connector already exists
-and is the cheaper answer.
+not possible from the slot.
 
 **What is possible: shadow the RAM and render it yourself.** Every CPU
 write appears on the cart bus with full address and data, and so do the
-writes that set the SAM video mode ($FFC0..$FFDF) and the PIA1 VDG
-mode bits ($FF22). The Pico shadows the 64 KB RAM, mirrors the mode
-registers, and generates DVI scanlines on the fly from the shadow the
-way the real VDG does. No framebuffer needed. HSTX on the RP2350 makes
-DVI output nearly free of CPU.
+writes that set the SAM video mode and display offset ($FFC0..$FFDF)
+and the PIA1 VDG mode bits ($FF22). Verified against the factory
+schematics (2026-09-08): on the CoCo 1 (TRM 26-3193 and Dwg 8000073)
+and both CoCo 2 boards (Dwg 8000191 Rev D, and the Korean SN74LS785
+board) D0..D7 and R/W are bare wires from the 6809 to the cartridge
+connector. No buffer, no gating by /CTS or /SCS. A margin note on the
+CoCo 1 factory drawing reads "write to ram is directly off data
+lines". The CoCo 3 adds a 74LS245 with enable grounded, so the same
+holds there. Sources:
+https://colorcomputerarchive.com/repo/Documents/Manuals/Hardware/Color%20Computer%201%20Schematic%20(Tandy).pdf
+https://colorcomputerarchive.com/repo/Documents/Manuals/Hardware/Color%20Computer%202%20Schematic%20(Tandy).pdf
+https://colorcomputerarchive.com/repo/Documents/Manuals/Hardware/Color%20Computer%202%20Schematic%20(Rev.%20A)%20(Tandy).pdf
+Our U10 is therefore the only thing between the CoCo bus and the Pico,
+and the §1 enable rule is sufficient as written. The breadboard bus
+watcher confirms it for free during bring-up. The Pico shadows the 64 KB RAM,
+mirrors the mode registers, and renders the way the real VDG does,
+either whole-frame into an RGB565 buffer or scanline-by-scanline into a
+line buffer ahead of HSTX. Either fits SRAM. HSTX encodes TMDS in
+hardware, so DVI scanout is DMA.
 
-Firmware cost: filter to write cycles in PIO, DMA into a ring buffer,
-apply from core1. About 80 CPU cycles per bus cycle at 1.79 MHz,
-fine in tight code. Shares the same capture path as `bus_watcher`.
+Hardware it needs, all already in §1: HSTX on GP12..GP19 (address block
+moves), A14/A15 routed, and U10 /OE under Pico control with the
+cart-selected-OR-write rule so the data bus is visible on every write.
+
+Firmware cost: capture every bus cycle in PIO (address, data, R/W;
+one 32-bit word per E), DMA into a ring buffer, apply writes from the
+core that owns the response table, never in the bus-cycle path. Capture
+all cycles, not just writes, from day one: the ring index is then a
+cycle-exact timestamp, which stage 2 (§4.3, §4.4) needs and which costs
+nothing to record now. A frame is 14934 words, about 60 KB; a
+double-buffered ring is 120 KB and walking it is about 6% of one core.
+About 80 CPU cycles per bus cycle at 1.79 MHz, fine in tight code.
+Shares the capture path with `bus_watcher`. Rendering a PMODE 4 frame
+from a 6 KB shadow is under 1 ms at 60 Hz.
 
 Bonus: writes to the $FF20 DAC are on the bus too, so the HDMI stream
 can carry CoCo audio, and the cart's own audio (§5) can be mixed in.
 
-**CoCo 3 caveats:** the MMU means the bus shows logical addresses, so
-you must mirror the MMU registers to translate; physical RAM is 512 KB
-so the shadow needs PSRAM; and you end up reimplementing the GIME's
-video modes. Scope CoCo 1/2 first and treat CoCo 3 as a separate
-project.
+### 4.1 Artifact colors
+
+PMODE 4 games depend on NTSC artifacting; a literal render shows black
+and white stripes. Emulate it in the shadow-to-pixel step as one table
+lookup per PMODE 4 byte. Two candidate rules, same cost:
+
+- **Three-tap rule** (the GLSL shader in the author's Dungeons of
+  Daggorath port, `src/artifact_shader.h`): a white pixel with white on
+  both sides stays white; otherwise it takes orange or cyan by x
+  parity, blended 35% toward white if one neighbour is white; black
+  stays black. Output depends on the byte plus one bit from each
+  neighbouring byte: 1024-entry table, 8 output pixels per entry.
+- **Pair rule** (XRoar/MAME simple mode): each pixel pair is one
+  128-wide artifact pixel; 00 black, 11 white, 01 and 10 the two
+  colours. 256-entry table, no neighbour bits. Renders solid colour
+  fields correctly, which the three-tap rule shows as stripes.
+
+Both are bound by writing pixels out, not by choosing colours, so pick
+by appearance. Start with the three-tap rule because it is known to
+look right on Daggorath, and swap the table builder later without
+touching the render loop. Table size is 16 KB (palette indices) or
+32 KB (RGB565) for both phases. The two hues, the blend weight, and the
+phase flip are config values: real hardware picks the phase at random
+on power-up and people argue about the hues. Artifacting applies only
+in PMODE 4 and only when enabled.
+
+### 4.2 Frame sync
+
+No vsync reaches the cart edge, and the Pico's DVI frame rate is not
+locked to the VDG, so a naive render tears at the beat frequency.
+Infer vertical blank from bus activity instead: the VDG's FS line
+drives PIA0 CB1, and both Color BASIC's IRQ handler (which reads $FF02
+to clear it) and polling games (which read $FF03) touch PIA0 once per
+field. Snapshot the shadow at that moment into the render buffer.
+Addresses are visible on read cycles, so this needs no data-bus
+access. Software that syncs some other way can still tear; accept it.
+
+### 4.3 Mid-frame register changes
+
+Split screens and per-line colour-set changes happen by writing $FF22
+or the SAM bits partway down a frame, timed from the HSYNC interrupt or
+cycle-counted from FS. A renderer that samples registers once per frame
+gets these wrong. This is not an information problem, because the write
+and its cycle are both on the bus. It is a phase problem, and the
+CoCo's clock tree makes it tractable:
+
+- **The bus is a perfect raster clock.** E and the VDG pixel clock come
+  from the same 14.318 MHz crystal. A scanline is exactly 57 E cycles
+  and a frame exactly 14934. A count of bus cycles never drifts from
+  the picture. Only the phase (which cycle is the top of the frame) is
+  unknown.
+- **The phase comes from the software's own sync.** Any program doing
+  raster tricks must sync to FS or HS through PIA0, the only sync source
+  a CoCo 1/2 has, and those accesses are visible: the IRQ vector fetch
+  at $FFF8 (stacking is fixed, the instruction remainder adds 0..20
+  cycles of jitter, so take the minimum over many frames), the HS
+  interrupt every 57 cycles, or the exit of a `LDA $FF03 / BPL` polling
+  loop. Color BASIC's FS interrupt runs at 60 Hz from power-on, so the
+  lock is tight before any game starts, and it holds through sync-once
+  demos because the count never drifts.
+- **Render by replaying the ring in beam order.** Walk 262 lines, apply
+  every write whose cycle falls before the line ends, draw the line with
+  the registers as they stood. Mode, colour-set and display-offset
+  changes land on the right line; RAM writes that race the beam land
+  above or below it correctly. Horizontal placement is one E cycle,
+  8 PMODE 4 pixels, about what real hardware glitches over anyway.
+
+Residual limits: a Pico reboot mid-session loses the count, and
+sync-once software is off by up to a third of a line until it syncs
+again (software that touches PIA0 every frame re-locks in a second);
+address-dependent fast mode (POKE 65495) shortens ROM/IO cycles so the
+count slips a few cycles within a frame, bounded by per-frame re-lock;
+software with no PIA0 sync cannot be located, but cannot do raster
+tricks either. Output is always one frame behind.
+
+**How much software this affects (searched 2026-09-08): almost none.**
+One commercial CoCo 1/2 title is documented doing it: Dragonfire
+(Tandy, 1984) toggles CSS at $FF22 several times per scanline for up to
+nine colour sets per line. Two independent sources: the Stupid VDG
+Tricks blog (http://vdgtricks.blogspot.com/2012/07/palette-expansion.html)
+and the DracoDS emulator README, which admits the game is "not
+color-accurate" because "mid-scanline CSS trickery is not supported"
+(https://github.com/wavemotion-dave/DracoDS). The SAM-graphics /
+VDG-text "inconsistent mode" trick is documented on the Dragon Archive
+wiki but no shipped title using it was found. Sock Master's demos are
+all CoCo 3. Dungeons of Daggorath draws its text as vectors in one
+PMODE 4 bitmap (the glyphs carry the same artifact fringing as the
+graphics), so it is a single mode per frame. Forum archives were mostly
+unreachable, so a title known only from forum lore could have been
+missed. Note that Dragonfire's trick is several changes per line, so a
+per-scanline register model would still get it wrong; only the
+cycle-timestamped replay above handles it.
+
+### 4.4 Plan: two stages
+
+**Stage 1, the version that ships.** Capture every cycle into the ring
+(§4). Render whole frames from the shadow, snapshotting at inferred
+vblank (§4.2), with per-frame register state. Artifact table (§4.1).
+Restart recovery (§4.5). This covers BASIC, essentially every
+commercial game, Daggorath, and the WordPak-RS console. Output is an
+emulated VDG view of RAM, not the VDG's signal, and the doc should say
+so.
+
+**Stage 2, only if a real title demands it.** Beam-order replay from
+the same ring (§4.3). The capture path and board do not change, so this
+is renderer-only work. Dragonfire is the acceptance test. If nobody asks
+for Dragonfire, stage 2 never happens and nothing was wasted.
+
+**Not planned:** GIME video emulation (RGB out plus a converter wins on
+every axis), PSRAM for the video path (neither stage needs it), and
+genlocking the DVI clock to the CoCo (one duplicated frame a minute is
+imperceptible). Priority stays behind DriveWire, disk emulation and
+sound as in §7; the HDMI hardware earns its place through WordPak-RS
+regardless.
+
+### 4.5 Surviving a Pico restart
+
+A CoCo reset also resets the Pico (RUN pin) and Color BASIC rewrites
+every SAM/PIA register on the way up, so that case is free. The case
+that matters is the Pico restarting while the CoCo keeps running: a
+firmware update from the console, a deliberate `reboot`, or a crash
+that trips the watchdog. Two existing mechanisms cover it with almost
+no new code:
+
+1. **The CoCo freezes for the duration.** HALT_GATE defaults to held at
+   boot (R7 pull-up on the Q2 gate), so the moment the Pico resets and
+   GP27 floats, /HALT goes low and the 6809 stops at the end of its
+   current instruction. `halt_release()` runs only after `bus_watcher`
+   is up. No write can be missed because no write happens. The SAM
+   keeps refreshing DRAM and the VDG keeps displaying the frozen
+   screen.
+2. **The shadow survives in SRAM.** Put the 64 KB shadow and the
+   mode-register mirror in `.uninitialized_data` with a magic word and
+   a CRC. RP2350 SRAM is retained across watchdog and software resets
+   and cleared only by power-on. At boot, read the chip reset reason:
+   watchdog or software reset with a valid magic and CRC means keep
+   the shadow; RUN-pin or power-on reset means zero it and let the CoCo
+   ROM repopulate.
+
+Together these make planned and unplanned restarts recover to an exact
+picture with zero missed cycles. Firmware updates should therefore go
+through the console updater and a watchdog reboot, not BOOTSEL, since
+the bootrom's USB mode makes no promise about SRAM. Reading CoCo RAM
+back over DMA (§3) is not needed for resync on CoCo 1/2.
 
 ---
 
@@ -311,8 +511,8 @@ keyboard/joystick injection, capturing the real video signal.
 3. Wire SND with a PWM output stage; put SD on the board.
 4. Firmware, in order of value: DriveWire as planned → SDC-style disk
    emulation → sound → DMA on CoCo 1/2 (RAM expansion, fast load,
-   debugger) → RAM cart fallback → CoCo 1/2 HDMI snoop → CoCo 3 DMA
-   writes.
+   debugger) → RAM cart fallback → CoCo 1/2 HDMI snoop → WordPak-RS
+   HDMI renderer → CoCo 3 DMA writes.
 
 Early verification items (bus-capture milestone): /CTS on write
 cycles; /SLENB behaviour on CoCo 3 writes. Both decide how the RAM
@@ -351,11 +551,10 @@ table instead of responding live.
 |---|---|---|
 | USB host vs USB device | One port, one role at a time | Use SD or WiFi/TCP for the DriveWire server if thumb drives matter |
 | /CTS ROM window | One 16 KB ROM visible at a time | MPI emulation to slot-switch, or one DOS ROM supporting both DW and SDC |
-| CoCo 3 video shadow vs RAM cart | 512 KB shadow eats all SRAM | Needs PSRAM, which costs a GPIO for CS1 |
 | Pins for WiFi UART or PSRAM CS | §1 budget is exactly 48 | Free two: /RESET goes to the dedicated RUN pin, not a GPIO; Q is optional |
 | /NMI ownership | Disk INTRQ vs debugger breakpoints | Time-multiplexed, one owner at a time |
 | /HALT ownership | Disk per-byte halt, RAM page swap, DW flow control, DMA bursts | Same: firmware arbitrates, one owner at a time; the CPU is halted during each anyway |
-| DMA vs live video | DMA-reading a screen halts the CPU for most of a frame | Video stays snoop-based; DMA only for resync |
+| DMA vs live video | DMA-reading a screen halts the CPU for most of a frame | Video stays snoop-based; restarts recover from the retained SRAM shadow (§4.5), no DMA needed |
 | DMA writes on CoCo 3 | Needs the pin-19 mod or the charge trick | Reads, and everything else, work unmodified; gate write-DMA features behind a per-machine setting |
 
 DMA and the bus snoop are complementary: the snoop path already
@@ -624,8 +823,9 @@ SmartWatch DS1315 (ROM socket), CocoMEM (GIME/CPU sockets).
 
 - Every Tier 1 device is register-mapped and fits the response-table
   rule in §8. Self-decoded $FF6x/$FF7x needs Pico-controlled /OE (§1).
-- WordPak-RS is the second reason for HDMI after the VDG snoop: an
-  80-column NitrOS-9 console on a CoCo 1/2 with no monitor mod. It
+- WordPak-RS is the second reason for HDMI after the VDG snoop, and
+  the only HDMI feature planned for the CoCo 3 (§4): an 80-column
+  NitrOS-9 console on a CoCo 1/2 with no monitor mod. It
   works on the CoCo 3 too (the RS variant was the CoCo 3 version, moved
   to $FF76 because $FF9x became GIME registers): WordPak-targeted
   software (DynaStar, O-PAK) runs unchanged, and NitrOS-9 can drive
