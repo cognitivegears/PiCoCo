@@ -117,6 +117,16 @@ heading.
 
 ## Results
 
+### 2026-09-15, breadboard gates 9 and 10 on a CoCo 3
+Address buffers + 74HC00 decode (bench guide gate 9): passed after U15 pin 14
+was found on GND. A CoCo 3 runs BASIC from RAM, so `PEEK(&HC123)` never hits
+the cart; the boot-time `0000 R`/`0001 R` and /SCS PEEKs ($FF41/44/48/50)
+proved A0-A4, A6-A13. Data buffer U10 + Becker loop (gate 10, plan step 9):
+`POKE &HFF42,65: PRINT PEEK(&HFF41), PEEK(&HFF41), PEEK(&HFF42)` -> `0 2 65`,
+trace `3f42 W 41`, `W a5` echoed exactly, `becker reads 3 writes 3 underrun
+0`. First attempt traced `W e1` with the screen still reading 65: GP2-GP7 were
+one Pico pin low (pin 3 GND not skipped). A5 still unproven.
+
 ### 2026-09-08 evening, reflash
 `main` 78fb594 flashed via BOOTSEL; `version 0.3-pico`, config replayed
 (`mode native`, `bus drive off`, `dw hdbdos off`), `dw selftest` ok.
