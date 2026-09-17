@@ -217,6 +217,9 @@ def _find_footprint_block(text: str, start: int) -> tuple[int, int]:
 _ANGLE_AT_RE = re.compile(r'\(at\s+(-?[\d.]+)\s+(-?[\d.]+)(?:\s+(-?[\d.]+))?(\s+unlocked)?\)')
 _ANGLE_ITEM_RE = re.compile(r'\((pad|fp_text|property)\s')
 
+STOCK_FOOTPRINTS = Path("/Applications/KiCad/KiCad.app/Contents/SharedSupport/footprints")
+LOCAL_PRETTY = PROJECT_ROOT / "libraries" / "PiCoCo.pretty"
+
 
 def _fmt_angle(a: float) -> str:
     a %= 360
@@ -225,7 +228,72 @@ def _fmt_angle(a: float) -> str:
     return str(int(round(a))) if abs(a - round(a)) < 1e-6 else f'{a:.6g}'
 
 
-def _set_child_angles(block: str, target_rot: float, old_fp_rot: float) -> str:
+def _footprint_lib_path(lib_id: str) -> Path | None:
+    """Resolve a placed footprint's lib_id ("Lib:Name") to its .kicad_mod file."""
+    if ":" not in lib_id:
+        return None
+    lib, name = lib_id.split(":", 1)
+    base = LOCAL_PRETTY if lib == "PiCoCo" else STOCK_FOOTPRINTS / f"{lib}.pretty"
+    return base / f"{name}.kicad_mod"
+
+
+_LIB_ANGLE_CACHE: dict[Path, dict] = {}
+
+
+def _library_child_angles(lib_path: Path) -> dict:
+    """Parse a .kicad_mod library file into {key: relative_angle}.
+
+    key is ("user", text, layer) for `(fp_text user "text" ... (layer
+    "layer") ...)`, or ("property", name) for either a modern `(property
+    "name" ...)` or an old-style `(fp_text reference ...)`/`(fp_text value
+    ...)` (which correspond to the "Reference"/"Value" properties on a
+    placed instance). These angles are the item's own, un-rotated, as
+    authored in the library -- i.e. relative to the footprint.
+    """
+    if lib_path in _LIB_ANGLE_CACHE:
+        return _LIB_ANGLE_CACHE[lib_path]
+    result: dict = {}
+    if lib_path.is_file():
+        src = lib_path.read_text()
+        for m in re.finditer(r'\(fp_text\s+(\w+)\s+"((?:[^"\\]|\\.)*)"', src):
+            kind, content = m.group(1), m.group(2)
+            item_start, item_end = _find_footprint_block(src, m.start())
+            item = src[item_start:item_end]
+            at_m = _ANGLE_AT_RE.search(item)
+            angle = float(at_m.group(3) or 0) % 360 if at_m else 0.0
+            if kind == "user":
+                layer_m = re.search(r'\(layer "([^"]+)"\)', item)
+                result[("user", content, layer_m.group(1) if layer_m else None)] = angle
+            elif kind == "reference":
+                result[("property", "Reference")] = angle
+            elif kind == "value":
+                result[("property", "Value")] = angle
+        for m in re.finditer(r'\(property\s+"([^"]+)"', src):
+            item_start, item_end = _find_footprint_block(src, m.start())
+            item = src[item_start:item_end]
+            at_m = _ANGLE_AT_RE.search(item)
+            angle = float(at_m.group(3) or 0) % 360 if at_m else 0.0
+            result.setdefault(("property", m.group(1)), angle)
+    _LIB_ANGLE_CACHE[lib_path] = result
+    return result
+
+
+def _child_lookup_key(kind: str, item: str) -> tuple | None:
+    """Return the (kind, ...) lookup key for a placed pad/fp_text/property
+    child, matching the keys _library_child_angles() produces."""
+    if kind == "fp_text":
+        tm = re.match(r'\(fp_text\s+\w+\s+"((?:[^"\\]|\\.)*)"', item)
+        if not tm:
+            return None
+        layer_m = re.search(r'\(layer "([^"]+)"\)', item)
+        return ("user", tm.group(1), layer_m.group(1) if layer_m else None)
+    if kind == "property":
+        nm = re.match(r'\(property\s+"([^"]+)"', item)
+        return ("property", nm.group(1)) if nm else None
+    return None
+
+
+def _set_child_angles(block: str, target_rot: float, lib_angles: dict) -> str:
     """Fix up every (pad ...), (fp_text ...) and (property ...) child's
     `(at x y [angle])` inside a footprint block, using two different rules.
 
@@ -238,19 +306,18 @@ def _set_child_angles(block: str, target_rot: float, old_fp_rot: float) -> str:
 
     Pads: every pad on this board has zero relative rotation in its
     library copy, so the correct angle is simply the footprint's target
-    rotation -- SET it directly (rather than adding a delta to whatever
-    is on file). This also self-heals a pad left stale by an earlier bug
-    or manual edit, regardless of whether the footprint's own rotation is
-    changing this run.
+    rotation -- SET it directly.
 
-    fp_text/property: unlike pads, these often DO have a nonzero relative
-    angle in the library copy (e.g. Pico-Carrier's 40 pin-name labels are
-    45 deg relative, and the reference/value auto-text is 180 deg
-    relative on some parts) -- KiCad wrote them consistent with the
-    footprint's rotation *at sync time* (`old_fp_rot`), so setting them
-    all to the same absolute angle would flatten that relative offset.
-    Instead ADD `(target_rot - old_fp_rot) mod 360` to whatever angle is
-    already there, preserving each item's own relative angle.
+    fp_text/property: these often DO have a nonzero relative angle in the
+    library copy (e.g. Pico-Carrier's 40 pin-name labels are 45 deg
+    relative). The correct absolute angle is `(target_rot + library
+    relative angle) mod 360`, looked up from `lib_angles` (see
+    _library_child_angles()) -- NOT derived by adding a delta to whatever
+    is already on file, which cannot recover a value an earlier bug (or
+    manual edit) already got wrong: if the file's own rotation already
+    equals the target, a delta of 0 leaves a stale value stale forever.
+    An item with no library match is left untouched, with a one-line
+    notice (its correct angle isn't determinable from the library).
 
     Either way, items already at the correct end angle are left untouched
     (including staying absent when the result is 0), so already-correct
@@ -259,7 +326,6 @@ def _set_child_angles(block: str, target_rot: float, old_fp_rot: float) -> str:
     """
     target = target_rot % 360
     target_s = _fmt_angle(target)
-    delta = (target_rot - old_fp_rot) % 360
     out = []
     i = 0
     for m in _ANGLE_ITEM_RE.finditer(block):
@@ -272,7 +338,16 @@ def _set_child_angles(block: str, target_rot: float, old_fp_rot: float) -> str:
         if at_m:
             x, y, ang, unlocked = at_m.group(1), at_m.group(2), at_m.group(3), (at_m.group(4) or "")
             cur = float(ang or 0) % 360
-            new_ang = target if kind == "pad" else (cur + delta) % 360
+            if kind == "pad":
+                new_ang = target
+            else:
+                key = _child_lookup_key(kind, item)
+                lib_angle = lib_angles.get(key) if key else None
+                if lib_angle is None:
+                    print(f"note: no library angle for {key or (kind,)}, leaving angle as-is")
+                    new_ang = cur
+                else:
+                    new_ang = (target + lib_angle) % 360
             new_ang_s = _fmt_angle(new_ang)
             if _fmt_angle(cur) != new_ang_s:
                 item = item[:at_m.start()] + f'(at {x} {y} {new_ang_s}{unlocked})' + item[at_m.end():]
@@ -283,26 +358,41 @@ def _set_child_angles(block: str, target_rot: float, old_fp_rot: float) -> str:
     return "".join(out)
 
 
-def _self_check_pad_angles(text: str) -> None:
+def _self_check_child_angles(text: str) -> None:
     """For every footprint, assert every pad's absolute angle equals the
-    footprint's own rotation (mod 360) -- the simple case for pads whose
-    library-local angle is 0, which holds for every footprint on this
-    board (no part here mixes pads at different relative angles)."""
-    for m in re.finditer(r'\(footprint\s+"[^"]+"', text):
+    footprint's own rotation, and every fp_text/property with a resolvable
+    library match has angle == (footprint rotation + library relative
+    angle) mod 360. Items with no library match aren't checked (their
+    correct value isn't determinable from the library either)."""
+    for m in re.finditer(r'\(footprint\s+"([^"]+)"', text):
+        lib_id = m.group(1)
         fp_start, fp_end = _find_footprint_block(text, m.start())
         block = text[fp_start:fp_end]
         ref_m = re.search(r'\(property\s+"Reference"\s+"([^"]+)"', block)
         ref = ref_m.group(1) if ref_m else "?"
         fp_at = re.search(r'\n\t+\(at\s+(-?[\d.]+)\s+(-?[\d.]+)(?:\s+(-?[\d.]+))?\)', block)
         fp_angle = float(fp_at.group(3) or 0) % 360 if fp_at else 0.0
-        for pm in re.finditer(r'\(pad\s+"[^"]*"\s', block):
-            p_start, p_end = _find_footprint_block(block, pm.start())
-            pad = block[p_start:p_end]
-            at_m = _ANGLE_AT_RE.search(pad)
-            pad_angle = float(at_m.group(3) or 0) % 360 if at_m and at_m.group(3) else 0.0
-            assert abs(pad_angle - fp_angle) < 1e-6, (
-                f"{ref}: pad angle {pad_angle} != footprint angle {fp_angle}"
-            )
+        lib_angles = _library_child_angles(_footprint_lib_path(lib_id)) if _footprint_lib_path(lib_id) else {}
+        for cm in _ANGLE_ITEM_RE.finditer(block):
+            c_start, c_end = _find_footprint_block(block, cm.start())
+            item = block[c_start:c_end]
+            kind = cm.group(1)
+            at_m = _ANGLE_AT_RE.search(item)
+            cur = float(at_m.group(3) or 0) % 360 if at_m and at_m.group(3) else 0.0
+            if kind == "pad":
+                assert abs(cur - fp_angle) < 1e-6, (
+                    f"{ref}: pad angle {cur} != footprint angle {fp_angle}"
+                )
+            else:
+                key = _child_lookup_key(kind, item)
+                lib_angle = lib_angles.get(key) if key else None
+                if lib_angle is None:
+                    continue
+                expected = (fp_angle + lib_angle) % 360
+                assert abs(cur - expected) < 1e-6, (
+                    f"{ref}: {kind} {key} angle {cur} != expected {expected} "
+                    f"(footprint {fp_angle} + library {lib_angle})"
+                )
 
 
 def main() -> int:
@@ -312,7 +402,8 @@ def main() -> int:
     seen: set[str] = set()
     out_parts: list[str] = []
     last_end = 0
-    for m in re.finditer(r'\(footprint\s+"[^"]+"', text):
+    for m in re.finditer(r'\(footprint\s+"([^"]+)"', text):
+        lib_id = m.group(1)
         fp_start, fp_end = _find_footprint_block(text, m.start())
         block = text[fp_start:fp_end]
         # ref
@@ -342,17 +433,20 @@ def main() -> int:
             out_parts.append(text[last_end:fp_end])
             last_end = fp_end
             continue
-        old_fp_rot = float(m2.group(4) or 0)
         block2 = block[:m2.start()] + f'\n{m2.group(1)}' + new_at + block[m2.end():]
         # The footprint's own rotation is absolute; its pad/text/property
         # children's angles are ALSO absolute in the file (not relative), so
         # they must be fixed up too or their copper/text shapes go stale
-        # (see _set_child_angles docstring: pads are SET to the target,
-        # text/properties are shifted by delta to preserve their own
-        # relative angle). Done for every footprint we place, not just ones
-        # whose rotation is changing this run, so pads self-heal any
+        # (see _set_child_angles docstring: pads are SET to the target;
+        # text/properties get the library's own relative angle added to the
+        # target, looked up by lib_id -- not derived from whatever is
+        # already on file, which can't recover a value an earlier bug
+        # already flattened). Done for every footprint we place, not just
+        # ones whose rotation is changing this run, so this self-heals any
         # pre-existing staleness too.
-        block2 = _set_child_angles(block2, rot, old_fp_rot)
+        lib_path = _footprint_lib_path(lib_id)
+        lib_angles = _library_child_angles(lib_path) if lib_path else {}
+        block2 = _set_child_angles(block2, rot, lib_angles)
         out_parts.append(text[last_end:fp_start])
         out_parts.append(block2)
         last_end = fp_end
@@ -360,7 +454,7 @@ def main() -> int:
     out_parts.append(text[last_end:])
     out_text = "".join(out_parts)
     out_text = add_board_extras(out_text)
-    _self_check_pad_angles(out_text)
+    _self_check_child_angles(out_text)
     PCB.write_text(out_text)
     print(f"moved {changes} footprints")
 
