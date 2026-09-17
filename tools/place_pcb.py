@@ -46,9 +46,15 @@ PLACEMENT: dict[str, tuple[float, float, float]] = {
     # Module along the top edge, horizontal: USB end flush with the LEFT board edge,
     # antenna end pointing right; body x 99.6..150.6, y 45.7..66.7. Rotation is verified
     # by the render in step 5 (USB must be at x=99.6); if it comes out mirrored use 270.
+    # Verified: rot=90 puts pad 1 (USB) at x=101.0 (USB/left edge) and pad 20 at
+    # x=149.2 (antenna/right end), matching spec. (An earlier hand-derived check with
+    # a mis-signed rotation matrix wrongly suggested 270; 270 also collides pad 38-40
+    # with P1's MTG1 mounting hole. 90 is correct and collision-free.)
     "U1":   (125.1, 56.2, 90),
     # Power block near the +5V finger (x 134.6): LDO, Schottky, bulk caps
-    "U14":  (108.0, 92.0, 0), "D2": (115.0, 96.0, 0), "C1": (120.0, 97.5, 0), "C2": (105.0, 84.0, 90),
+    # U14/C1 nudged +/-3mm in x from the brief to give D2's 7mm-wide courtyard
+    # clearance on both sides (measured courtyard overlap at the brief's coords).
+    "U14":  (105.0, 92.0, 0), "D2": (115.0, 96.0, 0), "C1": (124.0, 97.5, 0), "C2": (105.0, 84.0, 90),
     "C3":   (113.0, 84.0, 90), "C12": (106.0, 74.0, 0), "R4": (118.0, 70.0, 0),
     # /HALT, /NMI, /CART stages near fingers 3/4/8 (x 127..132)
     "R1": (124.0, 86.0, 0), "Q2": (128.0, 85.0, 0), "R7": (124.0, 80.0, 0), "R8": (128.0, 80.0, 0),
@@ -57,19 +63,29 @@ PLACEMENT: dict[str, tuple[float, float, float]] = {
     "R3": (140.0, 70.0, 0),
     # Buffer row nearest the fingers, in finger order: data, A0-7, A8-13/RW/CTS, controls
     "U10": (140.0, 92.0, 0), "U11": (154.0, 92.0, 0), "U12": (168.0, 92.0, 0), "U13": (182.0, 92.0, 0),
-    "C4": (140.0, 84.0, 90), "C6": (154.0, 84.0, 90), "C7": (168.0, 84.0, 90), "C8": (182.0, 84.0, 90),
+    # Decoupling caps nudged from y=84.0 to 83.0 (brief's y=84 clipped the buffer
+    # ICs' courtyard, which starts at y=85.35, by ~0.35mm; measured after placement).
+    "C4": (140.0, 83.0, 90), "C6": (154.0, 83.0, 90), "C7": (168.0, 83.0, 90), "C8": (182.0, 83.0, 90),
     "U15": (175.0, 77.0, 0), "C9": (181.0, 77.0, 90),
     "R11": (175.0, 71.0, 0), "R12": (163.0, 84.0, 0), "JP2": (146.0, 84.0, 0),
     "R9": (190.0, 84.0, 0), "R10": (194.0, 84.0, 90),
-    # Sound stage in a line to the SND finger (x 167.6): keep it below U13's row end
-    "R19": (188.0, 97.5, 0), "C13": (191.0, 97.5, 0), "R20": (194.0, 97.5, 0), "C14": (194.0, 93.0, 90),
-    "R21": (194.0, 89.0, 90), "R22": (190.0, 89.0, 90), "C15": (186.0, 89.0, 90), "TP7": (186.0, 93.0, 0),
-    # Between module and the reserved HDMI corner: JP3 by module pin 34, test points, C10
-    "JP3": (152.0, 62.0, 0), "C10": (152.0, 66.0, 90),
+    # Sound stage: regridded 2 rows x 4 cols (rot 90 on the 0805s) right of U13
+    # (courtyard ends x=187.93) and clear of FID2's reserved corner (measured
+    # courtyard: FID2 circle spans x 193.35..195.85, y 94.95..97.45). The brief's
+    # single-row layout put R19/C13/R20 inside both U13's courtyard and FID2's.
+    "R21": (189.5, 87.5, 90), "R22": (191.7, 87.5, 90), "C15": (193.9, 87.5, 90), "TP7": (196.1, 87.5, 0),
+    "R19": (189.5, 91.5, 90), "C13": (191.7, 91.5, 90), "R20": (193.9, 91.5, 90), "C14": (196.1, 91.5, 90),
+    # Between module and the reserved HDMI corner: JP3 by module pin 34, test points, C10.
+    # JP3/C10 nudged +8mm in x from the brief: at x=152 both sat inside U1's
+    # courtyard (ends x=155.52) and the antenna keepout (x 150.6..155.6).
+    "JP3": (160.0, 62.0, 0), "C10": (160.0, 66.0, 90),
     "TP1": (166.0, 50.0, 0), "TP2": (166.0, 54.0, 0), "TP3": (166.0, 58.0, 0),
     "TP4": (166.0, 62.0, 0), "TP5": (166.0, 66.0, 0), "TP6": (170.0, 50.0, 0),
-    # Fiducials 3 mm in from two diagonal corners
-    "FID1": (102.6, 47.2, 0), "FID2": (194.6, 96.2, 0),
+    # Fiducials 3 mm in from two diagonal corners. FID1 relocated to open space
+    # between C12 and R4/C2's row; the brief's (102.6, 47.2) sat inside U1's
+    # pad-39/40 clearance/courtyard, and the first fallback (102.6, 70.0) landed
+    # inside C12's 10.5x8.8mm courtyard (both measured after placement).
+    "FID1": (114.0, 76.0, 0), "FID2": (194.6, 96.2, 0),
 }
 
 
