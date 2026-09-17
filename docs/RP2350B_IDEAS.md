@@ -504,9 +504,10 @@ keyboard/joystick injection, capturing the real video signal.
 
 ## 7. Suggested order
 
-1. Move to an RP2350B carrier and route every cart signal. Give the
-   Pico control of U10 /OE with the cart-selected-OR-write rule. This
-   single board change enables everything above.
+1. Build the main carrier so it takes either a Pico 2 or a Waveshare
+   RP2350B-Plus-W (§13). With the Plus-W fitted, every cart signal
+   reaches the chip and a solder jumper hands U10 /OE to firmware with
+   the cart-selected-OR-write rule. One board, no second spin.
 2. Add the /NMI and /CART FETs next to Q2.
 3. Wire SND with a PWM output stage; put SD on the board.
 4. Firmware, in order of value: DriveWire as planned → SDC-style disk
@@ -839,3 +840,98 @@ SmartWatch DS1315 (ROM socket), CocoMEM (GIME/CPU sockets).
   `coco_ssc`, `coco_psg`, `coco_gmc`, `coco_sym12`, `coco_stecomp`,
   `coco_wpk`, `coco_wpk2p`, `coco_max`, `coco_xsid`, `meb_rtime`, and
   the `dragon_*` files.
+
+---
+
+## 13. Carrier provisions for the Waveshare RP2350B-Plus-W (decided 2026-09-16)
+
+Decision: the main board is designed once, for the RP2350B-Plus-W
+footprint. A Pico 2 fits the same footprint and is what the first
+build uses. Nothing in this section costs the Pico 2 build anything
+beyond unused pads and a jumper left in its default position.
+
+### 13.1 Module facts (Waveshare wiki pinout image, checked 2026-09-16)
+
+- Pico 2 W form factor, 51 x 21 mm, plus a 4.92 mm PCB antenna
+  overhang on the end opposite USB-C. RP2350B, 16 MB flash, Raspberry
+  Pi Radio Module 2 (RM2, CYW43439), ME6217C33 3.3 V LDO rated
+  800 mA, PSRAM footprint unpopulated. About $11.
+- The 2x20 header is the Pico 2 pinout for GP0..GP22, RUN, 3V3_EN,
+  3V3(OUT), VSYS, VBUS and all grounds. The three ADC positions
+  differ: **pins 31, 32, 34 are GP40, GP41, GP42** instead of
+  GP26, GP27, GP28. Those are OE_BUS, HALT_GATE and E, so the firmware
+  needs a second board header and the core1 wait loop reads the high
+  GPIO register for them (bits above 31).
+- **15 underside SMD pads** in a 3 x 5 grid under the middle of the
+  module carry GP24..GP35 and GP43..GP45. GP23, GP36..GP39, GP46 and
+  GP47 are not brought out (radio module and PSRAM CS). The pad pitch
+  and coordinates are not published as text; measure a physical
+  board or get Waveshare's drawing before laying out the grid.
+- The underside pads are only reachable if the module is soldered
+  down flat (castellations + hidden pads, paste and hot air), or if a
+  3 x 5 header can be soldered to them and the carrier gets matching
+  through-holes. Which one depends on the measured pitch.
+
+### 13.2 Power budget
+
+Cart pin 9 is rated +5 V at 300 mA on every model, from the primary
+manuals: CoCo 1 (Technical Reference Manual, which also gives +12 V at
+300 mA on pin 2), CoCo 2 (NTSC Service Manual 26-3026/3027), CoCo 3
+(Service Manual), and the Multi-Pak's own edge card into the CoCo
+(MPI Service Manual). The Multi-Pak has its own supply; its per-slot
+rating was not checked.
+
+| Load | Figure | Source |
+|---|---|---|
+| RM2 transmit, MCS7 at 16 dBm | 271 mA | RM2 datasheet |
+| RM2 receive active, MCS7 | 43 mA | RM2 datasheet |
+| RM2 power-save idle | 1.19 mA | RM2 datasheet |
+| Pico 2, one core busy, USB up | 9.4 mA at 5 V | Pico 2 datasheet, CoreMark row |
+| Pico 2, USB serial app | 12.7 mA at 5 V | Pico 2 datasheet, hello_usb row |
+| PiCoCo board (U14 quiescent, 4 LVC buffers, pull-ups, no LEDs) | 10-15 mA | BOM estimate |
+
+- Pico 2 build: about 30 mA total. Ten times under the rating.
+- Plus-W, Wi-Fi idle or receiving: about 90 mA. The Waveshare LDO is
+  linear, so its 3.3 V current appears one-for-one on the 5 V rail;
+  both cores busy at 150 MHz is an estimate of 25-30 mA.
+- Plus-W, transmit burst at full power: about 315 mA for the
+  millisecond-scale length of a packet. At or just over the rating.
+  300 mA is Tandy's allocation, not a trip point, but do not lean on
+  the headroom.
+
+Mitigations, in order: bulk capacitance (13.3), lower transmit power
+(the cyw43 driver exposes a tx-power setting; verify the exact call
+before relying on it), and Wi-Fi off by default in `picoco.cfg`.
+D2 (1 A Schottky), the 0.5 mm power traces and the breakout's 0.5 A
+polyfuse all clear the Plus-W case.
+
+### 13.3 What the carrier gets, and what the Pico 2 build sees
+
+| Provision | Plus-W | Pico 2 build |
+|---|---|---|
+| Bulk capacitor footprint on `VSYS_PICO` after D2, sized for 1000 uF 6.3 V polymer. On VSYS_PICO, not +5V, so U14 and the buffers never see the burst. Rides a 2 ms transmit burst with ~0.35 V droop. Power-on inrush is a ms spike inside D2's surge rating and too short for the polyfuse. | populated | DNP |
+| Antenna keepout: no copper under or beside the 4.92 mm overhang, and clearance for it at that end of the module. | needed | free |
+| 3 x 5 underside pad grid (or through-holes, per 13.1). | used | empty |
+| Three-pad solder jumper on U10 /OE. Default: U15 output (`OE_BUS`) as today. Alternate: an underside-pad GPIO. Firmware then implements `(cart-selected OR write) AND E` (§1) when it wants to snoop or self-decode. U15 stays on the board because the Pico 2 build has no pins to replace it. | either | default |
+| Route existing nets to pads: `CTS_BUF`, `SCS_BUF`, `E_B` (U15's inputs), plus U13's already-buffered `Q_DBG` and `SLENB_DBG` outputs, currently no-connect. | captured | unused |
+| A14 and A15 have no buffer channel. U13 spends three channels buffering /HALT, /NMI and /CART as inputs, which `breadboard-plan.md` §2.3 calls pointless. Reassign two of them to A14/A15 in `gen_schematic.py` (a breadboard-plan §8 decision). | full address visible | no change |
+| Pin plan: the seven captured inputs (/CTS, /SCS, E, Q, /SLENB, A14, A15) on GP24..GP30 so one 32-bit `gpio_in` read catches them. /OE, /NMI and /CART drives on the remaining pads (GP31..GP35, GP43..GP45). | 10 of 15 pads | n/a |
+| Firmware: `boards/` header for the Plus-W with PIN_OE_BUS 40, PIN_HALT 41, PIN_E 42 and the extra pins; core1 wait loop reads `gpio_hi_in` for OE_BUS. | needed | untouched |
+
+HSTX video stays off this path: it needs GP12..GP19, which is the
+address block (§1).
+
+### 13.4 Open before layout
+
+- Underside pad pitch and coordinates (13.1).
+- Whether the Plus-W can be soldered flat with the hidden pads reliably
+  by hand, or whether the header route is needed.
+- The cyw43 tx-power call.
+- Which end of the module faces the board edge in `place_pcb.py`, for
+  the antenna overhang.
+
+Sources: Waveshare wiki `RP2350B-Plus-W` (pinout and dimension
+images); RM2 datasheet RP-008943; Pico 2 datasheet RP-008299; Pico 2 W
+datasheet RP-008304; CoCo 1 Technical Reference Manual (archive.org);
+CoCo 2 NTSC Service Manual, Multi-Pak Interface Service Manual
+(colorcomputerarchive.com); CoCo 3 Service Manual (archive.org).
