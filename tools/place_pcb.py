@@ -96,10 +96,16 @@ def _zone_keepout(name: str, layers: str, pts: list[tuple[float, float]], what: 
 
 
 EXTRAS = [
-    # Antenna: from the module's pin 20/21 end (x=150.6) 4.92 mm to the right, full module width.
+    # Antenna: starts at x=151.3, not the module's nominal edge (150.6) -- pad 20/21's
+    # castellated copper legitimately overhangs the nominal edge by ~0.4mm (measured:
+    # pad 20 copper right edge lands at x=150.98), so a zone starting exactly at 150.6
+    # clips it (DRC items_not_allowed). 151.3 clears it with margin; still 4.3mm wide.
+    # No "footprints not_allowed": the module's OWN antenna area (part of U1's
+    # courtyard by design) legitimately overlaps this zone; the rule's actual intent
+    # is keeping OTHER components' copper out, which tracks/vias/pads/copperpour cover.
     _zone_keepout("antenna_keepout", '"F.Cu" "B.Cu"',
-                  [(150.6, 45.7), (155.6, 45.7), (155.6, 66.7), (150.6, 66.7)],
-                  "(tracks not_allowed) (vias not_allowed) (pads not_allowed) (copperpour not_allowed) (footprints not_allowed)"),
+                  [(151.3, 45.7), (155.6, 45.7), (155.6, 66.7), (151.3, 66.7)],
+                  "(tracks not_allowed) (vias not_allowed) (pads not_allowed) (copperpour not_allowed)"),
     # Reserved HDMI corner: no footprints, routing allowed.
     _zone_keepout("hdmi_reserved", '"F.Cu"',
                   [(172.6, 44.2), (197.6, 44.2), (197.6, 59.2), (172.6, 59.2)],
@@ -132,9 +138,19 @@ def add_board_extras(text: str) -> str:
         line_start = body.rfind("\n", 0, item_start) + 1
         body = body[:line_start] + body[item_end:]
     for z in EXTRAS:
+        if z in body:
+            continue  # already present verbatim
         name = re.search(r'\(name "([^"]+)"', z).group(1)
-        if f'(name "{name}")' not in body:
-            body = body.rstrip("\n") + "\n" + z
+        marker = f'(name "{name}")'
+        idx = body.find(marker)
+        if idx != -1:
+            # a stale zone with this name exists (content changed since it was
+            # last written) -- drop it so the replacement below isn't a dupe.
+            zone_start = body.rfind("(zone", 0, idx)
+            z_start, z_end = _find_footprint_block(body, zone_start)
+            line_start = body.rfind("\n", 0, z_start) + 1
+            body = body[:line_start] + body[z_end:]
+        body = body.rstrip("\n") + "\n" + z
     for t, x, y, layer, size in TEXTS:
         if f'(gr_text "{t}"' not in body:
             justify = " (justify mirror)" if layer.startswith("B.") else ""
@@ -170,23 +186,27 @@ def _fmt_angle(a: float) -> str:
     return str(int(round(a))) if abs(a - round(a)) < 1e-6 else f'{a:.6g}'
 
 
-def _rotate_child_angles(block: str, delta: float) -> str:
-    """Add `delta` degrees to every (pad ...), (fp_text ...) and (property ...)
-    child's `(at x y [angle])` inside a footprint block.
+def _set_child_angles(block: str, target_rot: float) -> str:
+    """Set every (pad ...), (fp_text ...) and (property ...) child's
+    `(at x y [angle])` angle to `target_rot` (inserting one where absent).
 
     KiCad's board format stores each child's angle as an ABSOLUTE angle
     (the footprint's own rotation plus the item's angle in the library
-    copy), not one relative to the footprint. So when this script changes
-    a footprint's rotation, the children's copper/text shapes do not
-    follow automatically -- only their x/y positions do (those are
-    footprint-local and KiCad reinterprets them under the new footprint
-    rotation on its own). Positions are left untouched here; only angle
-    terms are adjusted (inserting one at `delta` where none exists, since
-    an absent angle means 0). no-op if delta == 0 (mod 360).
+    copy), not one relative to the footprint, so rotating a footprint does
+    not rotate its children's copper/text shapes automatically -- only
+    their x/y positions do (those are footprint-local; KiCad reinterprets
+    them under the new rotation on its own). Every part on this board has
+    zero relative pad rotation in its library copy, so the correct angle
+    for every child is simply the footprint's own target rotation --
+    setting it directly (rather than adding a delta to whatever is
+    already on file) also self-heals any pad left stale by an earlier bug
+    or manual edit, regardless of whether the footprint's own rotation is
+    actually changing this run. Items already at the target angle are
+    left untouched (including staying absent when target is 0), so
+    already-correct footprints produce no diff noise.
     """
-    delta %= 360
-    if delta == 0:
-        return block
+    target = target_rot % 360
+    target_s = _fmt_angle(target)
     out = []
     i = 0
     for m in _ANGLE_ITEM_RE.finditer(block):
@@ -197,8 +217,8 @@ def _rotate_child_angles(block: str, delta: float) -> str:
         at_m = _ANGLE_AT_RE.search(item)
         if at_m:
             x, y, ang = at_m.group(1), at_m.group(2), at_m.group(3)
-            new_ang = _fmt_angle(float(ang or 0) + delta)
-            item = item[:at_m.start()] + f'(at {x} {y} {new_ang})' + item[at_m.end():]
+            if float(ang or 0) % 360 != target:
+                item = item[:at_m.start()] + f'(at {x} {y} {target_s})' + item[at_m.end():]
         out.append(block[i:item_start])
         out.append(item)
         i = item_end
@@ -265,15 +285,14 @@ def main() -> int:
             out_parts.append(text[last_end:fp_end])
             last_end = fp_end
             continue
-        old_rot = float(m2.group(4) or 0)
-        delta = (rot - old_rot) % 360
         block2 = block[:m2.start()] + f'\n{m2.group(1)}' + new_at + block[m2.end():]
         # The footprint's own rotation is absolute; its pad/text/property
         # children's angles are ALSO absolute in the file (not relative), so
-        # they must be nudged by the same delta or their copper/text shapes
-        # go stale relative to the newly-rotated footprint (see
-        # _rotate_child_angles docstring).
-        block2 = _rotate_child_angles(block2, delta)
+        # they must match the target rotation directly or their copper/text
+        # shapes go stale (see _set_child_angles docstring). Done for every
+        # footprint we place, not just ones whose rotation is changing this
+        # run, so it self-heals any pre-existing staleness too.
+        block2 = _set_child_angles(block2, rot)
         out_parts.append(text[last_end:fp_start])
         out_parts.append(block2)
         last_end = fp_end
