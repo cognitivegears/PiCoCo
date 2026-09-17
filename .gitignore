@@ -45,3 +45,6 @@ __pycache__/
 .worktrees/
 .superpowers/
 build*/
+
+# HDB-DOS / DriveWire ROM images the user supplies (see firmware/README.md)
+firmware/roms/
