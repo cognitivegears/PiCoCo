@@ -108,6 +108,30 @@ _PIN_NAME = re.compile(r'\(name\s+"([^"]*)"')
 _PIN_NUMBER = re.compile(r'\(number\s+"([^"]+)"')
 
 
+def retype_pins(sym_block: str, pin_numbers: set[str], new_type: str) -> str:
+    """Rewrite the electrical type of specific numbered pins (embedded copy only).
+
+    Used so the 74LS245 stock symbol's A/B bus pins don't trip KiCad's
+    default tri_state-vs-output/power_input pin_to_pin ERC warning when
+    wired to the (fixed-direction, DIR-tied) cart edge and to GND: real
+    hardware has no contention here, but the stock symbol types both bus
+    sides `tri_state` generically. Does not touch the source .kicad_sym.
+    """
+    out = sym_block
+    seen = set()
+    for block in _extract_pin_blocks(sym_block):
+        nu = _PIN_NUMBER.search(block)
+        if not nu or nu.group(1) not in pin_numbers:
+            continue
+        new_block = re.sub(r'^\(pin\s+\w+(\s+\w+)', f'(pin {new_type}\\1', block, count=1)
+        assert new_block != block, f"retype produced no change for pin {nu.group(1)}"
+        out = out.replace(block, new_block, 1)
+        seen.add(nu.group(1))
+    missing = pin_numbers - seen
+    assert not missing, f"retype_pins: pins not found: {missing}"
+    return out
+
+
 def parse_pins(sym_block: str) -> list[dict]:
     """Return a list of pins with their symbol-local positions."""
     pins = []
@@ -159,12 +183,20 @@ SYMBOLS = [
 ]
 
 
+# 74LS245 A1..A8/B1..B8 (pins 2-9, 11-18) are typed tri_state in the stock
+# symbol; DIR (1) and CE/OE (19) stay input, VCC (20)/GND (10) stay power_in.
+# Retyped to passive in the embedded copy only -- see retype_pins() docstring.
+_LVC245_BUS_PINS = {str(n) for n in list(range(2, 10)) + list(range(11, 19))}
+
+
 def load_symbols(symbols=None) -> tuple[str, dict[str, dict]]:
     """Return (embedded_block_text, pin_map). pin_map: libid -> {num: pin}."""
     blocks = []
     pin_map: dict[str, dict] = {}
     for libid, path, name in (symbols or SYMBOLS):
         block = extract_symbol(path, name)
+        if libid == "74xx:74LS245":
+            block = retype_pins(block, _LVC245_BUS_PINS, "passive")
         pins = parse_pins(block)
         # Note: pin_map key is the short symbol name as found in the source,
         # but we also index by libid for convenience.
@@ -328,6 +360,11 @@ def write_carrier_symbol() -> None:
                 break
         else:
             raise RuntimeError(f"pin {num} not found to remove")
+    # Pin 38 (GND) is mistyped `bidirectional` in the base Pico symbol (every
+    # other GND pin there is correctly `power_in`); retype it in this derived
+    # copy only -- the base "Pico" symbol block is left untouched -- so ERC's
+    # pin_to_pin matrix doesn't flag it against a cart-edge GND power_output pin.
+    sym = retype_pins(sym, {"38"}, "power_in")
     pins = []
     for i, num in enumerate(sorted(PAD_GRID, key=lambda n: int(n[2:]))):
         x = -17.78 + 2.54 * i
