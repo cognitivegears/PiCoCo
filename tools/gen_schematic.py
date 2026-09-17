@@ -273,6 +273,8 @@ def write_carrier_footprint() -> None:
         kind = it.split(None, 1)[0].lstrip("(")
         if kind == "pad" and re.match(r'\(pad "4[123]" ', it):
             continue  # SWD debug pads collide with the Plus-W grid (see docstring)
+        if kind == "fp_text" and re.match(r'\(fp_text user "(SWCLK|SWDIO)"', it):
+            continue  # silkscreen labels for the removed debug pads 41-43
         if kind in ("fp_line", "fp_rect", "fp_arc", "fp_circle") and '(layer "F.CrtYd")' in it:
             continue  # inherited courtyard; replaced with the Plus-W envelope below
         if kind == "model":
@@ -309,13 +311,45 @@ def write_carrier_footprint() -> None:
 FINGER_TRIM = (r"\(at ([\d.]+) -5\.207\) \(size 1\.27 9\.525\)", r"(at \1 -5.635) (size 1.27 8.67)")
 
 
-def trim_cart_fingers() -> None:
-    """Fingers end 1.30 mm from the edge (JLCPCB 30 deg bevel is 1.13 mm deep). Idempotent."""
+def fix_cart_footprint() -> None:
+    """Fingers end 1.30 mm from the edge (JLCPCB 30 deg bevel is 1.13 mm deep).
+
+    Also drops the MTG1 mounting-hole pad (11 mm pad / 8 mm drill): the v2.3
+    module's body sits directly over that corner regardless of U1's rotation
+    (see docs/superpowers/sdd/2026-09-17-main-board-v2.3/task-4-report.md),
+    producing hole-to-hole and keepout violations no placement nudge can
+    clear. Ruling: remove it rather than accept no mounting screw silently.
+    Idempotent (both fixes are no-ops on an already-fixed file).
+    """
     p = PRETTY / "COCO-CART-2.1X1.75.kicad_mod"
     src = p.read_text()
     out = re.sub(*FINGER_TRIM, src)
+
+    head_end = out.index("\n", out.index("(footprint"))
+    body = out[head_end:out.rstrip().rfind(")")]
+    for it in _top_level_items(body):
+        kind = it.split(None, 1)[0].lstrip("(")
+        if kind == "pad" and re.match(r'\(pad "MTG1" ', it):
+            out = out.replace("\n  " + it, "", 1)
+            break
+
     if out != src:
         p.write_text(out)
+
+
+def fix_cart_symbol() -> None:
+    """Drop the MTG@1/MTG1 pin from the base COCO-CART symbol: its matching
+    footprint pad was removed in fix_cart_footprint() (see that function's
+    docstring). Idempotent.
+    """
+    sym = extract_symbol(LOCAL_SYMS, "COCO-CART")
+    for block in _extract_pin_blocks(sym):
+        if '(number "MTG1"' in block:
+            whole = "\n      " + block
+            assert sym.count(whole) == 1, "MTG1 pin block not unique"
+            sym = sym.replace(whole, "")
+            _replace_or_append_symbol("COCO-CART", sym)
+            break
 
 
 def _replace_or_append_symbol(name: str, sym: str) -> None:
@@ -411,7 +445,8 @@ def write_lvc00_symbol() -> None:
 
 def write_library_items() -> None:
     write_carrier_footprint()
-    trim_cart_fingers()
+    fix_cart_footprint()
+    fix_cart_symbol()
     write_carrier_symbol()
     write_lvc00_symbol()
 

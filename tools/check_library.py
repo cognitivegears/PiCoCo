@@ -95,17 +95,21 @@ def main():
     for num in ("1", "20", "21", "40"):
         assert num in p, f"missing header pad {num}"
     assert "F.Paste" not in fp, "footprint has paste"
+    assert not re.search(r'\(fp_text user "(SWCLK|SWDIO)"', fp), (
+        "debug pad 41-43 silkscreen labels should be removed with the pads"
+    )
     assert "antenna" in fp.lower(), "antenna keepout text missing"
     assert re.search(r'\(fp_rect \(start -10\.5 -25\.5\) \(end 10\.5 30\.42\)', fp), "courtyard extent"
     assert fp.count('(layer "F.CrtYd")') == 1, "expected exactly one courtyard outline"
     # Regression guard: a cross-item courtyard-strip regex once ate every
     # silkscreen position marker and copper-keepout polygon between the
     # first F.SilkS fp_line and the first F.CrtYd one. Carrier keeps every
-    # inherited F.SilkS/fp_poly item and adds exactly 2 silkscreen labels
-    # (USB, ANT) of its own.
-    assert fp.count('(layer "F.SilkS")') == src.count('(layer "F.SilkS")') + 2, (
-        "F.SilkS item count changed unexpectedly (expected the inherited count plus "
-        "the 2 USB/ANT labels this footprint adds)"
+    # inherited F.SilkS/fp_poly item, drops the 2 SWCLK/SWDIO debug labels
+    # (their pads are gone), and adds 2 silkscreen labels (USB, ANT) of its
+    # own -- net zero change in count.
+    assert fp.count('(layer "F.SilkS")') == src.count('(layer "F.SilkS")') - 2 + 2, (
+        "F.SilkS item count changed unexpectedly (expected the inherited count minus "
+        "the 2 dropped SWCLK/SWDIO labels plus the 2 USB/ANT labels this footprint adds)"
     )
     assert fp.count("(fp_poly") == src.count("(fp_poly"), "fp_poly (copper keepout) count changed"
     check_pad_clearances(p)
@@ -113,9 +117,10 @@ def main():
     cart = (PRETTY / "COCO-CART-2.1X1.75.kicad_mod").read_text()
     assert "-5.207) (size 1.27 9.525)" not in cart, "fingers still end 0.44 mm from the edge"
     assert cart.count("-5.635) (size 1.27 8.67)") == 39, "39 trimmed fingers expected (pin 9 is short already)"
+    assert '(pad "MTG1"' not in cart, "MTG1 mounting hole pad should be removed (conflicts with U1 in v2.3)"
 
     sym = SYMS.read_text()
-    assert '(symbol "Pico-Carrier"' in sym and '(symbol "74LVC00"' in sym
+    assert '(symbol "Pico-Carrier"' in sym and '(symbol "74LVC00"' in sym and '(symbol "COCO-CART"' in sym
     car = sym[sym.index('(symbol "Pico-Carrier"'):]
     car = car[:car.index('\n  (symbol "', 10)] if '\n  (symbol "' in car[10:] else car
     for num in GRID:
@@ -123,6 +128,9 @@ def main():
     for num in ("41", "42", "43"):
         assert f'(number "{num}"' not in car, f"symbol pin {num} should be removed"
     assert '(name "GP26/GP40"' in car and '(name "GP27/GP41"' in car and '(name "GP28/GP42"' in car
+    cart_sym = sym[sym.index('(symbol "COCO-CART"'):]
+    cart_sym = cart_sym[:cart_sym.index('\n  (symbol "', 10)] if '\n  (symbol "' in cart_sym[10:] else cart_sym
+    assert '(number "MTG1"' not in cart_sym, "MTG1 pin should be removed from the COCO-CART symbol"
     nand = sym[sym.index('(symbol "74LVC00"'):]
     nand = nand[:nand.index('\n  (symbol "', 10)] if '\n  (symbol "' in nand[10:] else nand
     for n in range(1, 15):

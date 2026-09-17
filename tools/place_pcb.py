@@ -110,24 +110,36 @@ TEXTS = [  # (text, x, y, layer, size)
     ("PiCoCo v2.3  CERN-OHL-S-2.0", 148.0, 70.0, "F.SilkS", 1.0),
     ("github.com/cognitivegears/PiCoCo", 148.0, 72.0, "F.SilkS", 0.8),
     ("JLCJLCJLCJLC", 110.0, 62.0, "B.SilkS", 1.0),
-    ("JP2 1-2=HW /OE  2-3=FW", 146.0, 80.5, "F.SilkS", 0.6),
-    ("JP3 1-2=E  2-3=AUDIO (Pico2)", 152.0, 59.0, "F.SilkS", 0.6),
+    ("JP2 1-2=HW /OE  2-3=FW", 146.0, 80.5, "F.SilkS", 0.8),
+    ("JP3 1-2=E  2-3=AUDIO (Pico2)", 152.0, 59.0, "F.SilkS", 0.8),
     ("no parts under module", 125.0, 62.0, "F.Fab", 1.0),
 ]
+
+# Old v0.1 gr_text banner, left behind by the pre-v2.3 board; it now sits
+# under the module and must be deleted (structural item removal, not a
+# regex, since its content spans multiple lines).
+_STALE_TEXT_PREFIX = '(gr_text "PiCoCo\\nUniversal Cartridge'
 
 
 def add_board_extras(text: str) -> str:
     """Append EXTRAS zones and TEXTS silkscreen, idempotently, before the file's final `)`."""
     end = text.rstrip().rfind(")")
     body, tail = text[:end], text[end:]
+    stale = body.find(_STALE_TEXT_PREFIX)
+    if stale != -1:
+        item_start, item_end = _find_footprint_block(body, stale)
+        # eat the leading newline+indent too, else a blank line is left behind
+        line_start = body.rfind("\n", 0, item_start) + 1
+        body = body[:line_start] + body[item_end:]
     for z in EXTRAS:
         name = re.search(r'\(name "([^"]+)"', z).group(1)
         if f'(name "{name}")' not in body:
             body = body.rstrip("\n") + "\n" + z
     for t, x, y, layer, size in TEXTS:
         if f'(gr_text "{t}"' not in body:
+            justify = " (justify mirror)" if layer.startswith("B.") else ""
             body = body.rstrip("\n") + (f'\n  (gr_text "{t}" (at {x} {y} 0) (layer "{layer}")\n'
-                                        f'    (effects (font (size {size} {size}) (thickness {size*0.15:.2f})))\n  )\n')
+                                        f'    (effects (font (size {size} {size}) (thickness {size*0.15:.2f})){justify})\n  )\n')
     return body + tail
 
 
@@ -145,6 +157,75 @@ def _find_footprint_block(text: str, start: int) -> tuple[int, int]:
                 return (start, i + 1)
         i += 1
     raise RuntimeError("unbalanced footprint block")
+
+
+_ANGLE_AT_RE = re.compile(r'\(at\s+(-?[\d.]+)\s+(-?[\d.]+)(?:\s+(-?[\d.]+))?\)')
+_ANGLE_ITEM_RE = re.compile(r'\((pad|fp_text|property)\s')
+
+
+def _fmt_angle(a: float) -> str:
+    a %= 360
+    if abs(a) < 1e-9:
+        a = 0.0
+    return str(int(round(a))) if abs(a - round(a)) < 1e-6 else f'{a:.6g}'
+
+
+def _rotate_child_angles(block: str, delta: float) -> str:
+    """Add `delta` degrees to every (pad ...), (fp_text ...) and (property ...)
+    child's `(at x y [angle])` inside a footprint block.
+
+    KiCad's board format stores each child's angle as an ABSOLUTE angle
+    (the footprint's own rotation plus the item's angle in the library
+    copy), not one relative to the footprint. So when this script changes
+    a footprint's rotation, the children's copper/text shapes do not
+    follow automatically -- only their x/y positions do (those are
+    footprint-local and KiCad reinterprets them under the new footprint
+    rotation on its own). Positions are left untouched here; only angle
+    terms are adjusted (inserting one at `delta` where none exists, since
+    an absent angle means 0). no-op if delta == 0 (mod 360).
+    """
+    delta %= 360
+    if delta == 0:
+        return block
+    out = []
+    i = 0
+    for m in _ANGLE_ITEM_RE.finditer(block):
+        if m.start() < i:
+            continue  # inside an already-processed item
+        item_start, item_end = _find_footprint_block(block, m.start())
+        item = block[item_start:item_end]
+        at_m = _ANGLE_AT_RE.search(item)
+        if at_m:
+            x, y, ang = at_m.group(1), at_m.group(2), at_m.group(3)
+            new_ang = _fmt_angle(float(ang or 0) + delta)
+            item = item[:at_m.start()] + f'(at {x} {y} {new_ang})' + item[at_m.end():]
+        out.append(block[i:item_start])
+        out.append(item)
+        i = item_end
+    out.append(block[i:])
+    return "".join(out)
+
+
+def _self_check_pad_angles(text: str) -> None:
+    """For every footprint, assert every pad's absolute angle equals the
+    footprint's own rotation (mod 360) -- the simple case for pads whose
+    library-local angle is 0, which holds for every footprint on this
+    board (no part here mixes pads at different relative angles)."""
+    for m in re.finditer(r'\(footprint\s+"[^"]+"', text):
+        fp_start, fp_end = _find_footprint_block(text, m.start())
+        block = text[fp_start:fp_end]
+        ref_m = re.search(r'\(property\s+"Reference"\s+"([^"]+)"', block)
+        ref = ref_m.group(1) if ref_m else "?"
+        fp_at = re.search(r'\n\t+\(at\s+(-?[\d.]+)\s+(-?[\d.]+)(?:\s+(-?[\d.]+))?\)', block)
+        fp_angle = float(fp_at.group(3) or 0) % 360 if fp_at else 0.0
+        for pm in re.finditer(r'\(pad\s+"[^"]*"\s', block):
+            p_start, p_end = _find_footprint_block(block, pm.start())
+            pad = block[p_start:p_end]
+            at_m = _ANGLE_AT_RE.search(pad)
+            pad_angle = float(at_m.group(3) or 0) % 360 if at_m and at_m.group(3) else 0.0
+            assert abs(pad_angle - fp_angle) < 1e-6, (
+                f"{ref}: pad angle {pad_angle} != footprint angle {fp_angle}"
+            )
 
 
 def main() -> int:
@@ -184,7 +265,15 @@ def main() -> int:
             out_parts.append(text[last_end:fp_end])
             last_end = fp_end
             continue
+        old_rot = float(m2.group(4) or 0)
+        delta = (rot - old_rot) % 360
         block2 = block[:m2.start()] + f'\n{m2.group(1)}' + new_at + block[m2.end():]
+        # The footprint's own rotation is absolute; its pad/text/property
+        # children's angles are ALSO absolute in the file (not relative), so
+        # they must be nudged by the same delta or their copper/text shapes
+        # go stale relative to the newly-rotated footprint (see
+        # _rotate_child_angles docstring).
+        block2 = _rotate_child_angles(block2, delta)
         out_parts.append(text[last_end:fp_start])
         out_parts.append(block2)
         last_end = fp_end
@@ -192,6 +281,7 @@ def main() -> int:
     out_parts.append(text[last_end:])
     out_text = "".join(out_parts)
     out_text = add_board_extras(out_text)
+    _self_check_pad_angles(out_text)
     PCB.write_text(out_text)
     print(f"moved {changes} footprints")
 
