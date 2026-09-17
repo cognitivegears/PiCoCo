@@ -138,35 +138,20 @@ def parse_pins(sym_block: str) -> list[dict]:
 # ---------------------------------------------------------------------------
 
 SYMBOLS = [
-    ("PiCoCo:Pico", LOCAL_SYMS, "Pico"),
+    ("PiCoCo:Pico-Carrier", LOCAL_SYMS, "Pico-Carrier"),
     ("PiCoCo:COCO-CART", LOCAL_SYMS, "COCO-CART"),
-    ("Logic_LevelTranslator:SN74LVC8T245",
-     KICAD_STOCK / "Logic_LevelTranslator.kicad_sym", "SN74LVC8T245"),
-    # 74LS245 used as the symbol (pin-compatible with 74LVC245A);
-    # actual part set via Value = "SN74LVC245AD".
+    ("PiCoCo:74LVC00", LOCAL_SYMS, "74LVC00"),
+    # 74LS245 symbol is pin-compatible with the 74LVC245A; Value carries the real part.
     ("74xx:74LS245", KICAD_STOCK / "74xx.kicad_sym", "74LS245"),
-    # U15 is now 74LVC1G11 (3-input AND) so /OE can be gated by E as well
-    # as /CTS AND /SCS. Pinout: 1=IN_A, 2=GND, 3=IN_B, 4=OUT, 5=VCC, 6=IN_C.
-    ("74xGxx:74LVC1G11",
-     KICAD_STOCK / "74xGxx.kicad_sym", "74LVC1G11"),
-    # AP1117-15 used as the symbol (pin-compatible with AMS1117);
-    # actual part set via Value = "AMS1117-3.3".
-    ("Regulator_Linear:AP1117-15",
-     KICAD_STOCK / "Regulator_Linear.kicad_sym", "AP1117-15"),
-    # 2N7002 extends Q_NMOS_GSD; the parent has the pin definitions.
-    # Pins: 1=G, 2=S, 3=D. Value set to "2N7002" at placement time.
-    ("Transistor_FET:Q_NMOS_GSD",
-     KICAD_STOCK / "Transistor_FET.kicad_sym", "Q_NMOS_GSD"),
+    ("Regulator_Linear:AP1117-15", KICAD_STOCK / "Regulator_Linear.kicad_sym", "AP1117-15"),
+    ("Transistor_FET:Q_NMOS_GSD", KICAD_STOCK / "Transistor_FET.kicad_sym", "Q_NMOS_GSD"),
     ("Device:R", KICAD_STOCK / "Device.kicad_sym", "R"),
     ("Device:C", KICAD_STOCK / "Device.kicad_sym", "C"),
-    # Generic Schottky (value = "SS14" set at placement).
+    ("Device:C_Polarized", KICAD_STOCK / "Device.kicad_sym", "C_Polarized"),
     ("Device:D_Schottky", KICAD_STOCK / "Device.kicad_sym", "D_Schottky"),
-    ("Connector_Generic:Conn_01x04",
-     KICAD_STOCK / "Connector_Generic.kicad_sym", "Conn_01x04"),
-    ("Connector_Generic:Conn_01x02",
-     KICAD_STOCK / "Connector_Generic.kicad_sym", "Conn_01x02"),
-    ("Connector:TestPoint",
-     KICAD_STOCK / "Connector.kicad_sym", "TestPoint"),
+    ("Jumper:SolderJumper_3_Bridged12", KICAD_STOCK / "Jumper.kicad_sym", "SolderJumper_3_Bridged12"),
+    ("Mechanical:Fiducial", KICAD_STOCK / "Mechanical.kicad_sym", "Fiducial"),
+    ("Connector:TestPoint", KICAD_STOCK / "Connector.kicad_sym", "TestPoint"),
     ("power:+5V", KICAD_STOCK / "power.kicad_sym", "+5V"),
     ("power:+3V3", KICAD_STOCK / "power.kicad_sym", "+3V3"),
     ("power:GND", KICAD_STOCK / "power.kicad_sym", "GND"),
@@ -479,6 +464,7 @@ def symbol_instance(
     x: float, y: float, rot: int = 0, mirror: str = "",
     footprint: str = "", unit: int = 1,
     in_bom: str = "yes", on_board: str = "yes",
+    dnp: bool = False, lcsc: str = "", mpn: str = "",
 ) -> str:
     sym_uuid = u()
     mir = f"(mirror {mirror}) " if mirror else ""
@@ -503,9 +489,19 @@ def symbol_instance(
         f'      (effects (font (size 1.27 1.27)) hide)\n'
         f'    )'
     )
+    props.append(
+        f'    (property "LCSC" "{lcsc}" (at {x:.2f} {y:.2f} 0)\n'
+        f'      (effects (font (size 1.27 1.27)) hide)\n'
+        f'    )'
+    )
+    props.append(
+        f'    (property "MPN" "{mpn}" (at {x:.2f} {y:.2f} 0)\n'
+        f'      (effects (font (size 1.27 1.27)) hide)\n'
+        f'    )'
+    )
     return (
         f'  (symbol (lib_id "{lib_id}") (at {x:.2f} {y:.2f} {rot}) {mir}(unit {unit})\n'
-        f'    (in_bom {in_bom}) (on_board {on_board}) (dnp no)\n'
+        f'    (in_bom {in_bom}) (on_board {on_board}) (dnp {"yes" if dnp else "no"})\n'
         f'    (uuid {sym_uuid})\n'
         + "\n".join(props) + "\n"
         f'    (instances\n'
@@ -581,6 +577,7 @@ class Sheet:
         self.no_connects: list[str] = []
         self.powers: list[str] = []
         self._ref_counter: dict[str, int] = {}
+        self.placed: list[dict] = []
 
     def place(
         self, lib_id: str, ref: str, value: str, x: float, y: float,
@@ -588,6 +585,7 @@ class Sheet:
         pin_nets: dict[str, str] | None = None,
         footprint: str = "",
         power_port_nets: dict[str, str] | None = None,
+        dnp: bool = False, lcsc: str = "", mpn: str = "", in_bom: str = "yes",
     ) -> None:
         """Place a component and wire its pins via global labels.
 
@@ -595,8 +593,11 @@ class Sheet:
         `no_connect` marker. Pin "name" strings that are "+5V", "+3V3",
         or "GND" get a power-port instead of a global label (cleaner look).
         """
+        self.placed.append({"ref": ref, "lib_id": lib_id, "value": value, "pin_nets": dict(pin_nets or {}),
+                            "dnp": dnp, "lcsc": lcsc, "in_bom": in_bom})
         self.components.append(
-            symbol_instance(lib_id, ref, value, x, y, rot, mirror, footprint)
+            symbol_instance(lib_id, ref, value, x, y, rot, mirror, footprint,
+                            in_bom=in_bom, dnp=dnp, lcsc=lcsc, mpn=mpn)
         )
         pins = self.pin_map[lib_id]
         pin_nets = pin_nets or {}
@@ -628,423 +629,209 @@ class Sheet:
 # Main build
 # ---------------------------------------------------------------------------
 
-def build() -> str:
+def build() -> tuple[str, "Sheet"]:
     lib_block, pin_map = load_symbols()
     s = Sheet(pin_map)
+    LVC245 = ("74xx:74LS245", "SN74LVC245A", "Package_SO:SOIC-20W_7.5x12.8mm_P1.27mm", "C571201", "SN74LVC245ADWR")
+    R0805 = "Resistor_SMD:R_0805_2012Metric"
+    C0805 = "Capacitor_SMD:C_0805_2012Metric"
+    RLC = {"33": "C17634", "100": "C17408", "1k": "C17513", "2.2k": "C17520", "4.7k": "C17673", "10k": "C17414", "100k": "C17407"}
+    CLC = {"10nF": "C1710", "100nF": "C49678", "10uF": "C15850", "22uF": "C45783"}
 
-    # ---------- U1: Pi Pico 2 ----------
-    pico_x, pico_y = 80.0, 120.0
+    def res(ref, value, x, y, a, b, dnp=False):
+        s.place("Device:R", ref, value, x, y, pin_nets={"1": a, "2": b}, footprint=R0805,
+                dnp=dnp, lcsc=RLC[value], mpn=f"0805 {value} 1%")
+
+    def cap(ref, value, x, y, a, b, dnp=False):
+        s.place("Device:C", ref, value, x, y, pin_nets={"1": a, "2": b}, footprint=C0805,
+                dnp=dnp, lcsc=CLC[value], mpn=f"0805 {value}")
+
+    # ---------- U1: module (Pico 2 or RP2350B-Plus-W) ----------
+    # No SWD header: pins 41/42/43 (Pico 2's own SWD castellations) are not
+    # present on Pico-Carrier -- they collide with the Plus-W pad grid (see
+    # write_carrier_footprint()). Debug via the module's own debug pads.
     pico_nets = {
-        # Left column
-        "1":  "D0",   "2":  "D1",  "3":  "GND",  "4":  "D2",
-        "5":  "D3",   "6":  "D4",  "7":  "D5",  "8":  "GND",
-        "9":  "D6",   "10": "D7",  "11": "A0_B", "12": "A1_B",
-        "13": "GND",  "14": "A2_B","15": "A3_B", "16": "A4_B",
-        "17": "A5_B", "18": "GND","19": "A6_B", "20": "A7_B",
-        # Right column
-        "21": "A8_B", "22": "A9_B","23": "GND", "24": "A10_B",
-        "25": "A11_B","26": "A12_B","27": "A13_B","28": "GND",
-        # GP22 = /R/W, connects to U12 buffered output RW_BUF.
-        "29": "RW_BUF",
-        # Pin 30 (RUN) is now driven by CoCo /RESET via U13's RESET_DBG,
-        # through R9 (100 ohm series) with R10 (10k) pulling up to +3V3
-        # so the Pico sees a clean logic-high when CoCo is not in reset.
-        "30": "PICO_RUN",
-        # GP26 = OE_BUS (single cart-selected input from U15); firmware
-        # disambiguates /CTS vs /SCS by A13 (=0 => ROM, =1 => Becker).
-        "31": "OE_BUS",
-        # GP27 = HALT_GATE: firmware output driving Q2 gate via R8.
-        # Holds /HALT low at boot until PIO is armed, then releases.
-        "32": "HALT_GATE",
-        "33": "GND",
-        "34": "E_B",
-        # 35 VREF - NC
-        # 36 3V3 - NC (do not back-feed)
-        "37": "PICO_3V3_EN",
-        "38": "GND",
-        # VSYS is now fed from +5V via Schottky D2 (net VSYS_PICO);
-        # 3V3_EN is pulled up to the same VSYS_PICO rail, not +3V3,
-        # to avoid latch-up when +3V3 is the thing the buck generates.
-        "39": "VSYS_PICO",
-        # 40 VBUS - NC
-        # SWCLK/SWDIO each go through a 100-ohm series (R13/R14) to
-        # J_SWD, protecting the Pico from probe-driven transients.
-        "41": "SWCLK_PICO","42": "GND","43": "SWDIO_PICO",
+        "1": "D0", "2": "D1", "3": "GND", "4": "D2", "5": "D3", "6": "D4", "7": "D5", "8": "GND",
+        "9": "D6", "10": "D7", "11": "A0_BUF", "12": "A1_BUF", "13": "GND", "14": "A2_BUF",
+        "15": "A3_BUF", "16": "A4_BUF", "17": "A5_BUF", "18": "GND", "19": "A6_BUF", "20": "A7_BUF",
+        "21": "A8_BUF", "22": "A9_BUF", "23": "GND", "24": "A10_BUF", "25": "A11_BUF",
+        "26": "A12_BUF", "27": "A13_BUF", "28": "GND", "29": "RW_BUF", "30": "PICO_RUN",
+        "31": "OE_BUS", "32": "HALT_GATE", "33": "GND", "34": "PICO_P34",
+        "37": "PICO_3V3_EN", "38": "GND", "39": "VSYS_PICO",
+        # Plus-W underside pads (NC on a Pico 2): spec §3.2
+        "GP24": "CTS_BUF", "GP25": "SCS_BUF", "GP26": "E_BUF", "GP27": "Q_BUF", "GP28": "SLENB_BUF",
+        "GP29": "A14_BUF", "GP30": "A15_BUF", "GP31": "OE_FW", "GP32": "NMI_DRV", "GP33": "CART_DRV",
+        "GP34": "AUDIO_PWM",
     }
-    s.place("PiCoCo:Pico", "U1", "Pico 2",
-            pico_x, pico_y, pin_nets=pico_nets,
-            footprint="PiCoCo:RPi_Pico_SMD_TH")
+    s.place("PiCoCo:Pico-Carrier", "U1", "Pico 2 / RP2350B-Plus-W", 80.0, 120.0,
+            pin_nets=pico_nets, footprint="PiCoCo:Pico-Carrier", in_bom="no")
 
-    # ---------- P1: Cartridge edge ----------
-    cart_x, cart_y = 260.0, 140.0
+    # ---------- P1: cartridge edge ----------
     cart_nets = {
-        # 1, 2 +/-12V not used
-        "3":  "HALT_CART",
-        "4":  "NMI_CART",
-        "5":  "RESET_CART",
-        "6":  "E_CART",
-        "7":  "Q_CART",
-        "8":  "CART_CART",
-        "9":  "+5V",
+        "3": "HALT_CART", "4": "NMI_CART", "5": "RESET_CART", "6": "E_CART", "7": "Q_CART",
+        "8": "CART_CART", "9": "+5V",
         "10": "D0_CART", "11": "D1_CART", "12": "D2_CART", "13": "D3_CART",
         "14": "D4_CART", "15": "D5_CART", "16": "D6_CART", "17": "D7_CART",
         "18": "RW_CART",
         "19": "A0_CART", "20": "A1_CART", "21": "A2_CART", "22": "A3_CART",
         "23": "A4_CART", "24": "A5_CART", "25": "A6_CART", "26": "A7_CART",
-        "27": "A8_CART", "28": "A9_CART", "29": "A10_CART","30": "A11_CART",
-        "31": "A12_CART",
-        "32": "CTS_CART",
-        "33": "GND", "34": "GND",
-        # 35 SND not used
-        "36": "SCS_CART",
-        "37": "A13_CART",
-        "38": "A14_CART",
-        "39": "A15_CART",
-        "40": "SLENB_CART",
+        "27": "A8_CART", "28": "A9_CART", "29": "A10_CART", "30": "A11_CART", "31": "A12_CART",
+        "32": "CTS_CART", "33": "GND", "34": "GND", "35": "SND_CART", "36": "SCS_CART",
+        "37": "A13_CART", "38": "A14_CART", "39": "A15_CART", "40": "SLENB_CART",
     }
-    s.place("PiCoCo:COCO-CART", "P1", "COCO-CART",
-            cart_x, cart_y, pin_nets=cart_nets,
-            footprint="PiCoCo:COCO-CART-2.1X1.75")
+    s.place("PiCoCo:COCO-CART", "P1", "COCO-CART", 260.0, 140.0, pin_nets=cart_nets,
+            footprint="PiCoCo:COCO-CART-2.1X1.75", in_bom="no")
 
-    # ---------- U10: SN74LVC8T245 (D0-D7 bidi) ----------
-    u10_x, u10_y = 170.0, 130.0
-    # Actual KiCad symbol pinout:
-    # 1=Vcca(3V3), 2=DIR, 3..10=A1..A8 (cart D0..D7),
-    # 11..13=GND, 14..21=B8..B1 (Pico D7..D0),
-    # 22=/OE, 23..24=Vccb(5V)
-    u10_nets = {
-        "1":  "+3V3",        # Vcca (Pico side rail)
-        "2":  "RW_BUF",      # DIR <- buffered /R/W
-        "3":  "D0_CART",     # A1
-        "4":  "D1_CART",
-        "5":  "D2_CART",
-        "6":  "D3_CART",
-        "7":  "D4_CART",
-        "8":  "D5_CART",
-        "9":  "D6_CART",
-        "10": "D7_CART",     # A8
-        "11": "GND",
-        "12": "GND",
-        "13": "GND",
-        "14": "D7",          # B8
-        "15": "D6",
-        "16": "D5",
-        "17": "D4",
-        "18": "D3",
-        "19": "D2",
-        "20": "D1",
-        "21": "D0",          # B1
-        "22": "OE_BUS",      # /OE from U15
-        "23": "+5V",         # Vccb (CoCo side rail)
-        "24": "+5V",
-    }
-    s.place("Logic_LevelTranslator:SN74LVC8T245", "U10", "SN74LVC8T245DW",
-            u10_x, u10_y, pin_nets=u10_nets,
-            footprint="Package_SO:SOIC-24W_7.5x15.4mm_P1.27mm")
+    # ---------- U10: data buffer, Pico on A (2..9), cart on B (18..11) ----------
+    u10 = {"1": "RW_BUF", "10": "GND", "19": "U10_OE", "20": "+3V3"}
+    for i in range(8):
+        u10[str(2 + i)] = f"D{i}"
+        u10[str(18 - i)] = f"D{i}_CART"
+    s.place(LVC245[0], "U10", LVC245[1], 170.0, 130.0, pin_nets=u10, footprint=LVC245[2], lcsc=LVC245[3], mpn=LVC245[4])
 
-    # ---------- U11: 74LVC245A (A0-A7 buffer) ----------
-    # 74LS245 symbol pinout: 1=DIR (A->B), 2..9=A0..A7, 10=GND,
-    # 11..18=B7..B0 (reverse order!), 19=/OE, 20=VCC
-    u11_x, u11_y = 80.0, 220.0
-    u11_nets = {
-        "1":  "+3V3",        # DIR high = A->B
-        "2":  "A0_CART",  "3":  "A1_CART",  "4":  "A2_CART",  "5":  "A3_CART",
-        "6":  "A4_CART",  "7":  "A5_CART",  "8":  "A6_CART",  "9":  "A7_CART",
-        "10": "GND",
-        "11": "A7_B",  "12": "A6_B",  "13": "A5_B",  "14": "A4_B",
-        "15": "A3_B",  "16": "A2_B",  "17": "A1_B",  "18": "A0_B",
-        "19": "GND",         # /OE tied low
-        "20": "+3V3",        # VCC
-    }
-    s.place("74xx:74LS245", "U11", "SN74LVC245AD",
-            u11_x, u11_y, pin_nets=u11_nets,
-            footprint="Package_SO:SOIC-20W_7.5x12.8mm_P1.27mm")
+    # ---------- U11: A0..A7 ----------
+    u11 = {"1": "+3V3", "10": "GND", "19": "GND", "20": "+3V3"}
+    for i in range(8):
+        u11[str(2 + i)] = f"A{i}_CART"
+        u11[str(18 - i)] = f"A{i}_BUF"
+    s.place(LVC245[0], "U11", LVC245[1], 80.0, 220.0, pin_nets=u11, footprint=LVC245[2], lcsc=LVC245[3], mpn=LVC245[4])
 
-    # ---------- U12: 74LVC245A (A8-A13 + R/W + CTS + SCS) ----------
-    u12_x, u12_y = 130.0, 220.0
-    u12_nets = {
-        "1":  "+3V3",
-        "2":  "A8_CART",  "3":  "A9_CART",  "4":  "A10_CART", "5":  "A11_CART",
-        "6":  "A12_CART", "7":  "A13_CART", "8":  "RW_CART",  "9":  "CTS_CART",
-        "10": "GND",
-        # B-side reversed: B7, B6, B5, B4, B3, B2, B1, B0
-        # RW_BUF_RAW is the U12 output; R12 terminates it to RW_BUF which
-        # fans out to U10 DIR, Pico GP22, and J_LVC.
-        "11": "CTS_BUF", "12": "RW_BUF_RAW", "13": "A13_B", "14": "A12_B",
-        "15": "A11_B",   "16": "A10_B",  "17": "A9_B",  "18": "A8_B",
-        "19": "GND",
-        "20": "+3V3",
-    }
-    s.place("74xx:74LS245", "U12", "SN74LVC245AD",
-            u12_x, u12_y, pin_nets=u12_nets,
-            footprint="Package_SO:SOIC-20W_7.5x12.8mm_P1.27mm")
+    # ---------- U12: A8..A13, R/W, /CTS ----------
+    u12 = {"1": "+3V3", "10": "GND", "19": "GND", "20": "+3V3", "8": "RW_CART", "12": "RW_BUF_RAW",
+           "9": "CTS_CART", "11": "CTS_BUF"}
+    for i in range(6):
+        u12[str(2 + i)] = f"A{8 + i}_CART"
+        u12[str(18 - i)] = f"A{8 + i}_BUF"
+    s.place(LVC245[0], "U12", LVC245[1], 130.0, 220.0, pin_nets=u12, footprint=LVC245[2], lcsc=LVC245[3], mpn=LVC245[4])
 
-    # ---------- U13: 74LVC245A (SCS, E, Q, SLENB, HALT, NMI, RESET, CART) ----------
-    u13_x, u13_y = 180.0, 220.0
-    # U13 now only buffers signals that have real consumers:
-    # /SCS → U15, E → U15 and Pico GP28, /RESET → Pico RUN (via R9).
-    # Q, /SLENB, /HALT, /NMI, /CART inputs are still tied so the
-    # buffer loads the CoCo side correctly, but their outputs are
-    # left unconnected (pins not in the dict emit no_connect).
-    # If you ever want debug taps on these signals, add test points
-    # on the corresponding U13 output pin(s).
-    u13_nets = {
-        "1":  "+3V3",
-        "2":  "SCS_CART",   "3":  "E_CART",     "4":  "Q_CART",
-        "5":  "SLENB_CART", "6":  "HALT_CART",  "7":  "NMI_CART",
-        "8":  "RESET_CART", "9":  "CART_CART",
-        "10": "GND",
-        # 11: CART_DBG output — no_connect
-        "12": "RESET_DBG",  # drives Pico RUN via R9+R10
-        # 13: NMI_DBG output — no_connect
-        # 14: HALT_DBG output — no_connect
-        # 15: SLENB_DBG output — no_connect
-        # 16: Q_DBG output — no_connect
-        "17": "E_B",        # drives Pico GP28 and U15 IN_C
-        "18": "SCS_BUF",    # drives U15 IN_B
-        "19": "GND",
-        "20": "+3V3",
-    }
-    s.place("74xx:74LS245", "U13", "SN74LVC245AD",
-            u13_x, u13_y, pin_nets=u13_nets,
-            footprint="Package_SO:SOIC-20W_7.5x12.8mm_P1.27mm")
+    # ---------- U13: /SCS, E, Q, /SLENB, /RESET, A14, A15 ----------
+    u13 = {"1": "+3V3", "10": "GND", "19": "GND", "20": "+3V3",
+           "2": "SCS_CART", "18": "SCS_BUF", "3": "E_CART", "17": "E_BUF",
+           "4": "Q_CART", "16": "Q_BUF", "5": "SLENB_CART", "15": "SLENB_BUF",
+           "6": "RESET_CART", "14": "RESET_BUF", "7": "A14_CART", "13": "A14_BUF",
+           "8": "A15_CART", "12": "A15_BUF", "9": "GND"}          # pin 11 (B8) no-connect
+    s.place(LVC245[0], "U13", LVC245[1], 180.0, 220.0, pin_nets=u13, footprint=LVC245[2], lcsc=LVC245[3], mpn=LVC245[4])
 
-    # ---------- U14: AMS1117-3.3 (AP1117 symbol, pin-compatible) ----------
-    u14_x, u14_y = 260.0, 50.0
-    # AP1117-15 pins: 1=GND, 2=VO (3V3), 3=VI (5V)
-    u14_nets = {
-        "1": "GND",
-        "2": "+3V3",
-        "3": "+5V",
-    }
-    s.place("Regulator_Linear:AP1117-15", "U14", "AMS1117-3.3",
-            u14_x, u14_y, pin_nets=u14_nets,
-            footprint="Package_TO_SOT_SMD:SOT-223-3_TabPin2")
+    # ---------- U14: LDO ----------
+    s.place("Regulator_Linear:AP1117-15", "U14", "AMS1117-3.3", 260.0, 50.0,
+            pin_nets={"1": "GND", "2": "+3V3", "3": "+5V"},
+            footprint="Package_TO_SOT_SMD:SOT-223-3_TabPin2", lcsc="C6186", mpn="AMS1117-3.3")
 
-    # ---------- U15: 74LVC1G11 (3-input AND gate) ----------
-    # /OE = /CTS AND /SCS AND /E -- qualified by E so U10 is only enabled
-    # during the valid data phase, not during the address-setup phase.
-    # Both /CTS and /SCS idle high; E is high during the data phase of a
-    # cycle. The combined high-when-all-asserted logic drops /OE (active
-    # low on U10) whenever the cart is selected AND we're in the E-high
-    # data window.
-    u15_x, u15_y = 220.0, 80.0
-    # KiCad pinout for 74LVC1G11 (SOT-363/SC-70-6):
-    # 1=IN_A, 2=GND, 3=IN_B, 4=OUT, 5=VCC, 6=IN_C
-    u15_nets = {
-        "1": "CTS_BUF",   # IN_A
-        "2": "GND",
-        "3": "SCS_BUF",   # IN_B
-        "4": "OE_BUS_RAW",  # OUT (pre-termination; goes through R11)
-        "5": "+3V3",      # VCC
-        "6": "E_B",       # IN_C (new: qualifies by E)
-    }
-    s.place("74xGxx:74LVC1G11", "U15", "SN74LVC1G11",
-            u15_x, u15_y, pin_nets=u15_nets,
-            footprint="Package_TO_SOT_SMD:SOT-363_SC-70-6")
+    # ---------- U15: quad NAND, gates 1+2 = NAND-NAND decode ----------
+    s.place("PiCoCo:74LVC00", "U15", "SN74LVC00A", 220.0, 80.0,
+            pin_nets={"1": "CTS_BUF", "2": "SCS_BUF", "3": "SEL_N",
+                      "4": "SEL_N", "5": "E_BUF", "6": "OE_BUS_RAW",
+                      "9": "GND", "10": "GND", "12": "GND", "13": "GND",   # 8, 11 outputs NC
+                      "7": "GND", "14": "+3V3"},
+            footprint="Package_SO:SOIC-14_3.9x8.7mm_P1.27mm", lcsc="", mpn="SN74LVC00AD")
 
-    # ---------- Passives: pull-ups + series R + 3V3_EN R ----------
-    # Resistors have pins 1 and 2 in the symbol
-    # R1: HALT_CART pull-up to +5V
-    for i, (ref, net) in enumerate([
-        ("R1", "HALT_CART"),
-        ("R2", "NMI_CART"),
-        ("R3", "RESET_CART"),
-    ]):
-        rx, ry = 30.0 + i * 10.0, 280.0
-        s.place("Device:R", ref, "4.7k",
-                rx, ry,
-                pin_nets={"1": "+5V", "2": net},
-                footprint="Resistor_SMD:R_0805_2012Metric")
+    # ---------- JP2: U10 /OE source; JP3: header pin 34 = E or audio ----------
+    SJ = "Jumper:SolderJumper-3_P1.3mm_Bridged12_RoundedPad1.0x1.5mm"
+    s.place("Jumper:SolderJumper_3_Bridged12", "JP2", "U10_OE_SEL", 200.0, 100.0,
+            pin_nets={"1": "OE_BUS", "2": "U10_OE", "3": "OE_FW"}, footprint=SJ, in_bom="no")
+    s.place("Jumper:SolderJumper_3_Bridged12", "JP3", "P34_SEL", 100.0, 60.0,
+            pin_nets={"1": "E_BUF", "2": "PICO_P34", "3": "AUDIO_PWM"}, footprint=SJ, in_bom="no")
 
-    # R4: 3V3_EN pull-up to VSYS_PICO (not +3V3) so the Pico's internal
-    # buck-boost enable doesn't depend on the rail it's generating. This
-    # avoids the brown-out latch where a dipping +3V3 pulls 3V3_EN low,
-    # shutting off the buck, which keeps +3V3 low, etc.
-    s.place("Device:R", "R4", "10k",
-            80.0, 280.0,
-            pin_nets={"1": "VSYS_PICO", "2": "PICO_3V3_EN"},
-            footprint="Resistor_SMD:R_0805_2012Metric")
-
-    # ---------- /CART pull-up with jumper (R6 + JP1) ----------
-    # CoCo pin 8 (/CART) should idle at +5V to signal cartridge presence.
-    # R6 is the pull-up; JP1 lets the user disable it (remove shunt) in
-    # case a multipak or special configuration drives /CART externally.
-    s.place("Device:R", "R6", "4.7k",
-            310.0, 100.0,
-            pin_nets={"1": "+5V", "2": "CART_PU"},
-            footprint="Resistor_SMD:R_0805_2012Metric")
-    s.place("Connector_Generic:Conn_01x02", "JP1", "CART_EN",
-            320.0, 100.0,
-            pin_nets={"1": "CART_PU", "2": "CART_CART"},
-            footprint="Connector_PinHeader_2.54mm:PinHeader_1x02_P2.54mm_Vertical")
-
-    # ---------- /HALT firmware-controlled drive (R7 + R8 + Q2) ----------
-    # Q2 pulls /HALT_CART low when its gate is high. At Pico boot GP27 is
-    # high-Z so R7 (to +3V3) turns Q2 on, asserting /HALT and holding the
-    # CoCo CPU until firmware is ready. Firmware then drives GP27 LOW to
-    # pull the gate down (through R8's 100-ohm) and release /HALT.
-    # Firmware can re-assert /HALT later by driving GP27 HIGH (e.g., for
-    # DriveWire flow control of long host-side operations).
-    s.place("Device:R", "R7", "100k",
-            40.0, 160.0,
-            pin_nets={"1": "+3V3", "2": "GATE_Q2"},
-            footprint="Resistor_SMD:R_0805_2012Metric")
-    s.place("Device:R", "R8", "100",
-            50.0, 160.0,
-            pin_nets={"1": "HALT_GATE", "2": "GATE_Q2"},
-            footprint="Resistor_SMD:R_0805_2012Metric")
-    # Q_NMOS_GSD (parent of 2N7002): pin 1=G, 2=S, 3=D.
-    s.place("Transistor_FET:Q_NMOS_GSD", "Q2", "2N7002",
-            60.0, 170.0,
+    # ---------- /HALT drive (Q2), /NMI and /CART drives (Q3, Q4: DNP) ----------
+    res("R1", "4.7k", 30.0, 280.0, "+5V", "HALT_CART")
+    res("R2", "4.7k", 40.0, 280.0, "+5V", "NMI_CART", dnp=True)
+    res("R3", "4.7k", 50.0, 280.0, "+5V", "RESET_CART", dnp=True)
+    res("R7", "100k", 40.0, 160.0, "+3V3", "GATE_Q2")
+    res("R8", "100", 50.0, 160.0, "HALT_GATE", "GATE_Q2")
+    s.place("Transistor_FET:Q_NMOS_GSD", "Q2", "2N7002", 60.0, 170.0,
             pin_nets={"1": "GATE_Q2", "2": "GND", "3": "HALT_CART"},
-            footprint="Package_TO_SOT_SMD:SOT-23")
+            footprint="Package_TO_SOT_SMD:SOT-23", lcsc="C8545", mpn="2N7002")
+    for q, r_s, r_pd, drv, drain in (("Q3", "R15", "R17", "NMI_DRV", "NMI_CART"),
+                                     ("Q4", "R16", "R18", "CART_DRV", "CART_CART")):
+        gate = f"GATE_{q}"
+        res(r_s, "100", 40.0 + 30 * (q == "Q4"), 190.0, drv, gate, dnp=True)
+        res(r_pd, "100k", 50.0 + 30 * (q == "Q4"), 190.0, gate, "GND", dnp=True)
+        s.place("Transistor_FET:Q_NMOS_GSD", q, "2N7002", 60.0 + 30 * (q == "Q4"), 200.0,
+                pin_nets={"1": gate, "2": "GND", "3": drain},
+                footprint="Package_TO_SOT_SMD:SOT-23", dnp=True, lcsc="C8545", mpn="2N7002")
 
-    # ---------- Pico RUN from CoCo /RESET (R9 + R10) ----------
-    # RESET_DBG is the 3V3-level buffered /RESET out of U13 ch7. Series
-    # R9 protects the Pico from transients; R10 pulls RUN high so the
-    # Pico operates normally when /RESET is deasserted.
-    s.place("Device:R", "R9", "100",
-            200.0, 260.0,
-            pin_nets={"1": "RESET_DBG", "2": "PICO_RUN"},
-            footprint="Resistor_SMD:R_0805_2012Metric")
-    s.place("Device:R", "R10", "10k",
-            210.0, 260.0,
-            pin_nets={"1": "+3V3", "2": "PICO_RUN"},
-            footprint="Resistor_SMD:R_0805_2012Metric")
+    # ---------- Reset, 3V3_EN, series R ----------
+    res("R4", "10k", 80.0, 280.0, "VSYS_PICO", "PICO_3V3_EN")
+    res("R9", "100", 200.0, 260.0, "RESET_BUF", "PICO_RUN")
+    res("R10", "10k", 210.0, 260.0, "+3V3", "PICO_RUN")
+    res("R11", "33", 210.0, 90.0, "OE_BUS_RAW", "OE_BUS")
+    res("R12", "33", 140.0, 230.0, "RW_BUF_RAW", "RW_BUF")
 
-    # ---------- Series termination (R11 + R12) ----------
-    # OE_BUS fans out to U10 /OE, Pico GP26, and J_LVC; RW_BUF to U10
-    # DIR, Pico GP22, and J_LVC. 33-ohm near each source damps reflections
-    # on LVC edges into the 3-load nets.
-    s.place("Device:R", "R11", "33",
-            210.0, 90.0,
-            pin_nets={"1": "OE_BUS_RAW", "2": "OE_BUS"},
-            footprint="Resistor_SMD:R_0805_2012Metric")
-    s.place("Device:R", "R12", "33",
-            140.0, 230.0,
-            pin_nets={"1": "RW_BUF_RAW", "2": "RW_BUF"},
-            footprint="Resistor_SMD:R_0805_2012Metric")
+    # ---------- Sound stage: AUDIO_PWM -> 2-pole RC -> divider -> SND_CART ----------
+    res("R19", "1k", 120.0, 300.0, "AUDIO_PWM", "AUDIO_F1")
+    cap("C13", "10nF", 125.0, 310.0, "AUDIO_F1", "GND")
+    res("R20", "1k", 130.0, 300.0, "AUDIO_F1", "AUDIO_F2")
+    cap("C14", "10nF", 135.0, 310.0, "AUDIO_F2", "GND")
+    res("R21", "2.2k", 140.0, 300.0, "AUDIO_F2", "SND_CART")
+    res("R22", "1k", 150.0, 310.0, "SND_CART", "GND")
+    cap("C15", "100nF", 145.0, 290.0, "AUDIO_F2", "SND_CART", dnp=True)   # AC-coupling option
 
-    # ---------- SWD series protection (R13 + R14) ----------
-    # Prevents probe-driven transients on SWCLK/SWDIO from reaching Pico
-    # pads directly. Also keeps J_SWD net names as SWCLK/SWDIO for
-    # external compatibility.
-    s.place("Device:R", "R13", "100",
-            30.0, 225.0,
-            pin_nets={"1": "SWCLK_PICO", "2": "SWCLK"},
-            footprint="Resistor_SMD:R_0805_2012Metric")
-    s.place("Device:R", "R14", "100",
-            30.0, 235.0,
-            pin_nets={"1": "SWDIO_PICO", "2": "SWDIO"},
-            footprint="Resistor_SMD:R_0805_2012Metric")
+    # ---------- Power ----------
+    s.place("Device:D_Schottky", "D2", "SS14", 250.0, 70.0,
+            pin_nets={"1": "VSYS_PICO", "2": "+5V"}, footprint="Diode_SMD:D_SMA", lcsc="C2480", mpn="SS14")
+    cap("C1", "10uF", 300.0, 200.0, "+5V", "GND")
+    cap("C2", "10uF", 240.0, 30.0, "+5V", "GND")
+    cap("C3", "22uF", 280.0, 30.0, "+3V3", "GND")
+    for ref, cx, cy in (("C4", 160.0, 100.0), ("C6", 90.0, 260.0), ("C7", 140.0, 260.0),
+                        ("C8", 190.0, 260.0), ("C9", 230.0, 70.0), ("C10", 100.0, 100.0)):
+        cap(ref, "100nF", cx, cy, "+3V3", "GND")
+    s.place("Device:C_Polarized", "C12", "1000uF 6.3V", 270.0, 80.0,
+            pin_nets={"1": "VSYS_PICO", "2": "GND"},
+            footprint="Capacitor_SMD:CP_Elec_8x10", dnp=True, lcsc="", mpn="1000uF 6.3V SMD electrolytic D8x10")
 
-    # ---------- D2: Schottky from +5V to Pico VSYS ----------
-    # Drops ~0.3V so VSYS sees ~4.7V, safely within Pico 2 buck-boost
-    # input range (1.8-5.5V). Fixes the previous cascade where VSYS was
-    # fed from the AMS1117 output (inefficient, brown-out latch risk).
-    # D_Schottky pins: 1=K (cathode), 2=A (anode).
-    s.place("Device:D_Schottky", "D2", "SS14",
-            250.0, 70.0,
-            pin_nets={"1": "VSYS_PICO", "2": "+5V"},
-            footprint="Diode_SMD:D_SMA")
+    # ---------- Test points, fiducials ----------
+    for ref, net, tx, ty in (("TP1", "OE_BUS", 320.0, 60.0), ("TP2", "RW_BUF", 320.0, 70.0),
+                             ("TP3", "CTS_BUF", 320.0, 80.0), ("TP4", "SCS_BUF", 320.0, 90.0),
+                             ("TP5", "E_BUF", 310.0, 60.0), ("TP6", "+3V3", 310.0, 70.0),
+                             ("TP7", "SND_CART", 310.0, 80.0)):
+        s.place("Connector:TestPoint", ref, net, tx, ty, pin_nets={"1": net},
+                footprint="TestPoint:TestPoint_Pad_1.0x1.0mm", in_bom="no")
+    for ref, fx in (("FID1", 330.0), ("FID2", 340.0)):
+        s.place("Mechanical:Fiducial", ref, "FID", fx, 30.0, footprint="Fiducial:Fiducial_1mm_Mask2mm", in_bom="no")
 
-    # ---------- Capacitors ----------
-    # C1: +5V bulk at cart edge
-    s.place("Device:C", "C1", "10uF",
-            300.0, 200.0,
-            pin_nets={"1": "+5V", "2": "GND"},
-            footprint="Capacitor_SMD:C_0805_2012Metric")
-
-    # C2: LDO input
-    s.place("Device:C", "C2", "10uF",
-            240.0, 30.0,
-            pin_nets={"1": "+5V", "2": "GND"},
-            footprint="Capacitor_SMD:C_0805_2012Metric")
-
-    # C3: LDO output
-    s.place("Device:C", "C3", "22uF",
-            280.0, 30.0,
-            pin_nets={"1": "+3V3", "2": "GND"},
-            footprint="Capacitor_SMD:C_0805_2012Metric")
-
-    # C4..C10: Per-IC decoupling
-    decoup_positions = [
-        ("C4", 160.0, 100.0, "+3V3"),   # U10 Vcca
-        ("C5", 160.0, 110.0, "+5V"),    # U10 Vccb
-        ("C6",  90.0, 260.0, "+3V3"),   # U11
-        ("C7", 140.0, 260.0, "+3V3"),   # U12
-        ("C8", 190.0, 260.0, "+3V3"),   # U13
-        ("C9", 230.0,  70.0, "+3V3"),   # U15
-        ("C10",100.0, 100.0, "+3V3"),   # Pico local
-    ]
-    for ref, cx, cy, rail in decoup_positions:
-        s.place("Device:C", ref, "100nF",
-                cx, cy,
-                pin_nets={"1": rail, "2": "GND"},
-                footprint="Capacitor_SMD:C_0805_2012Metric")
-
-    # C11: local 10uF bulk at U10 Vccb to handle data-bus switching
-    # transients. Supplements C1 (edge-connector bulk) which is too far
-    # from U10 to respond to 1.79 MHz D0-D7 edges.
-    s.place("Device:C", "C11", "10uF",
-            155.0, 115.0,
-            pin_nets={"1": "+5V", "2": "GND"},
-            footprint="Capacitor_SMD:C_0805_2012Metric")
-
-    # ---------- Test points ----------
-    # TP1-TP6 are 1.0x1.0 mm SMD pads for oscilloscope/logic-analyzer
-    # access to the signals most needed during bring-up. Connector:
-    # TestPoint has a single pin (1) whose net is the probe signal.
-    test_points = [
-        ("TP1", "OE_BUS",   320.0, 60.0),
-        ("TP2", "RW_BUF",   320.0, 70.0),
-        ("TP3", "CTS_BUF",  320.0, 80.0),
-        ("TP4", "SCS_BUF",  320.0, 90.0),
-        ("TP5", "E_B",      310.0, 60.0),
-        ("TP6", "+3V3",     310.0, 70.0),
-    ]
-    for ref, net, tx, ty in test_points:
-        s.place("Connector:TestPoint", ref, net,
-                tx, ty,
-                pin_nets={"1": net},
-                footprint="TestPoint:TestPoint_Pad_1.0x1.0mm")
-
-    # ---------- Debug / programming header ----------
-    # J_CART and J_LVC 2x20 debug breakouts were removed in v2.2 — they
-    # consumed too much board area on the 98x55 mm card. Bring-up
-    # debugging now happens via:
-    #   - TP1..TP6 SMD pads on key nets (see §7 of hardware-design.md)
-    #   - the Pico's USB CDC trace stream (firmware §10)
-    #   - J_SWD 4-pin header for SWD access during development
-    # If you ever need deeper probing on individual cart signals, add
-    # TP pads to the relevant U13 output pin(s); the buffers still run.
-
-    # J_SWD: 1x4 header (SWCLK, GND, SWDIO, +3V3)
-    s.place("Connector_Generic:Conn_01x04", "J_SWD", "SWD",
-            20.0, 230.0,
-            pin_nets={"1": "SWCLK", "2": "GND", "3": "SWDIO", "4": "+3V3"},
-            footprint="Connector_PinHeader_2.54mm:PinHeader_1x04_P2.54mm_Vertical")
-
-    # ---------- PWR_FLAGs: not needed ----------
-    # +5V and GND are driven by P1 (COCO-CART symbol declares pins 9,
-    # 33, 34 as power_output). +3V3 is driven by U14 pin 2 (VO,
-    # power_output). So every power net has a real power_output driver
-    # and no PWR_FLAGs are necessary.
+    # ---------- PWR_FLAG on VSYS_PICO (D2 cathode is passive; ERC needs a driver) ----------
+    s.powers.append(power_port("power:PWR_FLAG", 250.0, 60.0, 0))
+    s.labels.append(global_label("VSYS_PICO", 250.0, 60.0, 0, "left", "bidirectional"))
 
     title_block = (
         '  (title_block\n'
         '    (title "PiCoCo - Pi Pico 2 to Tandy CoCo Cartridge")\n'
-        '    (date "2026-04-19")\n'
-        '    (rev "2.2")\n'
+        '    (date "2026-09-17")\n'
+        '    (rev "2.3")\n'
         '    (company "Nathan Byrd")\n'
-        '    (comment 1 "LVC8T245 data bus + 3x LVC245A controls + 1G11 3-input /OE gate (E AND /CTS AND /SCS)")\n'
-        '    (comment 2 "GPIO: GP0-7=D0-D7, GP8-21=A0-A13, GP22=/R/W, GP26=OE_BUS, GP27=HALT_GATE, GP28=E; RUN from CoCo /RESET")\n'
+        '    (comment 1 "4x LVC245A at 3.3 V (U10 data bidi, U11-U13 in), 74LVC00 NAND-NAND /OE = (CTS|SCS) & E")\n'
+        '    (comment 2 "GPIO: GP0-7=D0-D7, GP8-21=A0-A13, GP22=/R/W, hdr31=OE_BUS, hdr32=HALT_GATE, hdr34=E (JP3: audio); '
+        'Plus-W pads GP24-30 capture, GP31 FW /OE, GP32/33 NMI/CART drive, GP34 audio; '
+        'no SWD header: use the module\'s own debug pads")\n'
         '    (comment 3 "MVP: HDB-DOS ROM over /CTS + Becker $FF41/$FF42 over /SCS; firmware disambiguates by A13")\n'
-        '    (comment 4 "See docs/hardware-design.md and docs/firmware-architecture.md")\n'
+        '    (comment 4 "Spec: docs/superpowers/specs/2026-09-17-main-board-v2.3-design.md")\n'
         '  )'
     )
-    return assemble(lib_block, s, "A2", title_block)
+    return assemble(lib_block, s, "A2", title_block), s
+
+
+def check(s: "Sheet") -> None:
+    """ponytail: the two fab-blocking bugs of v2.2 and the naming rule, as asserts."""
+    nets: dict[str, list[str]] = {}
+    for c in s.placed:
+        for pin, net in c["pin_nets"].items():
+            nets.setdefault(net, []).append(f'{c["ref"]}.{pin}')
+    for net, pins in nets.items():
+        assert not net.endswith("_B") and "_DBG" not in net, f"banned net name {net}"
+        if net in ("+5V", "+3V3", "GND", "VSYS_PICO"):
+            continue
+        assert len(pins) >= 2, f"net {net} has one pin: {pins}"
+    u10 = next(c for c in s.placed if c["ref"] == "U10")["pin_nets"]
+    assert [u10[str(2 + i)] for i in range(8)] == [f"D{i}" for i in range(8)], "U10 A side must be Pico D0..D7"
+    assert [u10[str(18 - i)] for i in range(8)] == [f"D{i}_CART" for i in range(8)], "U10 B side must be cart D0..D7"
+    u15 = next(c for c in s.placed if c["ref"] == "U15")["pin_nets"]
+    assert (u15["1"], u15["2"], u15["3"]) == ("CTS_BUF", "SCS_BUF", "SEL_N") and (u15["4"], u15["5"], u15["6"]) == ("SEL_N", "E_BUF", "OE_BUS_RAW"), "decode wiring"
+    jp3 = next(c for c in s.placed if c["ref"] == "JP3")["pin_nets"]
+    assert jp3["1"] == "E_BUF" and jp3["2"] == "PICO_P34", "JP3 wiring"
+    for c in s.placed:
+        if c["in_bom"] == "yes" and not c["dnp"] and c["ref"] not in ("U15", "C12"):
+            assert c["lcsc"], f'{c["ref"]} has no LCSC number'
+    print(f"check ok: {len(s.placed)} symbols, {len(nets)} nets")
 
 
 def assemble(lib_block: str, s: "Sheet", paper: str, title_block: str) -> str:
@@ -1073,7 +860,8 @@ def assemble(lib_block: str, s: "Sheet", paper: str, title_block: str) -> str:
 
 def main() -> None:
     write_library_items()
-    text = build()
+    text, sheet = build()
+    check(sheet)
     SCH_OUT.write_text(text)
     print(f"wrote {SCH_OUT}  ({len(text):,} bytes)")
 
