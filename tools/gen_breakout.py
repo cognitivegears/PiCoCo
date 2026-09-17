@@ -110,8 +110,7 @@ def write_fingers_footprint() -> None:
         # 1.13 mm deep (residual 0.53 mm); the source footprint ends fingers 0.44 mm
         # from the edge, inside the bevel. Pull the leading edge back to 1.30 mm so
         # no copper sits on the chamfer. Width, pitch, and the far end (-9.97) stay.
-        it = re.sub(r"\(at ([\d.]+) -5\.207\) \(size 1\.27 9\.525\)",
-                    r"(at \1 -5.635) (size 1.27 8.67)", it)
+        it = re.sub(*g.FINGER_TRIM, it)
         keep.append(it.replace("(thickness 0.1016)", "(thickness 0.15)"))
     text = ('(footprint "COCO-CART-FINGERS" (version 20221018) (generator gen_breakout_py)\n'
             '  (layer "F.Cu")\n  ' + "\n  ".join(keep) + "\n)\n")

@@ -202,31 +202,70 @@ PAD_GRID = {  # RP2350B-Plus-W underside pads, footprint frame (RP2350B_IDEAS §
 }
 
 
+def _uid(item: str) -> str:
+    """Deterministic tstamp so regenerating Pico-Carrier is byte-identical."""
+    return str(uuid.uuid5(uuid.NAMESPACE_URL, f"picoco:Pico-Carrier:{item}"))
+
+
 def write_carrier_footprint() -> None:
-    """Pico-Carrier = RPi_Pico_SMD_TH + the 15 Plus-W pads + antenna courtyard. No paste anywhere."""
+    """Pico-Carrier = RPi_Pico_SMD_TH + the 15 Plus-W pads + antenna courtyard.
+
+    No paste anywhere. Pico 2's own SWD debug castellations (pads 41/42/43 =
+    SWCLK/GND/SWDIO, the row at Y=23.9) sit directly under the Plus-W
+    GP29/GP32/GP35 pads (Y=22.40, same X positions) and cannot coexist: the
+    drilled holes land 0.24 mm from even a 1.5 mm pad, inside the 0.25 mm
+    min_hole_clearance rule. Drop 41/42/43 entirely -- a carrier board
+    reaches SWD at the module's own castellations directly, not through
+    this footprint.
+    """
     src = (PRETTY / "RPi_Pico_SMD_TH.kicad_mod").read_text()
     assert src.startswith('(footprint "RPi_Pico_SMD_TH"')
     text = src.replace('(footprint "RPi_Pico_SMD_TH"', '(footprint "Pico-Carrier"', 1)
     assert "F.Paste" not in text, "source footprint unexpectedly has paste"
+    # Drop the SWD debug pads that collide with the Plus-W grid.
+    text = re.sub(r'\n  \(pad "4[123]" [^\n]*\)', '', text)
+    # Drop the inherited courtyard so exactly one outline remains.
+    text = re.sub(r'\n  \(fp_line.*?\(layer "F\.CrtYd"\)[^\n]*\)', '', text, flags=re.S)
+    # Drop the RPi_Pico_SMD_TH 3D model reference; the carrier has none.
+    text = re.sub(r'\n  \(model .*?\n  \)', '', text, flags=re.S)
+    text = text.replace(
+        '(descr "Through hole straight pin header, 2x20, 2.54mm pitch, double rows")',
+        '(descr "Carrier land pattern for Raspberry Pi Pico 2 or Waveshare RP2350B-Plus-W: '
+        '2x20 castellated/THT header plus the Plus-W 3x5 underside pad grid; '
+        'no debug pads (collide with the grid)")',
+    )
+    text = text.replace(
+        '(tags "Through hole pin header THT 2x20 2.54mm double row")',
+        '(tags "Pico 2 RP2350B-Plus-W carrier")',
+    )
+    text = text.replace('(fp_text value "RPi_Pico_SMD_TH"', '(fp_text value "Pico-Carrier"')
     extra = []
     for num, (x, y) in PAD_GRID.items():
-        extra.append(f'  (pad "{num}" smd rect (at {x} {y}) (size 1.8 1.8) (layers "F.Cu" "F.Mask") (tstamp {u()}))')
+        # GP29/GP32/GP35 sit closest to where the (now-removed) debug pads
+        # were; keep them 1.4x1.4 so a bare Pico 2's own debug pad copper
+        # (edge near Y=23.05) still clears carrier copper by >=0.15 mm.
+        size = 1.4 if num in ("GP29", "GP32", "GP35") else 1.8
+        extra.append(f'  (pad "{num}" smd rect (at {x} {y}) (size {size} {size}) (layers "F.Cu" "F.Mask") (tstamp {_uid(num)}))')
     # Plus-W envelope: 51 mm body (+-25.5) plus 4.92 mm antenna past the pin 20/21 end (+Y).
-    extra.append('  (fp_rect (start -10.5 -25.5) (end 10.5 30.42) (stroke (width 0.05) (type default)) (fill none) (layer "F.CrtYd") (tstamp %s))' % u())
-    extra.append('  (fp_rect (start -10.5 25.5) (end 10.5 30.42) (stroke (width 0.1) (type default)) (fill none) (layer "F.Fab") (tstamp %s))' % u())
-    extra.append('  (fp_text user "ANT antenna keepout (Plus-W)" (at 0 28) (layer "F.Fab") (effects (font (size 0.8 0.8) (thickness 0.12))) (tstamp %s))' % u())
-    extra.append('  (fp_text user "USB" (at 0 -23) (layer "F.SilkS") (effects (font (size 1 1) (thickness 0.15))) (tstamp %s))' % u())
-    extra.append('  (fp_text user "ANT" (at 0 27.5) (layer "F.SilkS") (effects (font (size 1 1) (thickness 0.15))) (tstamp %s))' % u())
+    extra.append('  (fp_rect (start -10.5 -25.5) (end 10.5 30.42) (stroke (width 0.05) (type default)) (fill none) (layer "F.CrtYd") (tstamp %s))' % _uid("courtyard"))
+    extra.append('  (fp_rect (start -10.5 25.5) (end 10.5 30.42) (stroke (width 0.1) (type default)) (fill none) (layer "F.Fab") (tstamp %s))' % _uid("antenna-fab-rect"))
+    extra.append('  (fp_text user "ANT antenna keepout (Plus-W)" (at 0 28) (layer "F.Fab") (effects (font (size 0.8 0.8) (thickness 0.12))) (tstamp %s))' % _uid("antenna-fab-text"))
+    extra.append('  (fp_text user "USB" (at 0 -23) (layer "F.SilkS") (effects (font (size 1 1) (thickness 0.15))) (tstamp %s))' % _uid("usb-text"))
+    extra.append('  (fp_text user "ANT" (at 0 27.5) (layer "F.SilkS") (effects (font (size 1 1) (thickness 0.15))) (tstamp %s))' % _uid("ant-text"))
     end = text.rstrip().rfind(")")
     text = text[:end].rstrip("\n") + "\n" + "\n".join(extra) + "\n)\n"
     (PRETTY / "Pico-Carrier.kicad_mod").write_text(text)
+
+
+# Shared with gen_breakout.py's write_fingers_footprint (same fab rule).
+FINGER_TRIM = (r"\(at ([\d.]+) -5\.207\) \(size 1\.27 9\.525\)", r"(at \1 -5.635) (size 1.27 8.67)")
 
 
 def trim_cart_fingers() -> None:
     """Fingers end 1.30 mm from the edge (JLCPCB 30 deg bevel is 1.13 mm deep). Idempotent."""
     p = PRETTY / "COCO-CART-2.1X1.75.kicad_mod"
     src = p.read_text()
-    out = re.sub(r"\(at ([\d.]+) -5\.207\) \(size 1\.27 9\.525\)", r"(at \1 -5.635) (size 1.27 8.67)", src)
+    out = re.sub(*FINGER_TRIM, src)
     if out != src:
         p.write_text(out)
 
@@ -249,12 +288,27 @@ def write_carrier_symbol() -> None:
     sym = re.sub(r'"Pico(_\d+_\d+)?"', r'"Pico-Carrier\1"', src)
     sym = sym.replace("(at -17.78 ", "(at -21.59 ").replace("(at 17.78 ", "(at 21.59 ")
     sym = sym.replace("(rectangle (start -15.24 26.67) (end 15.24 -26.67)", "(rectangle (start -19.05 26.67) (end 19.05 -26.67)")
+    sym = sym.replace('(text "Raspberry Pi Pico" (at 0 21.59 0)', '(text "Pico 2 / Plus-W" (at 0 21.59 0)')
+    # Reference sat at Y=27.94, inside the new top-edge pins' 26.67..29.21
+    # strip; move it clear above the pin tips (Y=29.21).
+    sym = sym.replace('(property "Reference" "U" (at -13.97 27.94 0)', '(property "Reference" "U" (at -13.97 33.02 0)')
     # Pico symbol names these pins for their Pico 2 ADC function; on the
     # Plus-W module the same physical header pins (31/32/34) carry GP40/41/42
     # instead (RP2350B_IDEAS.md §13.1), so the carrier's silkscreen needs both.
     for old, new in (("GPIO26_ADC0", "GP26/GP40"), ("GPIO27_ADC1", "GP27/GP41"), ("GPIO28_ADC2", "GP28/GP42")):
         assert f'(name "{old}"' in sym, f"pin name {old} not found in Pico symbol"
         sym = sym.replace(f'(name "{old}"', f'(name "{new}"', 1)
+    # Drop the SWD debug pins (41=SWCLK, 42=GND, 43=SWDIO): the matching
+    # footprint pads collide with the Plus-W grid and were removed in
+    # write_carrier_footprint(); see that function's docstring.
+    for num in ("41", "42", "43"):
+        for block in _extract_pin_blocks(sym):
+            if f'(number "{num}"' in block:
+                assert sym.count(block) == 1, f"pin block {num} not unique"
+                sym = sym.replace(block, "")
+                break
+        else:
+            raise RuntimeError(f"pin {num} not found to remove")
     pins = []
     for i, num in enumerate(sorted(PAD_GRID, key=lambda n: int(n[2:]))):
         x = -17.78 + 2.54 * i
