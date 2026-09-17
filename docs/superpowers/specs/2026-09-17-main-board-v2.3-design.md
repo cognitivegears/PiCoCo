@@ -54,7 +54,9 @@ is regenerated.
   `OE_BUS_RAW`, `RW_BUF_RAW`.
 - Cart-side nets keep `_CART`.
 - New nets: `SEL_N` (first NAND output), `OE_FW` (pad-grid GPIO to JP2),
-  `NMI_DRV`, `CART_DRV` (pad-grid GPIOs to the DNP FET stages).
+  `NMI_DRV`, `CART_DRV` (pad-grid GPIOs to the DNP FET stages),
+  `PICO_P34` (module header pin 34, JP3 centre), `AUDIO_PWM`,
+  `AUDIO_F1`, `AUDIO_F2` (filter nodes), `SND_CART` (cart pin 35).
 
 ### 3.2 Parts and connections
 
@@ -75,7 +77,8 @@ in the symbol so the Plus-W mapping is visible.
 | GP31 | OE_FW | JP2 alternate: firmware-driven U10 /OE |
 | GP32 | NMI_DRV | Q3 gate (DNP stage) |
 | GP33 | CART_DRV | Q4 gate (DNP stage) |
-| GP34, GP35, GP43, GP44, GP45 | no-connect | spare |
+| GP34 | AUDIO_PWM | sound output stage (§3.2 Sound) |
+| GP35, GP43, GP44, GP45 | no-connect | spare |
 
 GP24..GP30 are contiguous so one `gpio_in` read captures all seven.
 
@@ -123,6 +126,36 @@ deleted (no /CART pull-up; HDB-DOS autostarts on the DK signature).
 **Reset**: U13 B5 `RESET_BUF` -> R9 100 R -> `PICO_RUN`; R10 10 k pull-up
 to `+3V3`. R3 4.7 k `RESET_CART` pull-up stays DNP.
 
+**Sound** (cart pin 35 = `SND_CART`, an analog input the CoCo mixes to
+its audio when `AUDIO ON` selects the cart). Populated by default, all
+Basic 0805 parts, inert when nothing drives it.
+
+- JP3 solder jumper (same footprint family as JP2): pad 1 = `E_BUF`,
+  pad 2 (centre) = `PICO_P34` = module header pin 34 (GP28 on a Pico 2,
+  GP42 on a Plus-W), pad 3 = `AUDIO_PWM`. Pads 1-2 bridged by default,
+  so header pin 34 carries E as today. On a Pico 2 build, where no GPIO
+  is spare, cut 1-2 and bridge 2-3 to turn GP28 into the PWM audio
+  output; the firmware does not use E (OE_BUS is E-qualified in
+  hardware; E was reserved for the PIO engine, a Plus-W path).
+- Plus-W: pad-grid GP34 -> `AUDIO_PWM` directly, JP3 stays default.
+  (Do not set JP3 to 2-3 on a Plus-W with GP34 populated: two outputs on
+  one net. Silkscreen says so.)
+- Stage: `AUDIO_PWM` -> R19 1 k -> `AUDIO_F1` -> C13 10 nF to GND ->
+  R20 1 k -> `AUDIO_F2` -> C14 10 nF to GND (two-pole RC, about 16 kHz)
+  -> R21 2.2 k -> `SND_CART`; R22 1 k from `SND_CART` to GND. DC-coupled
+  divider to about 1 V full scale, the way the Orchestra-90 fed the
+  same input. R21/R22 are the level knob: tune on the first board
+  against a real CoCo and record the values. C15 footprint (0805) in
+  parallel with R21, DNP, in case AC coupling is preferred.
+- What this enables: any sound the Pico synthesizes itself, on both
+  builds, driven by software that uses PiCoCo's own registers in the
+  /SCS window (a PSG at unused $FF5x addresses, DriveWire-side sound
+  commands, streamed audio). Emulating existing sound carts by
+  capturing their writes (Orchestra-90 $FF7A/B, Speech/Sound Pak
+  $FF7D/E) is Plus-W only: those addresses are outside /CTS and /SCS,
+  so they need JP2 in the firmware-/OE position and A14/A15 from the
+  pad grid. TP7 on `SND_CART`.
+
 **Power**: unchanged topology. `+5V` from cart pin 9; D2 SS14 to
 `VSYS_PICO`; U14 AMS1117-3.3 to `+3V3` (C2 10 uF in, C3 22 uF out); C1
 10 uF on `+5V`; R4 10 k `PICO_3V3_EN` pull-up to `VSYS_PICO`. New: C12
@@ -134,8 +167,8 @@ COCO-CART pin_to_pin error.
 **Decoupling**: 100 nF per IC: C4..C10 for U10..U15 (six ICs, plus one
 spare footprint next to the module's 3V3_EN/VSYS pins).
 
-**Debug**: J_SWD 1x4 (SWCLK via R13, SWDIO via R14, GND, +3V3). TP1..TP6
-on `OE_BUS`, `RW_BUF`, `CTS_BUF`, `SCS_BUF`, `E_BUF`, `+3V3`.
+**Debug**: J_SWD 1x4 (SWCLK via R13, SWDIO via R14, GND, +3V3). TP1..TP7
+on `OE_BUS`, `RW_BUF`, `CTS_BUF`, `SCS_BUF`, `E_BUF`, `+3V3`, `SND_CART`.
 
 **Fiducials**: FID1, FID2 (`Fiducial:Fiducial_1mm_Mask2mm`), no net,
 excluded from BOM.
@@ -154,6 +187,7 @@ mechanical parts). Values from the 2026-09-17 lookup:
 | D2 | SS14 | SMA | C2480 | Basic |
 | R 33 R / 100 R / 4.7 k / 10 k / 100 k | 0805 1 % | 0805 | C17634 / C17408 / C17673 / C17414 / C17407 | Basic |
 | C 100 nF / 10 uF / 22 uF | X7R 50 V / X5R 25 V / X5R 25 V | 0805 | C49678 / C15850 / C45783 | Basic |
+| R19, R20 1 k; R21 2.2 k; R22 1 k; C13, C14 10 nF X7R | audio stage | 0805 | confirm C numbers at order (all Basic values) | Basic |
 | C12 (DNP) | 1000 uF 6.3 V SMD electrolytic, 8 x 10 mm | D8 | pick at order (C970711 had 40 in stock) | n/a |
 
 Lifecycle: all ICs Active at TI/Nexperia; discretes and passives
@@ -171,6 +205,7 @@ that fails the regeneration if:
 - U10 pins 2..9 are `D0`..`D7` in order and pins 18..11 are
   `D0_CART`..`D7_CART` in order;
 - U15 gate inputs are `CTS_BUF`,`SCS_BUF` and `SEL_N`,`E_BUF`;
+- JP3 pad 1 is `E_BUF` and pad 2 is the module's header pin 34 net;
 - every non-DNP, non-mechanical symbol has a non-empty `LCSC`.
 
 `tools/gen_breakout.py` imports from the generator; it must still run
@@ -226,7 +261,9 @@ use this symbol.
 - U14, D2, C1..C3, C12 footprint near the +5V finger (pin 9); R4 near
   the module's 3V3_EN.
 - Q2 and R1 near the /HALT finger (pin 3); Q3/Q4 stages near /NMI (4)
-  and /CART (8). JP2 next to U10 pin 19.
+  and /CART (8). JP2 next to U10 pin 19. Audio stage R19..R22, C13..C15
+  in a straight line ending at the SND finger (pin 35), away from the
+  buffers' switching edges; JP3 next to the module's pin 34.
 - Module orientation fixed for the future HDMI variant (§10): USB-C end
   flush with the LEFT side edge, antenna end pointing right. The
   top-right corner, about 25 x 15 mm, is reserved: no components, no
@@ -238,7 +275,8 @@ use this symbol.
   two diagonal corners, 3 mm in.
 - Silkscreen: references, "PiCoCo v2.3", CERN-OHL-S-2.0, project URL,
   "JLCJLCJLCJLC" placeholder for the order number, JP2 legend
-  ("1-2 = HW /OE default, 2-3 = FW"), D2 cathode band, C12 polarity,
+  ("1-2 = HW /OE default, 2-3 = FW"), JP3 legend ("1-2 = E default,
+  2-3 = audio on GP28, Pico 2 only"), D2 cathode band, C12 polarity,
   module "USB"/"ANT" arrows.
 - Net classes as in `PiCoCo.kicad_pro`: 0.2 mm signal, 0.5 mm power
   (+5V, +3V3, VSYS_PICO, GND), 0.15 mm clearance, 0.3 mm edge
