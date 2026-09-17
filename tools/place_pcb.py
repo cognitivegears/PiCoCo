@@ -1,144 +1,118 @@
 #!/usr/bin/env python3
 """
-Rough auto-placement for the PiCoCo PCB.
+Auto-placement for the PiCoCo v2.3 PCB.
 
-Moves each footprint's `(at X Y [rot])` to a planned grid position
-on the board. P1 (cart edge connector) is left untouched; all other
-footprints are repositioned.
+Moves each footprint's `(at X Y [rot])` to a planned grid position on the
+board, then appends board-level extras (antenna/HDMI keepout zones and
+silkscreen texts) idempotently. P1 (cart edge connector) is left untouched;
+all other footprints named in PLACEMENT are repositioned.
 
 Board geometry (from the COCO-CART footprint placed at P1 origin
 121.92, 109.347):
     x = 99.59 .. 197.59  (98 mm wide)
     y = 44.187 .. 99.187 (55 mm tall, edge fingers extend below)
 
-The layout clusters components by signal path:
-    - Bottom row (y 90-97): level shifters U10-U13, U15, LDO U14
-    - Middle (y 65-80): Pico 2 (U1) horizontal
-    - Top (y 45-60): debug headers, pull-ups
+v2.3 layout:
+    - Pico-Carrier module (U1) horizontal along the top-left edge, USB end
+      flush with the left board edge, antenna end pointing right into a
+      keepout zone.
+    - Power block (LDO, Schottky, bulk caps) near the +5V finger.
+    - /HALT, /NMI, /CART gate stages near fingers 3/4/8.
+    - Buffer row (U10-U13, U15) nearest the cart fingers, in finger order.
+    - Sound stage in a line to the SND finger.
+    - Test points, C10 and JP3 between the module and the reserved HDMI
+      corner (top-right), which is left empty for a future HDMI connector.
 """
 
 from __future__ import annotations
 
 import re
+import sys
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 PCB = PROJECT_ROOT / "PiCoCo" / "PiCoCo.kicad_pcb"
 
-# Ref -> (x, y, rotation)
-# P1 omitted: we preserve its current placement.
+# Ref -> (x, y, rotation), board mm, KiCad Y down.
 #
-# Board extents (absolute, derived from P1 at 121.92, 109.347):
-#   x: 99.59 .. 197.59  (98 mm wide)
-#   y: 44.187 .. 99.187 (55 mm tall)
-# 3 mm margin inside: x 102.59..194.59, y 47.187..96.187.
+# Board: x 99.59..197.59, y 44.187..99.187, fingers at the bottom.
+# Finger x positions: cart pad n at x = 121.92 + 2.54*ceil(n/2) (pins 3/4 at
+# 127.0, 9 at 134.6, D0..D7 134.6..142.2, A0..A7 144.8..152.4, A8..A12
+# 155.0..160.0, /CTS 160.0, /SCS 167.6, A13/A14 168.9, A15//SLENB 171.5,
+# SND 167.6).
 #
-# The two 2x20 headers (J_CART1, J_LVC1) are 50.8 x 5.08 mm each and
-# just don't fit alongside a horizontal Pico on a 98x55 board. We
-# park them OFF the board (y around 25) so you can decide: delete
-# them, shrink to 1x20, or expand the board. Same for the SWD header
-# which we'll place just above the board top edge.
-
+# Reserved HDMI corner: x 172.6..197.6, y 44.2..59.2 (nothing placed there).
 PLACEMENT: dict[str, tuple[float, float, float]] = {
-    # v2.2: J_CART and J_LVC debug headers removed — they dominated
-    # the 98x55 mm board area. Use TP1..TP6 pads + J_SWD + USB CDC for
-    # bring-up debug instead.
-
-    # -------- Pi Pico 2: vertical, right edge of the board --------
-    # Pico footprint is 17.8 wide x 48.3 tall. Center at (188, 72)
-    # puts the body at x 179.1..196.9, y 47.85..96.15 (fits inside
-    # 44.187..99.187 with ~3 mm margin top and bottom).
-    "U1":  (188.0, 72.0,  0),
-
-    # -------- Middle row (y~63): pull-ups, decoupling --------
-    "R1":  (106.0, 63.0,  0),       # /HALT pull-up
-    "R2":  (113.0, 63.0,  0),       # /NMI pull-up
-    "R3":  (120.0, 63.0,  0),       # /RESET pull-up
-    "R4":  (127.0, 63.0,  0),       # 3V3_EN pull-up
-    "C10": (148.0, 63.0,  0),       # Pico local decoupling
-
-    # -------- SWD header: between Pico & middle row --------
-    "J_SWD1": (138.0, 73.0, 90),    # 1x4 vertical, compact
-
-    # -------- Decoupling row (y=84), above each IC ----------
-    "C2":  (105.0, 84.0,  90),      # LDO input cap
-    "C3":  (113.0, 84.0,  90),      # LDO output cap
-    "C6":  (124.0, 84.0,  90),      # U11
-    "C7":  (141.0, 84.0,  90),      # U12
-    "C8":  (155.0, 84.0,  90),      # U13
-    "C4":  (164.0, 84.0,  90),      # U10 Vcca (3V3)
-    "C5":  (174.0, 84.0,  90),      # U10 Vccb (+5V)
-    "C9":  (170.0, 75.0,  90),      # U15 (moved above U15 to free overlap)
-
-    # -------- Shifter row (y=92) + LDO: closest to P1 --------
-    # 16-mm pitch between SOIC-20s; U10 gets extra space for its
-    # SOIC-24 body (15.4 mm long). Clearance to Pico (x=179.1) is
-    # enforced by keeping U10 center ≤ 170.
-    "U14": (108.0, 92.0,  0),       # AMS1117-3.3 LDO
-    "U11": (124.0, 92.0,  0),       # A0-A7 buffer
-    "U12": (141.0, 92.0,  0),       # A8-A13 + /R/W + /CTS + /SCS
-    "U13": (154.0, 92.0,  0),       # ctrl2 (E, Q, etc.)
-    "U10": (170.0, 92.0,  0),       # Data bus bidi (wider SOIC-24)
-    "U15": (170.0, 78.0,  0),       # AND gate, tiny, between U10 and Pico
-
-    # -------- C1: +5V bulk near cart edge, west of U11 --------
-    # Previous (120, 97) overlapped U11 top pads (y=95.0..96.5).
-    # (115, 97.5) keeps 0805 pad edges ≥1 mm from U11 and ≥0.5 mm
-    # from the bottom board edge.
-    "C1":  (115.0, 97.5,  0),
-
-    # -------- C11: +5V bulk local to U10 Vccb --------
-    # Previous (177, 88) overlapped U10 pin 12. (176.5, 97.5) straddles
-    # the column above U10's Vccb pins (23/24) with clean board-edge
-    # margin and stays clear of the Pico footprint (x≥179.1).
-    "C11": (176.5, 97.5,  0),
-
-    # -------- D2: Schottky from +5V to VSYS_PICO, north of LDO --------
-    # Previous (100, 88) extended past the board's left edge (x=99.59).
-    # (115, 96) sits in open space between U14 and U12 with pads
-    # clear of both.
-    "D2":  (115.0, 96.0,  0),
-
-    # -------- /HALT firmware-drive stack: Q2 + R7 + R8 --------
-    # Q2 sinks /HALT; keep it near the cart-side /HALT trace. R7 pulls
-    # gate high during Pico boot, R8 isolates GP27 from gate transients.
-    "Q2":  (108.0, 85.0,  0),
-    "R7":  (134.0, 63.0,  0),       # Q2 gate pull-up to +3V3
-    "R8":  (141.0, 63.0,  0),       # Q2 gate series from GP27
-
-    # -------- /CART pull-up with user jumper --------
-    "R6":  (102.0, 97.0,  0),       # 4.7k to +5V
-    "JP1": (107.0, 97.0,  0),       # Install shunt = /CART pull-up active
-
-    # -------- Pico RUN from CoCo /RESET --------
-    # Previous (181, 85/88) sat INSIDE the Pico body (x 179.1..196.9,
-    # y 47.85..96.15). Moved south of the Pico into the free strip
-    # between Pico's bottom edge and the board's bottom edge.
-    "R9":  (185.0, 97.5,  0),       # RUN series
-    "R10": (190.0, 97.5,  0),       # RUN pull-up
-
-    # -------- Series termination on fan-out nets --------
-    # R11 nudged north to clear U15 top pads (y≈79.25).
-    # R12 moved below U12 (U12 top pads at y≈96.25); tight against
-    # board edge but fits.
-    "R11": (175.0, 81.0,  0),       # OE_BUS near U15 output
-    "R12": (147.0, 97.5,  0),       # RW_BUF south of U12
-
-    # -------- SWD series protection --------
-    "R13": (132.0, 73.0,  0),       # SWCLK
-    "R14": (144.0, 73.0,  0),       # SWDIO
-
-    # -------- Test points (1x1 mm SMD pads) --------
-    # Moved off the IC pad rows; adjacent-to-IC spots were overlapping
-    # pin pads. Current positions are in clear space below/above the
-    # relevant IC (tracks will route up to them during hand-route).
-    "TP1": (172.0, 74.0,  0),       # OE_BUS
-    "TP2": (150.0, 85.5,  0),       # RW_BUF
-    "TP3": (138.0, 86.0,  0),       # CTS_BUF
-    "TP4": (153.0, 86.0,  0),       # SCS_BUF
-    "TP5": (158.0, 86.0,  0),       # E_B
-    "TP6": (112.0, 66.0,  0),       # +3V3
+    # Module along the top edge, horizontal: USB end flush with the LEFT board edge,
+    # antenna end pointing right; body x 99.6..150.6, y 45.7..66.7. Rotation is verified
+    # by the render in step 5 (USB must be at x=99.6); if it comes out mirrored use 270.
+    "U1":   (125.1, 56.2, 90),
+    # Power block near the +5V finger (x 134.6): LDO, Schottky, bulk caps
+    "U14":  (108.0, 92.0, 0), "D2": (115.0, 96.0, 0), "C1": (120.0, 97.5, 0), "C2": (105.0, 84.0, 90),
+    "C3":   (113.0, 84.0, 90), "C12": (106.0, 74.0, 0), "R4": (118.0, 70.0, 0),
+    # /HALT, /NMI, /CART stages near fingers 3/4/8 (x 127..132)
+    "R1": (124.0, 86.0, 0), "Q2": (128.0, 85.0, 0), "R7": (124.0, 80.0, 0), "R8": (128.0, 80.0, 0),
+    "R2": (132.0, 86.0, 0), "Q3": (132.0, 80.0, 0), "R15": (136.0, 80.0, 0), "R17": (136.0, 76.0, 0),
+    "Q4": (128.0, 74.0, 0), "R16": (132.0, 74.0, 0), "R18": (132.0, 70.0, 0),
+    "R3": (140.0, 70.0, 0),
+    # Buffer row nearest the fingers, in finger order: data, A0-7, A8-13/RW/CTS, controls
+    "U10": (140.0, 92.0, 0), "U11": (154.0, 92.0, 0), "U12": (168.0, 92.0, 0), "U13": (182.0, 92.0, 0),
+    "C4": (140.0, 84.0, 90), "C6": (154.0, 84.0, 90), "C7": (168.0, 84.0, 90), "C8": (182.0, 84.0, 90),
+    "U15": (175.0, 77.0, 0), "C9": (181.0, 77.0, 90),
+    "R11": (175.0, 71.0, 0), "R12": (163.0, 84.0, 0), "JP2": (146.0, 84.0, 0),
+    "R9": (190.0, 84.0, 0), "R10": (194.0, 84.0, 90),
+    # Sound stage in a line to the SND finger (x 167.6): keep it below U13's row end
+    "R19": (188.0, 97.5, 0), "C13": (191.0, 97.5, 0), "R20": (194.0, 97.5, 0), "C14": (194.0, 93.0, 90),
+    "R21": (194.0, 89.0, 90), "R22": (190.0, 89.0, 90), "C15": (186.0, 89.0, 90), "TP7": (186.0, 93.0, 0),
+    # Between module and the reserved HDMI corner: JP3 by module pin 34, test points, C10
+    "JP3": (152.0, 62.0, 0), "C10": (152.0, 66.0, 90),
+    "TP1": (166.0, 50.0, 0), "TP2": (166.0, 54.0, 0), "TP3": (166.0, 58.0, 0),
+    "TP4": (166.0, 62.0, 0), "TP5": (166.0, 66.0, 0), "TP6": (170.0, 50.0, 0),
+    # Fiducials 3 mm in from two diagonal corners
+    "FID1": (102.6, 47.2, 0), "FID2": (194.6, 96.2, 0),
 }
+
+
+def _zone_keepout(name: str, layers: str, pts: list[tuple[float, float]], what: str) -> str:
+    poly = " ".join(f"(xy {x:.3f} {y:.3f})" for x, y in pts)
+    return (f'  (zone (net 0) (net_name "") (layers {layers}) (name "{name}") (hatch edge 0.5)\n'
+            f'    (keepout {what})\n    (polygon (pts {poly}))\n  )\n')
+
+
+EXTRAS = [
+    # Antenna: from the module's pin 20/21 end (x=150.6) 4.92 mm to the right, full module width.
+    _zone_keepout("antenna_keepout", '"F.Cu" "B.Cu"',
+                  [(150.6, 45.7), (155.6, 45.7), (155.6, 66.7), (150.6, 66.7)],
+                  "(tracks not_allowed) (vias not_allowed) (pads not_allowed) (copperpour not_allowed) (footprints not_allowed)"),
+    # Reserved HDMI corner: no footprints, routing allowed.
+    _zone_keepout("hdmi_reserved", '"F.Cu"',
+                  [(172.6, 44.2), (197.6, 44.2), (197.6, 59.2), (172.6, 59.2)],
+                  "(tracks allowed) (vias allowed) (pads not_allowed) (copperpour allowed) (footprints not_allowed)"),
+]
+TEXTS = [  # (text, x, y, layer, size)
+    ("HDMI (future)", 185.0, 51.5, "F.SilkS", 1.0),
+    ("PiCoCo v2.3  CERN-OHL-S-2.0", 148.0, 70.0, "F.SilkS", 1.0),
+    ("github.com/cognitivegears/PiCoCo", 148.0, 72.0, "F.SilkS", 0.8),
+    ("JLCJLCJLCJLC", 110.0, 62.0, "B.SilkS", 1.0),
+    ("JP2 1-2=HW /OE  2-3=FW", 146.0, 80.5, "F.SilkS", 0.6),
+    ("JP3 1-2=E  2-3=AUDIO (Pico2)", 152.0, 59.0, "F.SilkS", 0.6),
+    ("no parts under module", 125.0, 62.0, "F.Fab", 1.0),
+]
+
+
+def add_board_extras(text: str) -> str:
+    """Append EXTRAS zones and TEXTS silkscreen, idempotently, before the file's final `)`."""
+    end = text.rstrip().rfind(")")
+    body, tail = text[:end], text[end:]
+    for z in EXTRAS:
+        name = re.search(r'\(name "([^"]+)"', z).group(1)
+        if f'(name "{name}")' not in body:
+            body = body.rstrip("\n") + "\n" + z
+    for t, x, y, layer, size in TEXTS:
+        if f'(gr_text "{t}"' not in body:
+            body = body.rstrip("\n") + (f'\n  (gr_text "{t}" (at {x} {y} 0) (layer "{layer}")\n'
+                                        f'    (effects (font (size {size} {size}) (thickness {size*0.15:.2f})))\n  )\n')
+    return body + tail
 
 
 def _find_footprint_block(text: str, start: int) -> tuple[int, int]:
@@ -157,13 +131,13 @@ def _find_footprint_block(text: str, start: int) -> tuple[int, int]:
     raise RuntimeError("unbalanced footprint block")
 
 
-def main() -> None:
+def main() -> int:
     text = PCB.read_text()
     # Iterate footprint blocks, rewriting each that has a matching ref
     changes = 0
+    seen: set[str] = set()
     out_parts: list[str] = []
     last_end = 0
-    i = 0
     for m in re.finditer(r'\(footprint\s+"[^"]+"', text):
         fp_start, fp_end = _find_footprint_block(text, m.start())
         block = text[fp_start:fp_end]
@@ -178,12 +152,11 @@ def main() -> None:
             out_parts.append(text[last_end:fp_end])
             last_end = fp_end
             continue
+        seen.add(ref)
         x, y, rot = PLACEMENT[ref]
         # Find FIRST (at X Y [rot]) inside this footprint (the top-level
         # placement). It's the first occurrence AFTER the footprint name,
         # and before any (property ...).
-        # More specifically: we want to rewrite the top-level (at X Y [rot]).
-        # Use a regex that matches a standalone (at ...) on its own line.
         new_at = f'(at {x:.3f} {y:.3f}{f" {int(rot)}" if rot else ""})'
         # Look for the first `(at N N [N])` at minimum indent after the
         # footprint header
@@ -201,9 +174,16 @@ def main() -> None:
         last_end = fp_end
         changes += 1
     out_parts.append(text[last_end:])
-    PCB.write_text("".join(out_parts))
+    out_text = "".join(out_parts)
+    out_text = add_board_extras(out_text)
+    PCB.write_text(out_text)
     print(f"moved {changes} footprints")
+
+    missing = sorted(set(PLACEMENT) - seen)
+    for ref in missing:
+        print(f"missing: {ref}")
+    return 1 if missing else 0
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())
