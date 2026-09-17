@@ -69,9 +69,13 @@ def import_ses(board: "pcbnew.BOARD", ses_path: Path) -> None:
 
 
 def clean_dangling(board: "pcbnew.BOARD", connectivity) -> tuple[int, int, int, int, float]:
-    """Remove zero-length track segments, then dangling vias (not connected,
-    or connected on only one copper layer -- same test KiCad's own DRC uses
-    for the via_dangling rule).
+    """Remove zero-length track segments once, then dangling vias and dangling
+    track segments (not connected, or -- for a via -- connected on only one
+    copper layer; same test KiCad's own DRC uses for the via_dangling /
+    track_dangling rules), repeating until a pass removes nothing: deleting a
+    via can turn its former stub track into a new dangling segment, and
+    deleting that can expose the next segment upstream, so unrouted nets end
+    up fully bare for hand-finishing instead of littered with dead stubs.
 
     Takes the board's CONNECTIVITY_DATA (from board.GetConnectivity(), after
     board.BuildConnectivity()) rather than fetching its own: a second
@@ -82,8 +86,11 @@ def clean_dangling(board: "pcbnew.BOARD", connectivity) -> tuple[int, int, int, 
     connectivity operation (RecalculateRatsnest, GetUnconnectedCount, ...)
     was observed to raise "SwigPyObject is not iterable" on the *first* call
     -- SaveBoard() on the same board object afterwards is fine, just not
-    GetTracks(). Caller: use these return values for the summary, then only
-    call SaveBoard(); don't call board.GetTracks() again.
+    GetTracks(). Repeated RecalculateRatsnest()/TestTrackEndpointDangling()
+    calls in the loop below are fine since they never re-touch board.GetTracks();
+    the loop only re-filters the Python-side `segs`/`vias` lists already held.
+    Caller: use these return values for the summary, then only call
+    SaveBoard(); don't call board.GetTracks() again.
 
     Returns (vias_removed, segments_removed, vias_remaining, segments_remaining,
     track_length_mm).
@@ -97,14 +104,23 @@ def clean_dangling(board: "pcbnew.BOARD", connectivity) -> tuple[int, int, int, 
         board.Remove(s)
     segs = [s for s in segs if s not in zero_len]
 
-    connectivity.RecalculateRatsnest()
-    dangling = [v for v in vias if connectivity.TestTrackEndpointDangling(v, False)]
-    for v in dangling:
-        board.Remove(v)
-    vias = [v for v in vias if v not in dangling]
+    vias_removed = 0
+    segs_removed = len(zero_len)
+    while True:
+        connectivity.RecalculateRatsnest()
+        dangling_vias = [v for v in vias if connectivity.TestTrackEndpointDangling(v, False)]
+        dangling_segs = [s for s in segs if connectivity.TestTrackEndpointDangling(s, False)]
+        if not dangling_vias and not dangling_segs:
+            break
+        for item in (*dangling_vias, *dangling_segs):
+            board.Remove(item)
+        vias = [v for v in vias if v not in dangling_vias]
+        segs = [s for s in segs if s not in dangling_segs]
+        vias_removed += len(dangling_vias)
+        segs_removed += len(dangling_segs)
 
     length_mm = sum(s.GetLength() for s in segs) / pcbnew.PCB_IU_PER_MM
-    return len(dangling), len(zero_len), len(vias), len(segs), length_mm
+    return vias_removed, segs_removed, len(vias), len(segs), length_mm
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
