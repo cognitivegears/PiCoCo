@@ -191,6 +191,122 @@ def load_symbols(symbols=None) -> tuple[str, dict[str, dict]]:
 
 
 # ---------------------------------------------------------------------------
+# Library items the v2.3 schematic depends on (written idempotently)
+# ---------------------------------------------------------------------------
+PRETTY = PROJECT_ROOT / "libraries" / "PiCoCo.pretty"
+
+PAD_GRID = {  # RP2350B-Plus-W underside pads, footprint frame (RP2350B_IDEAS §13.4)
+    "GP26": (-5.08, 22.40), "GP29": (-2.54, 22.40), "GP32": (0.0, 22.40), "GP35": (2.54, 22.40), "GP45": (5.08, 22.40),
+    "GP25": (-5.08, 19.86), "GP28": (-2.54, 19.86), "GP31": (0.0, 19.86), "GP34": (2.54, 19.86), "GP44": (5.08, 19.86),
+    "GP24": (-5.08, 17.32), "GP27": (-2.54, 17.32), "GP30": (0.0, 17.32), "GP33": (2.54, 17.32), "GP43": (5.08, 17.32),
+}
+
+
+def write_carrier_footprint() -> None:
+    """Pico-Carrier = RPi_Pico_SMD_TH + the 15 Plus-W pads + antenna courtyard. No paste anywhere."""
+    src = (PRETTY / "RPi_Pico_SMD_TH.kicad_mod").read_text()
+    assert src.startswith('(footprint "RPi_Pico_SMD_TH"')
+    text = src.replace('(footprint "RPi_Pico_SMD_TH"', '(footprint "Pico-Carrier"', 1)
+    assert "F.Paste" not in text, "source footprint unexpectedly has paste"
+    extra = []
+    for num, (x, y) in PAD_GRID.items():
+        extra.append(f'  (pad "{num}" smd rect (at {x} {y}) (size 1.8 1.8) (layers "F.Cu" "F.Mask") (tstamp {u()}))')
+    # Plus-W envelope: 51 mm body (+-25.5) plus 4.92 mm antenna past the pin 20/21 end (+Y).
+    extra.append('  (fp_rect (start -10.5 -25.5) (end 10.5 30.42) (stroke (width 0.05) (type default)) (fill none) (layer "F.CrtYd") (tstamp %s))' % u())
+    extra.append('  (fp_rect (start -10.5 25.5) (end 10.5 30.42) (stroke (width 0.1) (type default)) (fill none) (layer "F.Fab") (tstamp %s))' % u())
+    extra.append('  (fp_text user "ANT antenna keepout (Plus-W)" (at 0 28) (layer "F.Fab") (effects (font (size 0.8 0.8) (thickness 0.12))) (tstamp %s))' % u())
+    extra.append('  (fp_text user "USB" (at 0 -23) (layer "F.SilkS") (effects (font (size 1 1) (thickness 0.15))) (tstamp %s))' % u())
+    extra.append('  (fp_text user "ANT" (at 0 27.5) (layer "F.SilkS") (effects (font (size 1 1) (thickness 0.15))) (tstamp %s))' % u())
+    end = text.rstrip().rfind(")")
+    text = text[:end].rstrip("\n") + "\n" + "\n".join(extra) + "\n)\n"
+    (PRETTY / "Pico-Carrier.kicad_mod").write_text(text)
+
+
+def trim_cart_fingers() -> None:
+    """Fingers end 1.30 mm from the edge (JLCPCB 30 deg bevel is 1.13 mm deep). Idempotent."""
+    p = PRETTY / "COCO-CART-2.1X1.75.kicad_mod"
+    src = p.read_text()
+    out = re.sub(r"\(at ([\d.]+) -5\.207\) \(size 1\.27 9\.525\)", r"(at \1 -5.635) (size 1.27 8.67)", src)
+    if out != src:
+        p.write_text(out)
+
+
+def _replace_or_append_symbol(name: str, sym: str) -> None:
+    lib = LOCAL_SYMS
+    text = lib.read_text()
+    try:
+        old = extract_symbol(lib, name)
+        text = text.replace(old, sym.strip("\n"))
+    except RuntimeError:
+        end = text.rstrip().rfind(")")
+        text = text[:end].rstrip("\n") + "\n" + sym.rstrip("\n") + "\n" + text[end:]
+    lib.write_text(text)
+
+
+def write_carrier_symbol() -> None:
+    """Pico-Carrier symbol = Pico symbol widened, side pins pushed out, 15 pad pins along the top."""
+    src = extract_symbol(LOCAL_SYMS, "Pico")
+    sym = re.sub(r'"Pico(_\d+_\d+)?"', r'"Pico-Carrier\1"', src)
+    sym = sym.replace("(at -17.78 ", "(at -21.59 ").replace("(at 17.78 ", "(at 21.59 ")
+    sym = sym.replace("(rectangle (start -15.24 26.67) (end 15.24 -26.67)", "(rectangle (start -19.05 26.67) (end 19.05 -26.67)")
+    # Pico symbol names these pins for their Pico 2 ADC function; on the
+    # Plus-W module the same physical header pins (31/32/34) carry GP40/41/42
+    # instead (RP2350B_IDEAS.md §13.1), so the carrier's silkscreen needs both.
+    for old, new in (("GPIO26_ADC0", "GP26/GP40"), ("GPIO27_ADC1", "GP27/GP41"), ("GPIO28_ADC2", "GP28/GP42")):
+        assert f'(name "{old}"' in sym, f"pin name {old} not found in Pico symbol"
+        sym = sym.replace(f'(name "{old}"', f'(name "{new}"', 1)
+    pins = []
+    for i, num in enumerate(sorted(PAD_GRID, key=lambda n: int(n[2:]))):
+        x = -17.78 + 2.54 * i
+        pins.append(
+            f'      (pin bidirectional line (at {x:.2f} 29.21 270) (length 2.54)\n'
+            f'        (name "{num}" (effects (font (size 1.27 1.27))))\n'
+            f'        (number "{num}" (effects (font (size 1.27 1.27))))\n'
+            f'      )'
+        )
+    # append the pins to the last pin-bearing sub-symbol block
+    blocks = _extract_pin_blocks(sym)
+    last = blocks[-1]
+    sym = sym.replace(last, last + "\n" + "\n".join(pins), 1)
+    sym = re.sub(r'\(property "Footprint" "[^"]*"', '(property "Footprint" "PiCoCo:Pico-Carrier"', sym)
+    _replace_or_append_symbol("Pico-Carrier", sym)
+
+
+def write_lvc00_symbol() -> None:
+    """Single-unit quad NAND (the stock 74LS00 is 5 units; the generator places one unit per symbol)."""
+    left = [("1", "1A", 7.62), ("2", "1B", 5.08), ("4", "2A", 2.54), ("5", "2B", 0.0),
+            ("9", "3A", -2.54), ("10", "3B", -5.08), ("12", "4A", -7.62), ("13", "4B", -10.16)]
+    right = [("3", "1Y", 6.35), ("6", "2Y", 1.27), ("8", "3Y", -3.81), ("11", "4Y", -8.89)]
+    pins = []
+    for num, name, y in left:
+        pins.append(f'      (pin input line (at -12.7 {y} 0) (length 2.54)\n        (name "{name}" (effects (font (size 1.27 1.27))))\n        (number "{num}" (effects (font (size 1.27 1.27))))\n      )')
+    for num, name, y in right:
+        pins.append(f'      (pin output line (at 12.7 {y} 180) (length 2.54)\n        (name "{name}" (effects (font (size 1.27 1.27))))\n        (number "{num}" (effects (font (size 1.27 1.27))))\n      )')
+    pins.append('      (pin power_in line (at 0 12.7 270) (length 2.54)\n        (name "VCC" (effects (font (size 1.27 1.27))))\n        (number "14" (effects (font (size 1.27 1.27))))\n      )')
+    pins.append('      (pin power_in line (at 0 -15.24 90) (length 2.54)\n        (name "GND" (effects (font (size 1.27 1.27))))\n        (number "7" (effects (font (size 1.27 1.27))))\n      )')
+    sym = (
+        '  (symbol "74LVC00" (pin_names (offset 1.016)) (in_bom yes) (on_board yes)\n'
+        '    (property "Reference" "U" (at 0 15.24 0) (effects (font (size 1.27 1.27))))\n'
+        '    (property "Value" "74LVC00" (at 0 -17.78 0) (effects (font (size 1.27 1.27))))\n'
+        '    (property "Footprint" "Package_SO:SOIC-14_3.9x8.7mm_P1.27mm" (at 0 0 0) (effects (font (size 1.27 1.27)) hide))\n'
+        '    (property "Datasheet" "~" (at 0 0 0) (effects (font (size 1.27 1.27)) hide))\n'
+        '    (symbol "74LVC00_0_1"\n'
+        '      (rectangle (start -10.16 10.16) (end 10.16 -12.7) (stroke (width 0.254) (type default)) (fill (type background)))\n'
+        '    )\n'
+        '    (symbol "74LVC00_1_1"\n' + "\n".join(pins) + '\n    )\n'
+        '  )'
+    )
+    _replace_or_append_symbol("74LVC00", sym)
+
+
+def write_library_items() -> None:
+    write_carrier_footprint()
+    trim_cart_fingers()
+    write_carrier_symbol()
+    write_lvc00_symbol()
+
+
+# ---------------------------------------------------------------------------
 # Placement helpers
 # ---------------------------------------------------------------------------
 
@@ -868,6 +984,7 @@ def assemble(lib_block: str, s: "Sheet", paper: str, title_block: str) -> str:
 
 
 def main() -> None:
+    write_library_items()
     text = build()
     SCH_OUT.write_text(text)
     print(f"wrote {SCH_OUT}  ({len(text):,} bytes)")
