@@ -15,7 +15,13 @@ BUS_HOT void bus_core1_main(void) {
     (void)save_and_disable_interrupts();          /* never restored: core1 does nothing else */
     for (;;) {
         while (sio_hw->gpio_in & OE_MASK) { }     /* wait for a cart cycle (OE_BUS low) */
+        uint32_t in0 = sio_hw->gpio_in;
+        /* ponytail: diagnostic resample ~70 ns later; use the later sample. Bench 2026-09-16 saw
+         * A8 read high on ~3% of cycles; this tells settling-at-sample-time from a bad level. */
+        __asm volatile("nop\nnop\nnop\nnop\nnop\nnop\nnop\nnop\nnop\nnop" ::: "memory");
         uint32_t in  = sio_hw->gpio_in;
+        uint32_t dif = ((in ^ in0) >> PIN_A0) & 0x3FFF;
+        if (dif) { bus_stats.addr_resample++; bus_stats.addr_resample_bits |= dif; }
         uint16_t idx = (in >> PIN_A0) & 0x3FFF;
         if (in & RW_MASK) {                       /* CoCo read */
             if (bus_drive) {

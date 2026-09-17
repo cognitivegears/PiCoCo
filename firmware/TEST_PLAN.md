@@ -117,6 +117,23 @@ heading.
 
 ## Results
 
+### 2026-09-16, HDB-DOS boot + native DriveWire on the CoCo 3
+Root cause of the 09-15 HDB-DOS garbage: core1 sampled the address ~20 ns
+after OE_BUS fell and A8/A10 (sometimes A0/A2) read high on ~3% of cart
+reads (trace: single-sample spikes of 0x100/0x400, steady rate, not a
+loose wire). The CoCo 3 copies the cart into RAM at boot, so HDB-DOS ran
+corrupted. Fix: `bus_core1.c` reads the GPIOs twice ~70 ns apart and uses
+the second; `status` prints `bus addr_resample N bits X` (first-sample
+disagreements). After the fix: 0 spikes in a 4096-read sweep, HDB-DOS 1.5
+BECKER (`hdbdw3bck.rom`) boots, `DIR` of DINORUN.DSK on drive 0 (`dw
+hdbdos on`) lists correctly, `LOADM"DINORUN":EXEC` loads and runs: `dw
+reads 97 crc_err 0 timeouts 0`, `becker reads 24929 writes 679 underrun 0`.
+Boot still logs addr_resample hits on all bits during the ROM copy (fast
+loop); revisit before the `bc3` 1.79 MHz ROM. Not done: SAVE/power-cycle
+half of step 11. Caveat: `POKE &HFFDE,0` ROM mode on the CoCo 3 with a cart
+present hides Super ECB behind the cart window; BASIC then executes 0xFF
+from the Pico (?NF ERROR, runaway). Use only for a lone PEEK, or not at all.
+
 ### 2026-09-15, breadboard gates 9 and 10 on a CoCo 3
 Address buffers + 74HC00 decode (bench guide gate 9): passed after U15 pin 14
 was found on GND. A CoCo 3 runs BASIC from RAM, so `PEEK(&HC123)` never hits

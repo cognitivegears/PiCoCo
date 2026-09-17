@@ -17,7 +17,7 @@
 #endif
 
 typedef struct { uint32_t t_us; uint16_t idx; uint8_t rw; uint8_t data; } bus_trace_entry;
-typedef struct { uint32_t cycles, reads, writes, write_overrun; } bus_stats_t;
+typedef struct { uint32_t cycles, reads, writes, write_overrun, addr_resample, addr_resample_bits; } bus_stats_t;   /* ponytail: addr_resample* = diagnostic, address changed between two samples after OE_BUS fell */
 
 extern uint8_t bus_table[BUS_TABLE_SIZE];
 extern volatile bus_stats_t bus_stats;
