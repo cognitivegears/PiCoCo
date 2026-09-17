@@ -921,9 +921,38 @@ polyfuse all clear the Plus-W case.
 HSTX video stays off this path: it needs GP12..GP19, which is the
 address block (§1).
 
-### 13.4 Open before layout
+### 13.4 Underside pad grid, measured (2026-09-17)
 
-- Underside pad pitch and coordinates (13.1).
+No drawing exists (Waveshare's wiki blocks fetches; the schematic PDF at
+files.waveshare.com gives only the pad-to-GPIO map). Measured from two
+straight-on photos of the module's underside, using the 40 castellation
+holes (2.54 mm pitch, 1.0 mm drill, measured 1.02 mm) as the scale and
+frame. Close-up and full-board photos agree to 0.03 mm.
+
+- 3 x 5 pads, **2.54 mm pitch** both ways (measured 2.553 / 2.557),
+  **1.5 mm square** (measured 1.52 x 1.50), on the same lattice as the
+  header, centred across the board width.
+- Columns, in the `RPi_Pico_SMD_TH` footprint frame (pin 1 at
+  -8.89, -24.13; pin 20 at -8.89, +24.13; pin 21 at +8.89, +24.13):
+  X = -5.08, -2.54, 0, +2.54, +5.08.
+- Rows: the row nearest the pin 20/21 end (the antenna end) is
+  **1.73 mm** from that hole row (measured 1.72 and 1.74), i.e.
+  Y = +22.40, then +19.86, +17.32.
+- GPIO on each pad (from the module's silkscreen, matches the schematic
+  PDF), listed from the pins-1..20 side to the pins-21..40 side:
+  row Y=+22.40: GP26 GP29 GP32 GP35 GP45;
+  row Y=+19.86: GP25 GP28 GP31 GP34 GP44;
+  row Y=+17.32: GP24 GP27 GP30 GP33 GP43.
+- Carrier pads: 1.8 mm square (0.3 mm oversize) on those centres. The
+  grid is well inside the module's 21 mm width and 3 pitches from the
+  end, clear of the antenna and the USB-C end.
+
+Photos: IMG_8547.jpg (full underside), IMG_8548.jpg (close-up), taken
+2026-09-17; measurement script in the session scratchpad
+(`measure2.py`, OpenCV, castellation-hole homography/similarity fit).
+
+### 13.5 Open before layout
+
 - Whether the Plus-W can be soldered flat with the hidden pads reliably
   by hand, or whether the header route is needed.
 - The cyw43 tx-power call.
