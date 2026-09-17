@@ -148,6 +148,26 @@ which is where SDC-DOS's ROM-bank features come from.
 
 ---
 
+## 5. Bridge mode: Becker port to a host DriveWire server (deferred 2026-09-17)
+
+Breadboard plan step 10. The firmware already has `becker bridge`, which
+forwards Becker bytes to CDC0 so a DriveWire server on the Mac
+(pyDriveWire or DW4) serves the CoCo. It was skipped on the bench
+because native mode (step 11) passed first: DIR, LOADM+EXEC, SAVE across
+a power-cycle, at both 0.89 and 1.79 MHz, crc_err 0.
+
+Why it is still worth finishing later:
+- Access to everything a full DW4 server does that the Pico does not:
+  virtual serial ports, printer capture, network drives, the DW4 UI.
+- A fallback when a disk image or a client (NitrOS-9, HDB-DOS variants)
+  trips a gap in the native server: same cart, no reflash.
+
+What it needs: `becker bridge` + `save`, a CDC0 session from
+pyDriveWire (`--port /dev/tty.usbmodemXXXX1 --speed 115200 <image>`),
+then the step 10 checks (`DIR`, `LOADM`). Tag `fw-0.8-bridge` when it
+passes. Watch for the host-side latency: the CoCo's Becker read loop has
+no timeout, so a slow reply hangs the CoCo until the server answers.
+
 ## 4. Suggested order
 
 1. Ship MVP with "bring your own HDB-DOS".
@@ -155,3 +175,4 @@ which is where SDC-DOS's ROM-bank features come from.
 3. SDC interface (§2) once SD storage exists, since its whole value is
    mounting images from a card.
 4. PiCoCo-DOS sequential file I/O only if people ask.
+5. Bridge mode (§5) when a host-side DW4 feature is actually wanted.

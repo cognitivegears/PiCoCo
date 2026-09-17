@@ -244,6 +244,14 @@ cold‑start race where a user could type `DOS` before firmware is
 ready. After release, firmware can re‑assert by driving GP27 HIGH
 for DriveWire flow control of long host operations.
 
+**Decision 2026-09-17: Q2, R7 and R8 stay on the PCB.** The breadboard
+bring-up ran with the Pico on USB, so the cold-boot race was never
+exercised; the Pico reaches "core1 up, halt released" about 1.16 s after
+its own boot, and the CoCo's reset-to-first-$C000-read time was not
+measured (breadboard plan step 8, now optional). Keeping the hold costs
+three parts on a pin that is already budgeted and doubles as DriveWire
+flow control, so it is kept without the measurement.
+
 ### 4.5 Reset path — Pico RUN from CoCo /RESET
 
 ```
@@ -257,6 +265,11 @@ When a CoCo user presses the RESET button (or the CPU asserts
 current; R10 holds RUN HIGH while /RESET is deasserted. This resets
 the Pico in sync with the CoCo, clearing Becker FIFO state instead
 of leaving it drifted relative to the CoCo's software.
+
+**Open (2026-09-17):** whether to populate this tie at all. Every reset
+press reboots the Pico, drops the USB console and re-runs the boot race
+that §4.4 then has to win. With the /HALT hold kept, the tie is not
+needed for correctness; decide before fab (R9 DNP keeps the option).
 
 ## 5. Power
 
