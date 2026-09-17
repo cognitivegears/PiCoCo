@@ -227,8 +227,15 @@ use this symbol.
   the module's 3V3_EN.
 - Q2 and R1 near the /HALT finger (pin 3); Q3/Q4 stages near /NMI (4)
   and /CART (8). JP2 next to U10 pin 19.
-- J_SWD and TP1..TP6 along the top edge beside the module, reachable
-  with the board in the slot. FID1/FID2 in two diagonal corners, 3 mm in.
+- Module orientation fixed for the future HDMI variant (§10): USB-C end
+  flush with the LEFT side edge, antenna end pointing right. The
+  top-right corner, about 25 x 15 mm, is reserved: no components, no
+  routing denser than needed to pass, silkscreen "HDMI (future)". It
+  sits about 15 mm from the antenna rule area and on the top edge so a
+  plug clears neighbouring Multi-Pak slots.
+- J_SWD and TP1..TP6 along the top edge between the module and the
+  reserved corner, reachable with the board in the slot. FID1/FID2 in
+  two diagonal corners, 3 mm in.
 - Silkscreen: references, "PiCoCo v2.3", CERN-OHL-S-2.0, project URL,
   "JLCJLCJLCJLC" placeholder for the order number, JP2 legend
   ("1-2 = HW /OE default, 2-3 = FW"), D2 cathode band, C12 polarity,
@@ -317,3 +324,18 @@ Outputs under `fab/main/`:
   economic assembly in one order (it did for the breakout bare boards;
   assembly was not used then). If not, fall back to standard assembly
   for this order and note the cost.
+
+## 10. Future HDMI variant (not built in this spin)
+
+HSTX, the RP2350's DVI output, exists only on GP12..GP19, which are the
+header pins carrying A4..A11 in this pin plan (RP2350B_IDEAS §1, §4).
+An HDMI build is therefore a Plus-W-only re-route of this carrier:
+A4..A11 move to the pad grid, which then carries A4..A11, A14, A15,
+CTS_BUF, SCS_BUF, Q_BUF, SLENB_BUF and OE_FW (all 15 pads; the /NMI and
+/CART drive provisions are dropped in that variant), and GP12..GP19
+route to a full-size HDMI-A receptacle with 8 series resistors and ESD
+in the reserved top-right corner (§5). What v2.3 fixes now so that
+variant is a routing change only: the module orientation, the reserved
+corner, and the buffer placement. The generator gets a second pin table
+for it when it is built. Sound over HDMI and the VDG snoop renderer are
+firmware on top of that (RP2350B_IDEAS §4).
