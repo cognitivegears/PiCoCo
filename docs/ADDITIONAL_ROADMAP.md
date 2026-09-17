@@ -148,6 +148,15 @@ which is where SDC-DOS's ROM-bank features come from.
 
 ---
 
+## 4. Suggested order
+
+1. Ship MVP with "bring your own HDB-DOS".
+2. PiCoCo-DOS must-haves (§1). Unblocks "works out of the box".
+3. SDC interface (§2) once SD storage exists, since its whole value is
+   mounting images from a card.
+4. PiCoCo-DOS sequential file I/O only if people ask.
+5. Bridge mode (§5) when a host-side DW4 feature is actually wanted.
+
 ## 5. Bridge mode: Becker port to a host DriveWire server (deferred 2026-09-17)
 
 Breadboard plan step 10. The firmware already has `becker bridge`, which
@@ -167,12 +176,3 @@ pyDriveWire (`--port /dev/tty.usbmodemXXXX1 --speed 115200 <image>`),
 then the step 10 checks (`DIR`, `LOADM`). Tag `fw-0.8-bridge` when it
 passes. Watch for the host-side latency: the CoCo's Becker read loop has
 no timeout, so a slow reply hangs the CoCo until the server answers.
-
-## 4. Suggested order
-
-1. Ship MVP with "bring your own HDB-DOS".
-2. PiCoCo-DOS must-haves (§1). Unblocks "works out of the box".
-3. SDC interface (§2) once SD storage exists, since its whole value is
-   mounting images from a card.
-4. PiCoCo-DOS sequential file I/O only if people ask.
-5. Bridge mode (§5) when a host-side DW4 feature is actually wanted.
