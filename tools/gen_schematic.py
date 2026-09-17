@@ -330,7 +330,14 @@ def fix_cart_footprint() -> None:
     for it in _top_level_items(body):
         kind = it.split(None, 1)[0].lstrip("(")
         if kind == "pad" and re.match(r'\(pad "MTG1" ', it):
-            out = out.replace("\n  " + it, "", 1)
+            # Structural removal via the balanced item found above (not a
+            # hardcoded "\n  " indent assumption): locate its real span in
+            # `out` and drop it plus its own leading line, whatever that
+            # indent actually is.
+            item_start = out.index(it)
+            item_end = item_start + len(it)
+            line_start = out.rfind("\n", 0, item_start) + 1
+            out = out[:line_start] + out[item_end:]
             break
 
     if out != src:

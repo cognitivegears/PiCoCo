@@ -78,6 +78,18 @@ def check_pad_clearances(p, min_gap=0.15):
                             assert _clear(b1, b2, min_gap), f"pad {n1} too close to pad {n2}"
 
 
+def _debug_row_label_count(text):
+    """Count silkscreen labels tied to the removed debug pads 41-43 (the
+    SWCLK/GND/SWDIO row at y=26.2 in the source footprint), so the F.SilkS
+    regression guard below is computed, not a hardcoded guess."""
+    count = 0
+    for m in re.finditer(r'\(fp_text user "(SWCLK|SWDIO|GND)"\s*\(at\s+(-?[\d.]+)\s+(-?[\d.]+)', text):
+        y = float(m.group(3))
+        if abs(y - 26.2) < 0.01:
+            count += 1
+    return count
+
+
 def main():
     fp = (PRETTY / "Pico-Carrier.kicad_mod").read_text()
     src = (PRETTY / "RPi_Pico_SMD_TH.kicad_mod").read_text()
@@ -104,12 +116,16 @@ def main():
     # Regression guard: a cross-item courtyard-strip regex once ate every
     # silkscreen position marker and copper-keepout polygon between the
     # first F.SilkS fp_line and the first F.CrtYd one. Carrier keeps every
-    # inherited F.SilkS/fp_poly item, drops the 2 SWCLK/SWDIO debug labels
-    # (their pads are gone), and adds 2 silkscreen labels (USB, ANT) of its
-    # own -- net zero change in count.
-    assert fp.count('(layer "F.SilkS")') == src.count('(layer "F.SilkS")') - 2 + 2, (
-        "F.SilkS item count changed unexpectedly (expected the inherited count minus "
-        "the 2 dropped SWCLK/SWDIO labels plus the 2 USB/ANT labels this footprint adds)"
+    # inherited F.SilkS/fp_poly item, drops the debug-row (SWCLK/GND/SWDIO,
+    # y=26.2) labels (their pads are gone), and adds 2 silkscreen labels
+    # (USB, ANT) of its own. Compute the dropped count from the source
+    # instead of hardcoding it, so this stays exact if the source ever
+    # changes.
+    debug_labels = _debug_row_label_count(src)
+    assert fp.count('(layer "F.SilkS")') == src.count('(layer "F.SilkS")') - debug_labels + 2, (
+        f"F.SilkS item count changed unexpectedly (expected the inherited count minus "
+        f"the {debug_labels} dropped debug-row labels plus the 2 USB/ANT labels this "
+        f"footprint adds)"
     )
     assert fp.count("(fp_poly") == src.count("(fp_poly"), "fp_poly (copper keepout) count changed"
     check_pad_clearances(p)

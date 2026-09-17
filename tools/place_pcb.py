@@ -81,11 +81,12 @@ PLACEMENT: dict[str, tuple[float, float, float]] = {
     "JP3": (160.0, 62.0, 0), "C10": (160.0, 66.0, 90),
     "TP1": (166.0, 50.0, 0), "TP2": (166.0, 54.0, 0), "TP3": (166.0, 58.0, 0),
     "TP4": (166.0, 62.0, 0), "TP5": (166.0, 66.0, 0), "TP6": (170.0, 50.0, 0),
-    # Fiducials 3 mm in from two diagonal corners. FID1 relocated to open space
-    # between C12 and R4/C2's row; the brief's (102.6, 47.2) sat inside U1's
-    # pad-39/40 clearance/courtyard, and the first fallback (102.6, 70.0) landed
-    # inside C12's 10.5x8.8mm courtyard (both measured after placement).
-    "FID1": (114.0, 76.0, 0), "FID2": (194.6, 96.2, 0),
+    # Fiducials 3 mm in from two diagonal corners. FID1 at (102.6, 80.0) per
+    # review (measured clear with 1.5mm margin there); earlier fallbacks
+    # (102.6, 47.2) sat inside U1's pad clearance/courtyard, (102.6, 70.0)
+    # inside C12's courtyard, and (114.0, 76.0) worked but this lengthens
+    # the fiducial diagonal, which review preferred.
+    "FID1": (102.6, 80.0, 0), "FID2": (194.6, 96.2, 0),
 }
 
 
@@ -113,11 +114,23 @@ EXTRAS = [
 ]
 TEXTS = [  # (text, x, y, layer, size)
     ("HDMI (future)", 185.0, 51.5, "F.SilkS", 1.0),
-    ("PiCoCo v2.3  CERN-OHL-S-2.0", 148.0, 70.0, "F.SilkS", 1.0),
-    ("github.com/cognitivegears/PiCoCo", 148.0, 72.0, "F.SilkS", 0.8),
+    # Version/licence + URL moved to the back silkscreen (review F5): on the
+    # front they crossed U1's lower pin labels and R3. Mirrored like the JLC
+    # text, centred in the empty back-side area below the module.
+    ("PiCoCo v2.3  CERN-OHL-S-2.0", 150.0, 75.0, "B.SilkS", 1.0),
+    ("github.com/cognitivegears/PiCoCo", 150.0, 78.0, "B.SilkS", 0.8),
     ("JLCJLCJLCJLC", 110.0, 62.0, "B.SilkS", 1.0),
-    ("JP2 1-2=HW /OE  2-3=FW", 146.0, 80.5, "F.SilkS", 0.8),
-    ("JP3 1-2=E  2-3=AUDIO (Pico2)", 152.0, 59.0, "F.SilkS", 0.8),
+    # Shifted right from x=146 (review F5): the left end touched R15 (at x=136).
+    ("JP2 1-2=HW /OE  2-3=FW", 152.0, 80.5, "F.SilkS", 0.8),
+    # Moved off the module (review F2): (152, 59) sat inside U1's courtyard/pad
+    # grid. Split across two lines: at 0.8mm the full legend measures 20.5mm
+    # wide (measured via pcbnew), wider than the 16.6mm corridor between U1's
+    # courtyard (ends x=155.52) and the HDMI reserve (starts x=172.6) -- one
+    # line always bled into either U1 or R11 (which sits just past x=172.6).
+    # Two lines fit that corridor comfortably and the y=68.5..71.5 band is
+    # clear (below C10, above R12/U12's row at y>=82).
+    ("JP3 1-2=E", 164.0, 69.0, "F.SilkS", 0.8),
+    ("2-3=AUDIO (Pico2)", 164.0, 71.0, "F.SilkS", 0.8),
     ("no parts under module", 125.0, 62.0, "F.Fab", 1.0),
 ]
 
@@ -125,6 +138,37 @@ TEXTS = [  # (text, x, y, layer, size)
 # under the module and must be deleted (structural item removal, not a
 # regex, since its content spans multiple lines).
 _STALE_TEXT_PREFIX = '(gr_text "PiCoCo\\nUniversal Cartridge'
+
+# Superseded TEXTS entries: a text whose content string changed (not just
+# its position/size/layer, which _upsert_item's marker-based replace
+# already handles) needs an explicit one-time removal, since a changed
+# content string is a different marker and won't be found/replaced.
+_RETIRED_TEXTS = [
+    "JP3 1-2=E  2-3=AUDIO (Pico2)",  # split into two lines (review F2)
+]
+
+
+def _upsert_item(body: str, item_text: str, marker: str, block_start_token: str | None = None) -> str:
+    """Ensure `item_text` is present in `body`, exactly once.
+
+    If `item_text` is already present verbatim, no-op. Otherwise, if a
+    stale item matching `marker` exists (same identity -- a zone name, a
+    gr_text's content string -- but different content, e.g. a moved
+    position or resized text), remove that whole item first so the
+    replacement isn't a second, duplicate copy. `block_start_token` is the
+    token the item's own balanced block starts with (e.g. "(zone"); pass
+    None when `marker` itself IS that start (e.g. a gr_text's own opening
+    substring).
+    """
+    if item_text in body:
+        return body
+    idx = body.find(marker)
+    if idx != -1:
+        item_start = body.rfind(block_start_token, 0, idx + 1) if block_start_token else idx
+        i_start, i_end = _find_footprint_block(body, item_start)
+        line_start = body.rfind("\n", 0, i_start) + 1
+        body = body[:line_start] + body[i_end:]
+    return body.rstrip("\n") + "\n" + item_text
 
 
 def add_board_extras(text: str) -> str:
@@ -137,25 +181,20 @@ def add_board_extras(text: str) -> str:
         # eat the leading newline+indent too, else a blank line is left behind
         line_start = body.rfind("\n", 0, item_start) + 1
         body = body[:line_start] + body[item_end:]
-    for z in EXTRAS:
-        if z in body:
-            continue  # already present verbatim
-        name = re.search(r'\(name "([^"]+)"', z).group(1)
-        marker = f'(name "{name}")'
-        idx = body.find(marker)
+    for old_text in _RETIRED_TEXTS:
+        idx = body.find(f'(gr_text "{old_text}"')
         if idx != -1:
-            # a stale zone with this name exists (content changed since it was
-            # last written) -- drop it so the replacement below isn't a dupe.
-            zone_start = body.rfind("(zone", 0, idx)
-            z_start, z_end = _find_footprint_block(body, zone_start)
-            line_start = body.rfind("\n", 0, z_start) + 1
-            body = body[:line_start] + body[z_end:]
-        body = body.rstrip("\n") + "\n" + z
+            item_start, item_end = _find_footprint_block(body, idx)
+            line_start = body.rfind("\n", 0, item_start) + 1
+            body = body[:line_start] + body[item_end:]
+    for z in EXTRAS:
+        name = re.search(r'\(name "([^"]+)"', z).group(1)
+        body = _upsert_item(body, z, f'(name "{name}")', "(zone")
     for t, x, y, layer, size in TEXTS:
-        if f'(gr_text "{t}"' not in body:
-            justify = " (justify mirror)" if layer.startswith("B.") else ""
-            body = body.rstrip("\n") + (f'\n  (gr_text "{t}" (at {x} {y} 0) (layer "{layer}")\n'
-                                        f'    (effects (font (size {size} {size}) (thickness {size*0.15:.2f})){justify})\n  )\n')
+        justify = " (justify mirror)" if layer.startswith("B.") else ""
+        item = (f'  (gr_text "{t}" (at {x} {y} 0) (layer "{layer}")\n'
+                f'    (effects (font (size {size} {size}) (thickness {size*0.15:.2f})){justify})\n  )\n')
+        body = _upsert_item(body, item, f'(gr_text "{t}"')
     return body + tail
 
 
@@ -175,7 +214,7 @@ def _find_footprint_block(text: str, start: int) -> tuple[int, int]:
     raise RuntimeError("unbalanced footprint block")
 
 
-_ANGLE_AT_RE = re.compile(r'\(at\s+(-?[\d.]+)\s+(-?[\d.]+)(?:\s+(-?[\d.]+))?\)')
+_ANGLE_AT_RE = re.compile(r'\(at\s+(-?[\d.]+)\s+(-?[\d.]+)(?:\s+(-?[\d.]+))?(\s+unlocked)?\)')
 _ANGLE_ITEM_RE = re.compile(r'\((pad|fp_text|property)\s')
 
 
@@ -186,27 +225,41 @@ def _fmt_angle(a: float) -> str:
     return str(int(round(a))) if abs(a - round(a)) < 1e-6 else f'{a:.6g}'
 
 
-def _set_child_angles(block: str, target_rot: float) -> str:
-    """Set every (pad ...), (fp_text ...) and (property ...) child's
-    `(at x y [angle])` angle to `target_rot` (inserting one where absent).
+def _set_child_angles(block: str, target_rot: float, old_fp_rot: float) -> str:
+    """Fix up every (pad ...), (fp_text ...) and (property ...) child's
+    `(at x y [angle])` inside a footprint block, using two different rules.
 
     KiCad's board format stores each child's angle as an ABSOLUTE angle
     (the footprint's own rotation plus the item's angle in the library
     copy), not one relative to the footprint, so rotating a footprint does
     not rotate its children's copper/text shapes automatically -- only
     their x/y positions do (those are footprint-local; KiCad reinterprets
-    them under the new rotation on its own). Every part on this board has
-    zero relative pad rotation in its library copy, so the correct angle
-    for every child is simply the footprint's own target rotation --
-    setting it directly (rather than adding a delta to whatever is
-    already on file) also self-heals any pad left stale by an earlier bug
+    them under the new rotation on its own).
+
+    Pads: every pad on this board has zero relative rotation in its
+    library copy, so the correct angle is simply the footprint's target
+    rotation -- SET it directly (rather than adding a delta to whatever
+    is on file). This also self-heals a pad left stale by an earlier bug
     or manual edit, regardless of whether the footprint's own rotation is
-    actually changing this run. Items already at the target angle are
-    left untouched (including staying absent when target is 0), so
-    already-correct footprints produce no diff noise.
+    changing this run.
+
+    fp_text/property: unlike pads, these often DO have a nonzero relative
+    angle in the library copy (e.g. Pico-Carrier's 40 pin-name labels are
+    45 deg relative, and the reference/value auto-text is 180 deg
+    relative on some parts) -- KiCad wrote them consistent with the
+    footprint's rotation *at sync time* (`old_fp_rot`), so setting them
+    all to the same absolute angle would flatten that relative offset.
+    Instead ADD `(target_rot - old_fp_rot) mod 360` to whatever angle is
+    already there, preserving each item's own relative angle.
+
+    Either way, items already at the correct end angle are left untouched
+    (including staying absent when the result is 0), so already-correct
+    footprints produce no diff noise. The optional trailing `unlocked`
+    token (older KiCad output) is preserved.
     """
     target = target_rot % 360
     target_s = _fmt_angle(target)
+    delta = (target_rot - old_fp_rot) % 360
     out = []
     i = 0
     for m in _ANGLE_ITEM_RE.finditer(block):
@@ -214,11 +267,15 @@ def _set_child_angles(block: str, target_rot: float) -> str:
             continue  # inside an already-processed item
         item_start, item_end = _find_footprint_block(block, m.start())
         item = block[item_start:item_end]
+        kind = m.group(1)
         at_m = _ANGLE_AT_RE.search(item)
         if at_m:
-            x, y, ang = at_m.group(1), at_m.group(2), at_m.group(3)
-            if float(ang or 0) % 360 != target:
-                item = item[:at_m.start()] + f'(at {x} {y} {target_s})' + item[at_m.end():]
+            x, y, ang, unlocked = at_m.group(1), at_m.group(2), at_m.group(3), (at_m.group(4) or "")
+            cur = float(ang or 0) % 360
+            new_ang = target if kind == "pad" else (cur + delta) % 360
+            new_ang_s = _fmt_angle(new_ang)
+            if _fmt_angle(cur) != new_ang_s:
+                item = item[:at_m.start()] + f'(at {x} {y} {new_ang_s}{unlocked})' + item[at_m.end():]
         out.append(block[i:item_start])
         out.append(item)
         i = item_end
@@ -285,14 +342,17 @@ def main() -> int:
             out_parts.append(text[last_end:fp_end])
             last_end = fp_end
             continue
+        old_fp_rot = float(m2.group(4) or 0)
         block2 = block[:m2.start()] + f'\n{m2.group(1)}' + new_at + block[m2.end():]
         # The footprint's own rotation is absolute; its pad/text/property
         # children's angles are ALSO absolute in the file (not relative), so
-        # they must match the target rotation directly or their copper/text
-        # shapes go stale (see _set_child_angles docstring). Done for every
-        # footprint we place, not just ones whose rotation is changing this
-        # run, so it self-heals any pre-existing staleness too.
-        block2 = _set_child_angles(block2, rot)
+        # they must be fixed up too or their copper/text shapes go stale
+        # (see _set_child_angles docstring: pads are SET to the target,
+        # text/properties are shifted by delta to preserve their own
+        # relative angle). Done for every footprint we place, not just ones
+        # whose rotation is changing this run, so pads self-heal any
+        # pre-existing staleness too.
+        block2 = _set_child_angles(block2, rot, old_fp_rot)
         out_parts.append(text[last_end:fp_start])
         out_parts.append(block2)
         last_end = fp_end
