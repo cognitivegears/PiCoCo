@@ -266,10 +266,15 @@ current; R10 holds RUN HIGH while /RESET is deasserted. This resets
 the Pico in sync with the CoCo, clearing Becker FIFO state instead
 of leaving it drifted relative to the CoCo's software.
 
-**Open (2026-09-17):** whether to populate this tie at all. Every reset
-press reboots the Pico, drops the USB console and re-runs the boot race
-that §4.4 then has to win. With the /HALT hold kept, the tie is not
-needed for correctness; decide before fab (R9 DNP keeps the option).
+**Decided 2026-09-17: populate R9, keep the tie.** A CoCo reset must
+reach the Pico definitively, and the video design (RP2350B_IDEAS §4.5)
+keys its shadow-state handling off the chip reset reason: RUN-pin reset
+means "zero the shadow, the CoCo ROM repopulates it", watchdog or
+software reset means "keep it". Doing that over RUN costs no GPIO, which
+the Pico 2 does not have spare and the RP2350B budget does not either.
+Costs accepted: every reset press reboots the Pico (about 1.2 s to
+"halt released") and drops the USB console; the /HALT hold in §4.4 is
+what makes that reboot safe for the CoCo.
 
 ## 5. Power
 
