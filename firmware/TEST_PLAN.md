@@ -129,8 +129,8 @@ BECKER (`hdbdw3bck.rom`) boots, `DIR` of DINORUN.DSK on drive 0 (`dw
 hdbdos on`) lists correctly, `LOADM"DINORUN":EXEC` loads and runs: `dw
 reads 97 crc_err 0 timeouts 0`, `becker reads 24929 writes 679 underrun 0`.
 Boot still logs addr_resample hits on all bits during the ROM copy (fast
-loop); revisit before the `bc3` 1.79 MHz ROM. Not done: SAVE/power-cycle
-half of step 11. Caveat: `POKE &HFFDE,0` ROM mode on the CoCo 3 with a cart
+loop); revisit before the `bc3` 1.79 MHz ROM. Step 11 write half also passed: `SAVE"HELLO"`, CoCo power-cycle, `DIR` still
+lists it: `dw writes 4 write_err 0 crc_err 0`. Caveat: `POKE &HFFDE,0` ROM mode on the CoCo 3 with a cart
 present hides Super ECB behind the cart window; BASIC then executes 0xFF
 from the Pico (?NF ERROR, runaway). Use only for a lone PEEK, or not at all.
 
