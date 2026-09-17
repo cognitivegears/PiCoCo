@@ -80,6 +80,7 @@ def check_pad_clearances(p, min_gap=0.15):
 
 def main():
     fp = (PRETTY / "Pico-Carrier.kicad_mod").read_text()
+    src = (PRETTY / "RPi_Pico_SMD_TH.kicad_mod").read_text()
     assert fp.startswith('(footprint "Pico-Carrier"'), "footprint name"
     p = pads(fp)
     for num in ("41", "42", "43"):
@@ -96,7 +97,17 @@ def main():
     assert "F.Paste" not in fp, "footprint has paste"
     assert "antenna" in fp.lower(), "antenna keepout text missing"
     assert re.search(r'\(fp_rect \(start -10\.5 -25\.5\) \(end 10\.5 30\.42\)', fp), "courtyard extent"
-    assert fp.count('"F.CrtYd"') == 1, "expected exactly one courtyard outline"
+    assert fp.count('(layer "F.CrtYd")') == 1, "expected exactly one courtyard outline"
+    # Regression guard: a cross-item courtyard-strip regex once ate every
+    # silkscreen position marker and copper-keepout polygon between the
+    # first F.SilkS fp_line and the first F.CrtYd one. Carrier keeps every
+    # inherited F.SilkS/fp_poly item and adds exactly 2 silkscreen labels
+    # (USB, ANT) of its own.
+    assert fp.count('(layer "F.SilkS")') == src.count('(layer "F.SilkS")') + 2, (
+        "F.SilkS item count changed unexpectedly (expected the inherited count plus "
+        "the 2 USB/ANT labels this footprint adds)"
+    )
+    assert fp.count("(fp_poly") == src.count("(fp_poly"), "fp_poly (copper keepout) count changed"
     check_pad_clearances(p)
 
     cart = (PRETTY / "COCO-CART-2.1X1.75.kicad_mod").read_text()

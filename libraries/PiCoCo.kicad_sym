@@ -1006,9 +1006,6 @@
         (name "VBUS" (effects (font (size 1.27 1.27))))
         (number "40" (effects (font (size 1.27 1.27))))
       )
-      
-      
-      
       (pin bidirectional line (at -21.59 13.97 0) (length 2.54)
         (name "GPIO3" (effects (font (size 1.27 1.27))))
         (number "5" (effects (font (size 1.27 1.27))))

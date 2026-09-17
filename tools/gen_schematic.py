@@ -207,6 +207,26 @@ def _uid(item: str) -> str:
     return str(uuid.uuid5(uuid.NAMESPACE_URL, f"picoco:Pico-Carrier:{item}"))
 
 
+def _top_level_items(body: str) -> list[str]:
+    """Return the balanced top-level s-expr children inside an s-expr node.
+
+    Same helper as gen_breakout.py's `_top_level_items`, duplicated here
+    (rather than imported) because gen_breakout.py requires KiCad's pcbnew
+    module just to import.
+    """
+    items, depth, start = [], 0, None
+    for i, c in enumerate(body):
+        if c == "(":
+            if depth == 0:
+                start = i
+            depth += 1
+        elif c == ")":
+            depth -= 1
+            if depth == 0:
+                items.append(body[start:i + 1])
+    return items
+
+
 def write_carrier_footprint() -> None:
     """Pico-Carrier = RPi_Pico_SMD_TH + the 15 Plus-W pads + antenna courtyard.
 
@@ -217,43 +237,54 @@ def write_carrier_footprint() -> None:
     min_hole_clearance rule. Drop 41/42/43 entirely -- a carrier board
     reaches SWD at the module's own castellations directly, not through
     this footprint.
+
+    Items are dropped/rewritten by splitting the footprint body into its
+    balanced top-level s-expressions (not a cross-item regex): a regex
+    spanning from the first "(fp_line" to the first "(layer \"F.CrtYd\")"
+    previously ate every silkscreen/keepout item in between.
     """
     src = (PRETTY / "RPi_Pico_SMD_TH.kicad_mod").read_text()
     assert src.startswith('(footprint "RPi_Pico_SMD_TH"')
-    text = src.replace('(footprint "RPi_Pico_SMD_TH"', '(footprint "Pico-Carrier"', 1)
-    assert "F.Paste" not in text, "source footprint unexpectedly has paste"
-    # Drop the SWD debug pads that collide with the Plus-W grid.
-    text = re.sub(r'\n  \(pad "4[123]" [^\n]*\)', '', text)
-    # Drop the inherited courtyard so exactly one outline remains.
-    text = re.sub(r'\n  \(fp_line.*?\(layer "F\.CrtYd"\)[^\n]*\)', '', text, flags=re.S)
-    # Drop the RPi_Pico_SMD_TH 3D model reference; the carrier has none.
-    text = re.sub(r'\n  \(model .*?\n  \)', '', text, flags=re.S)
-    text = text.replace(
-        '(descr "Through hole straight pin header, 2x20, 2.54mm pitch, double rows")',
-        '(descr "Carrier land pattern for Raspberry Pi Pico 2 or Waveshare RP2350B-Plus-W: '
-        '2x20 castellated/THT header plus the Plus-W 3x5 underside pad grid; '
-        'no debug pads (collide with the grid)")',
-    )
-    text = text.replace(
-        '(tags "Through hole pin header THT 2x20 2.54mm double row")',
-        '(tags "Pico 2 RP2350B-Plus-W carrier")',
-    )
-    text = text.replace('(fp_text value "RPi_Pico_SMD_TH"', '(fp_text value "Pico-Carrier"')
+    assert "F.Paste" not in src, "source footprint unexpectedly has paste"
+
+    head_end = src.index("\n", src.index("(footprint"))
+    header = src[:head_end].replace('(footprint "RPi_Pico_SMD_TH"', '(footprint "Pico-Carrier"', 1)
+    body = src[head_end:src.rstrip().rfind(")")]
+
+    kept = []
+    for it in _top_level_items(body):
+        kind = it.split(None, 1)[0].lstrip("(")
+        if kind == "pad" and re.match(r'\(pad "4[123]" ', it):
+            continue  # SWD debug pads collide with the Plus-W grid (see docstring)
+        if kind in ("fp_line", "fp_rect", "fp_arc", "fp_circle") and '(layer "F.CrtYd")' in it:
+            continue  # inherited courtyard; replaced with the Plus-W envelope below
+        if kind == "model":
+            continue  # carrier has no 3D model
+        if kind == "descr":
+            it = ('(descr "Carrier land pattern for Raspberry Pi Pico 2 or Waveshare '
+                  'RP2350B-Plus-W: 2x20 castellated/THT header plus the Plus-W 3x5 '
+                  'underside pad grid; no debug pads (collide with the grid)")')
+        elif kind == "tags":
+            it = '(tags "Pico 2 RP2350B-Plus-W carrier")'
+        elif kind == "fp_text" and it.startswith('(fp_text value "RPi_Pico_SMD_TH"'):
+            it = it.replace('"RPi_Pico_SMD_TH"', '"Pico-Carrier"', 1)
+        kept.append(it)
+
     extra = []
     for num, (x, y) in PAD_GRID.items():
         # GP29/GP32/GP35 sit closest to where the (now-removed) debug pads
         # were; keep them 1.4x1.4 so a bare Pico 2's own debug pad copper
         # (edge near Y=23.05) still clears carrier copper by >=0.15 mm.
         size = 1.4 if num in ("GP29", "GP32", "GP35") else 1.8
-        extra.append(f'  (pad "{num}" smd rect (at {x} {y}) (size {size} {size}) (layers "F.Cu" "F.Mask") (tstamp {_uid(num)}))')
+        extra.append(f'(pad "{num}" smd rect (at {x} {y}) (size {size} {size}) (layers "F.Cu" "F.Mask") (tstamp {_uid(num)}))')
     # Plus-W envelope: 51 mm body (+-25.5) plus 4.92 mm antenna past the pin 20/21 end (+Y).
-    extra.append('  (fp_rect (start -10.5 -25.5) (end 10.5 30.42) (stroke (width 0.05) (type default)) (fill none) (layer "F.CrtYd") (tstamp %s))' % _uid("courtyard"))
-    extra.append('  (fp_rect (start -10.5 25.5) (end 10.5 30.42) (stroke (width 0.1) (type default)) (fill none) (layer "F.Fab") (tstamp %s))' % _uid("antenna-fab-rect"))
-    extra.append('  (fp_text user "ANT antenna keepout (Plus-W)" (at 0 28) (layer "F.Fab") (effects (font (size 0.8 0.8) (thickness 0.12))) (tstamp %s))' % _uid("antenna-fab-text"))
-    extra.append('  (fp_text user "USB" (at 0 -23) (layer "F.SilkS") (effects (font (size 1 1) (thickness 0.15))) (tstamp %s))' % _uid("usb-text"))
-    extra.append('  (fp_text user "ANT" (at 0 27.5) (layer "F.SilkS") (effects (font (size 1 1) (thickness 0.15))) (tstamp %s))' % _uid("ant-text"))
-    end = text.rstrip().rfind(")")
-    text = text[:end].rstrip("\n") + "\n" + "\n".join(extra) + "\n)\n"
+    extra.append('(fp_rect (start -10.5 -25.5) (end 10.5 30.42) (stroke (width 0.05) (type default)) (fill none) (layer "F.CrtYd") (tstamp %s))' % _uid("courtyard"))
+    extra.append('(fp_rect (start -10.5 25.5) (end 10.5 30.42) (stroke (width 0.1) (type default)) (fill none) (layer "F.Fab") (tstamp %s))' % _uid("antenna-fab-rect"))
+    extra.append('(fp_text user "ANT antenna keepout (Plus-W)" (at 0 28) (layer "F.Fab") (effects (font (size 0.8 0.8) (thickness 0.12))) (tstamp %s))' % _uid("antenna-fab-text"))
+    extra.append('(fp_text user "USB" (at 0 -23) (layer "F.SilkS") (effects (font (size 1 1) (thickness 0.15))) (tstamp %s))' % _uid("usb-text"))
+    extra.append('(fp_text user "ANT" (at 0 27.5) (layer "F.SilkS") (effects (font (size 1 1) (thickness 0.15))) (tstamp %s))' % _uid("ant-text"))
+
+    text = header + "\n  " + "\n  ".join(kept + extra) + "\n)\n"
     (PRETTY / "Pico-Carrier.kicad_mod").write_text(text)
 
 
@@ -304,8 +335,11 @@ def write_carrier_symbol() -> None:
     for num in ("41", "42", "43"):
         for block in _extract_pin_blocks(sym):
             if f'(number "{num}"' in block:
-                assert sym.count(block) == 1, f"pin block {num} not unique"
-                sym = sym.replace(block, "")
+                # Remove the preceding "\n      " indent too, else a blank
+                # 6-space line is left behind where the pin used to be.
+                whole = "\n      " + block
+                assert sym.count(whole) == 1, f"pin block {num} not unique"
+                sym = sym.replace(whole, "")
                 break
         else:
             raise RuntimeError(f"pin {num} not found to remove")
