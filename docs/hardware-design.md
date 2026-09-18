@@ -485,7 +485,11 @@ on this footprint either way. Bring‑up debug happens via:
 - **TP1–TP7** SMD pads on the nets most likely to need scope access
   (see the test‑point table below).
 - **The module's own debug pads/castellations**, or its USB CDC, for
-  SWD-style debug of the Pico itself.
+  SWD-style debug of the Pico itself. A flat-mounted Pico 2 rests its
+  three underside debug pads (SWCLK/GND/SWDIO, 1.7 mm) on the carrier's
+  GP29/GP32/GP35 grid pads (1.4 mm, ~0.05 mm overlap): tape those three
+  grid pads before soldering a Pico 2 flat, or use headers. The Plus-W
+  uses the grid and has no such pads.
 - **Pico USB CDC** — firmware streams bus snapshots and diag logs
   over USB serial during bring‑up (see firmware §10).
 - **Cart‑edge fingers** — clip directly onto the edge when a signal

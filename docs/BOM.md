@@ -95,7 +95,9 @@ files) and the budget variant for bare boards.
   subtract roughly $30–$50 from the above — fine for a lightly used
   cart, but the fingers will wear faster in a well-used CoCo slot.
 
-Prices drift; check DigiKey/Mouser/LCSC and JLCPCB's current quote
+Four LCSC numbers were not re-verified on 2026-09-17: C45783 (C3, must be
+22 µF at ≥6.3 V), C1710, C17513, C17520 — confirm them in JLCPCB's parts
+step. Prices drift; check DigiKey/Mouser/LCSC and JLCPCB's current quote
 before ordering. Substitute equivalents freely on the generics (0805
 passives, SOIC logic) — the part numbers above are one known-good
 source each.

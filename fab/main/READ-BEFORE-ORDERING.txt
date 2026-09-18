@@ -11,7 +11,7 @@ bronze wipers over time. The settings below are not optional.
 JLCPCB ORDER SETTINGS (v2.3, 2026-09)
 -----------------------------------------------------------------
 
-  Base material FR-4 / Layers 2 / Dimensions 98 x 55 mm / Thickness 1.6 mm (critical)
+  Base material FR-4 / Layers 2 / Dimensions 98 x 65.2 mm overall (55 mm body + 10.2 mm finger tongue) / Thickness 1.6 mm (critical)
   Surface finish: ENIG (all pads gold; fingers get hard gold below, never HASL)
   Outer copper 1 oz
   Gold fingers: YES (critical) / Bevel: 30 deg (critical) / Gold thickness: 1 um min (2 um better)
@@ -22,11 +22,19 @@ JLCPCB ORDER SETTINGS (v2.3, 2026-09)
   Parts NOT placed (by design): U1 module (yours), R2 R3 C12 C15 Q3 Q4 R15 R16 R17 R18 (DNP).
   Check the placement preview: every SOIC/SOT pin-1 dot matches the silkscreen. If any part is
   rotated, fix the ROT table in tools/jlc_post.py, rerun tools/gen_fab.sh, re-upload.
+  Look hardest at D2 (SMA diode: cathode band must face U1/VSYS, reversed = board never powers)
+  and U14 (SOT-223 AMS1117: tab/pin 2 is +3V3 output; reversed = +5V on the 3.3V rail and every
+  logic IC dies). JLCPCB's SMA and SOT-223 zero angles often differ from KiCad's by 180 deg.
+  Unverified LCSC numbers, confirm value/voltage in the parts step: C45783 (C3 22uF, needs >=6.3V
+  X5R/X7R), C1710 (10nF), C17513 (1k), C17520 (2.2k). The rest were checked 2026-09-17.
 BUDGET VARIANT (bare boards, hobbyist): same Gerbers, ENIG, gold fingers NO, bevel NO.
   ENIG fingers wear after tens of insertions; fine for a lightly used cart.
 PLUS-W INSTALL: fab/main/stencil-module/*F_Paste.gbr is a paste stencil for the 55 module pads
   (15 hidden). Hot air or a paste syringe; or mount on 2x20 headers and forgo the 15 pads.
 MODULE: solder the Pico 2 flat on the castellations, or on 2x20 headers. Nothing under it.
+  Pico 2 flat mount: its three underside SWD/debug pads sit on the carrier's GP29/GP32/GP35
+  grid pads (they overlap by ~0.05 mm). Put Kapton tape over those three grid pads first, or
+  mount the Pico 2 on headers. Not an issue for the Plus-W, which uses the grid.
 
 -----------------------------------------------------------------
 WHY THESE SETTINGS MATTER

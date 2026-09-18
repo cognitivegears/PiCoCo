@@ -40,7 +40,10 @@ def stencil(src, dst):
         if depth == 0: break
     fp = text[start:j]
     fp2 = re.sub(r'\(layers "F\.Cu" "F\.Mask"\)', '(layers "F.Cu" "F.Paste" "F.Mask")', fp)
-    open(dst, "w").write(text[:start] + fp2 + text[j:])
+    # Every other footprint loses its paste: this stencil is used on a board JLCPCB has
+    # already assembled, so it must carry apertures for U1's 55 pads and nothing else.
+    strip = lambda s: s.replace('(layers "F.Cu" "F.Mask" "F.Paste")', '(layers "F.Cu" "F.Mask")')
+    open(dst, "w").write(strip(text[:start]) + fp2 + strip(text[j:]))
 
 if __name__ == "__main__":
     {"bom": bom, "cpl": cpl, "stencil": stencil}[sys.argv[1]](sys.argv[2], sys.argv[3])
