@@ -130,6 +130,40 @@ address‑valid window). Firmware disambiguates by **A13**:
 - `OE_BUS` low with `A13=0` ⇒ ROM read in $C000–$DFFF window.
 - `OE_BUS` low with `A13=1` ⇒ Becker access in $FF40–$FF5F window.
 
+### 3.2.1 Plus-W pin plan (board v2.3, not implemented)
+
+The v2.3 board (`docs/superpowers/specs/2026-09-17-main-board-v2.3-design.md`
+§3.2) adds 15 hidden underside pads to the `PiCoCo:Pico-Carrier`
+footprint, wired only when a Waveshare RP2350B-Plus-W is soldered flat
+instead of a Pico 2 — NC on a Pico 2 build. Firmware support for these
+pins does not exist yet; this table records the wiring so a future
+`boards/` header has something to build against.
+
+Header pins 31/32/34 carry the same nets on both modules, but the
+GPIO number differs: on a Pico 2 those pins are `GP26`/`GP27`/`GP28`;
+on a Plus-W the same physical header pins are `GP40`/`GP41`/`GP42`.
+`E_BUF` also arrives separately on the Plus-W's own pad-grid `GP26` pin
+(a different, lower-numbered GPIO than the header's GP40) — see the
+"same net also reaches..." note in the table below.
+
+| Pad-grid pin | Net | Purpose (Plus-W only) |
+|---|---|---|
+| GP24 | CTS_BUF | capture |
+| GP25 | SCS_BUF | capture |
+| GP26 | E_BUF | capture (same net also reaches the module via header pin 34 by default, GP40/41/42 mapping: header 31/32/34 = GP40/41/42) |
+| GP27 | Q_BUF | capture |
+| GP28 | SLENB_BUF | capture |
+| GP29 | A14_BUF | capture |
+| GP30 | A15_BUF | capture |
+| GP31 | OE_FW | JP2 alternate (2-3): firmware-driven U10 /OE |
+| GP32 | NMI_DRV | Q3 gate (DNP stage) |
+| GP33 | CART_DRV | Q4 gate (DNP stage) |
+| GP34 | AUDIO_PWM | sound output stage |
+| GP35, GP43, GP44, GP45 | no-connect | spare |
+
+GP24..GP30 are contiguous so one `gpio_in` read on a Plus-W captures
+all seven at once, same trick as the header's A0..A13+/R/W word.
+
 ### 3.3 PIO block usage (v2 bus engine)
 
 The bus engine actually being built (Plan B) is a plain C loop on

@@ -1,69 +1,59 @@
-# PiCoCo — Bill of Materials (v2.2)
+# PiCoCo — Bill of Materials (v2.3)
 
-Intended for a single-board hand build or a JLCPCB PCBA order. Prices
-are 2026 ballparks from DigiKey/Mouser/LCSC and will drift; check
-before ordering. Substitute equivalents freely on the generics (0805
-passives, SOIC-20 logic) — the part numbers listed are one known good
-source each.
+Source of truth: symbol properties (`LCSC`, `MPN`) in `tools/gen_schematic.py`,
+looked up 2026-09-17 and reproduced here from spec §3.3
+(`docs/superpowers/specs/2026-09-17-main-board-v2.3-design.md`). If this table
+and the generator ever disagree, the generator wins — regenerate this file's
+numbers from it, don't hand-patch around a mismatch.
 
 ## Active components
 
-| Ref | Value | Package | DigiKey | Mouser | LCSC |
-|-----|-------|---------|---------|--------|------|
-| U1  | Raspberry Pi Pico 2 | SMD+TH module | SC1631-ND | 358-SC1631 | (not stocked — order from authorized resellers: adafruit.com / pishop.us) |
-| U10 | SN74LVC8T245DW | SOIC-24W | 296-51395-1-ND | 595-SN74LVC8T245DW | C9963 |
-| U11 | SN74LVC245ADWR | SOIC-20W | 296-8513-1-ND | 595-SN74LVC245ADWR | C35952 |
-| U12 | SN74LVC245ADWR | SOIC-20W | (same) | (same) | C35952 |
-| U13 | SN74LVC245ADWR | SOIC-20W | (same) | (same) | C35952 |
-| U14 | AMS1117-3.3 | SOT-223-3 | LM1117IMPX-3.3/NOPBCT-ND | 863-LM1117IMPX-3.3 | C6186 |
-| U15 | SN74LVC1G11DCK | SC-70-6 | 296-15856-1-ND | 595-SN74LVC1G11DCK | C130103 |
-| Q2  | 2N7002 | SOT-23 | 2N7002-TPMSCT-ND | 863-2N7002 | C8545 |
-| D2  | SS14 | SMA (DO-214AC) | SS14FSCT-ND | 625-SS14-E3/61T | C2480 |
+| Ref | MPN | Package | LCSC | JLC library | Lifecycle | Notes |
+|-----|-----|---------|------|-------------|-----------|-------|
+| U1  | Raspberry Pi Pico 2, or Waveshare RP2350B-Plus-W | SMD+TH module | (not stocked — order from authorized resellers: adafruit.com / pishop.us / waveshare.com) | n/a | Active | Not placed by JLC assembly; solder it yourself last |
+| U10–U13 | SN74LVC245ADWR (or Nexperia 74LVC245AD if cheaper at order) | SOIC-20W | C571201 | Extended | Active | Same part x4: U10 data bidi (A=Pico, B=cart), U11–U13 address/control in |
+| U14 | AMS1117-3.3 | SOT-223 | C6186 | Basic | Active | +5V → +3.3V LDO |
+| U15 | SN74LVC00AD (or Nexperia 74LVC00AD) | SOIC-14 | *see below* | Extended | Active | NAND-NAND decode, 2 of 4 gates used |
+| Q2, Q3, Q4 | 2N7002 | SOT-23 | C8545 | Basic | Active | Q2 populated (/HALT drive); Q3, Q4 DNP (Plus-W /NMI, /CART drive) |
+| D2  | SS14 | SMA | C2480 | Basic | Active | +5V → VSYS_PICO |
 
-## Passives (all 0805)
+**U15 LCSC**: not yet set in `tools/gen_schematic.py` (`lcsc=""`) — confirm at
+order time and record it both there and here. Until then: LCSC: see
+`tools/gen_schematic.py`.
 
-| Ref | Value | Tolerance | DigiKey series | Notes |
-|-----|-------|-----------|-----------------|-------|
-| R1  | 4.7 kΩ | 1% | RC0805FR-074K7L | /HALT pull-up (required) |
-| R2  | 4.7 kΩ | 1% | (same) | /NMI pull-up — **DNP** |
-| R3  | 4.7 kΩ | 1% | (same) | /RESET pull-up — **DNP** |
-| R4  | 10 kΩ | 1% | RC0805FR-0710KL | 3V3_EN pull-up to VSYS_PICO |
-| R6  | 4.7 kΩ | 1% | (same as R1) | /CART pull-up (in series with JP1) |
-| R7  | 100 kΩ | 1% | RC0805FR-07100KL | Q2 gate pull-up to +3V3 |
-| R8  | 100 Ω | 1% | RC0805FR-07100RL | Q2 gate series |
-| R9  | 100 Ω | 1% | (same as R8) | Pico RUN series |
-| R10 | 10 kΩ | 1% | (same as R4) | Pico RUN pull-up |
-| R11 | 33 Ω  | 1% | RC0805FR-0733RL | OE_BUS series termination |
-| R12 | 33 Ω  | 1% | (same as R11) | RW_BUF series termination |
-| R13 | 100 Ω | 1% | (same as R8) | SWCLK series |
-| R14 | 100 Ω | 1% | (same as R8) | SWDIO series |
+## Passives (all 0805 unless noted)
 
-| Ref | Value | Voltage rating | Dielectric | Notes |
-|-----|-------|----------------|------------|-------|
-| C1  | 10 µF | ≥10 V | X5R | +5 V edge bulk |
-| C2  | 10 µF | ≥10 V | X5R | LDO input |
-| C3  | 22 µF | ≥6.3 V | X5R | LDO output — **MLCC-compatible AMS1117 variant required** |
-| C4–C10 | 100 nF | ≥10 V | X7R | Per-IC decoupling |
-| C11 | 10 µF | ≥10 V | X5R | Local bulk at U10 Vccb |
+| Ref | Value | Package | LCSC | JLC library | Notes |
+|-----|-------|---------|------|-------------|-------|
+| R1  | 4.7 kΩ 1% | 0805 | C17673 | Basic | /HALT pull-up (required) |
+| R2, R3 | 4.7 kΩ 1% | 0805 | C17673 | Basic | /NMI, /RESET pull-up — **DNP** |
+| R4, R10 | 10 kΩ 1% | 0805 | C17414 | Basic | 3V3_EN and Pico RUN pull-ups |
+| R7 | 100 kΩ 1% | 0805 | C17407 | Basic | Q2 gate pull-up |
+| R8, R9 | 100 Ω 1% | 0805 | C17408 | Basic | Q2 gate series, Pico RUN series |
+| R11, R12 | 33 Ω 1% | 0805 | C17634 | Basic | OE_BUS / RW_BUF series termination |
+| R15, R16 | 100 Ω 1% | 0805 | C17408 | Basic | Q3/Q4 gate series — **DNP** |
+| R17, R18 | 100 kΩ 1% | 0805 | C17407 | Basic | Q3/Q4 gate pull-downs — **DNP** |
+| R19, R20, R22 | 1 kΩ 1% | 0805 | C17513 | Basic | Audio stage |
+| R21 | 2.2 kΩ 1% | 0805 | C17520 | Basic | Audio level divider |
+| C1, C2 | 10 µF X5R ≥10V | 0805 | C15850 | Basic | +5V edge bulk / LDO input |
+| C3 | 22 µF X5R ≥6.3V | 0805 | C45783 | Basic | LDO output — MLCC-compatible AMS1117 variant required |
+| C4, C6–C10 | 100 nF X7R 50V | 0805 | C49678 | Basic | Per-IC decoupling (C5 intentionally unused) |
+| C13, C14 | 10 nF X7R | 0805 | C1710 | Basic | Audio 2-pole RC filter |
+| C12 | 1000 µF 6.3V SMD electrolytic | D8x10 mm | pick at order (C970711 had stock 2026-09-17) | n/a | VSYS_PICO Wi-Fi burst cap — **DNP** on a Pico 2 |
+| C15 | 100 nF | 0805 | C49678 | Basic | AC-coupling option across R21 — **DNP** |
 
-## Connectors
+## Connectors and mechanical
 
 | Ref | Part | Footprint | Notes |
 |-----|------|-----------|-------|
 | P1  | (custom COCO-CART edge fingers) | `PiCoCo:COCO-CART-2.1X1.75` | PCB fingers only; no connector part |
-| JP1 | 1×2 0.1" pin header + shunt | `PinHeader_1x02_P2.54mm_Vertical` | /CART pull-up enable |
-| J_SWD | 1×4 0.1" pin header | `PinHeader_1x04_P2.54mm_Vertical` | Pico SWD access |
+| JP2 | Solder jumper, 3-pad bridged 1-2 | `Jumper:SolderJumper-3_P1.3mm_Bridged12_RoundedPad1.0x1.5mm` | U10 /OE source select |
+| JP3 | Solder jumper, 3-pad bridged 1-2 | (same footprint) | Header pin 34: E (default) or audio |
+| TP1–TP7 | `TestPoint:TestPoint_Pad_1.0x1.0mm` | — | OE_BUS, RW_BUF, CTS_BUF, SCS_BUF, E_BUF, +3V3, SND_CART |
+| FID1, FID2 | `Fiducial:Fiducial_1mm_Mask2mm` | — | SMT assembly fiducials, no net, excluded from BOM |
 
-## Test points
-
-| Ref | Footprint | Net |
-|-----|-----------|-----|
-| TP1 | `TestPoint:TestPoint_Pad_1.0x1.0mm` | OE_BUS |
-| TP2 | (same) | RW_BUF |
-| TP3 | (same) | CTS_BUF |
-| TP4 | (same) | SCS_BUF |
-| TP5 | (same) | E_B |
-| TP6 | (same) | +3V3 |
+There is no `J_SWD` header and no mounting hole (`MTG1`) on this board — both
+were removed in v2.3 (see `CLAUDE.md` and `docs/hardware-design.md` §7, §9).
 
 ## Hobbyist substitutions
 
@@ -77,8 +67,11 @@ source each.
 - **2N7002**: any small-signal N-FET with Vgs(th) ≤ 2 V and
   Id ≥ 100 mA in SOT-23: BSS138, ZVN3306A, PMV40UN2. Required: can be
   turned on by a 3.3 V gate drive.
-- **SN74LVC1G11**: three-input positive-AND in SC-70-6. NC7SZ11 is
-  pin-compatible.
+- **SN74LVC245A**: any 3.3V-tolerant octal transceiver in the same
+  SOIC-20W pinout (74HCT245 works electrically but is not 5V-tolerant
+  on its 3.3V side at speed — stick to the LVC family).
+- **SN74LVC00A**: any quad 2-input NAND in SOIC-14, e.g. 74HC00 for a
+  3.3V-tolerant bench substitute (used during breadboard bring-up).
 
 ## Non-board parts
 
@@ -87,19 +80,26 @@ source each.
   build (commercial), or extract from a physical Disk BASIC cart if
   owned.
 - **USB-C to USB-A cable**: for DriveWire host connection (Phase 1
-  bridge) or for flashing (SWD alternative path via BOOTSEL).
+  bridge) or for flashing (BOOTSEL, or the module's own debug pads).
 - **DriveWire host software**: `pyDriveWire` (open source) or
   DriveWire4 (Java, Cloud9). Runs on any PC/Mac/Linux with a USB port.
 
-## Cost estimate (1 board, 2026 pricing)
+## Ordering
 
-- PCB fab (5 boards minimum, JLCPCB with hard gold fingers): ~$35–50
-  shipped (one-time setup dominates)
-- Active ICs: ~$3
-- Pico 2 module: ~$5
-- Passives: ~$1.50
-- Connectors: ~$2
-- **Single-board cost: ~$15–20 plus amortized fab NRE.**
+See `fab/main/READ-BEFORE-ORDERING.txt` for the exact JLCPCB order
+settings (base material, gold fingers, bevel, DNP list, SMT assembly
+files) and the budget variant for bare boards.
 
-For 10 boards with JLCPCB PCBA (SMT only, THT by hand):
-approximately **$150–200 total, ~$15–20 per assembled board**.
+## Cost estimate (2026 pricing, 5 PCBs + 2 assembled)
+
+- **Hard gold fingers + 30° bevel (recommended)**: about $90–$130
+  shipped, PCB + SMT assembly included, module and hand-soldered
+  passives (Q3/Q4/R15–R18/C12/C15 DNP by default) not included.
+- **ENIG, no gold fingers, no bevel (budget/bare-board variant)**:
+  subtract roughly $30–$50 from the above — fine for a lightly used
+  cart, but the fingers will wear faster in a well-used CoCo slot.
+
+Prices drift; check DigiKey/Mouser/LCSC and JLCPCB's current quote
+before ordering. Substitute equivalents freely on the generics (0805
+passives, SOIC logic) — the part numbers above are one known-good
+source each.

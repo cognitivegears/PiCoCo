@@ -902,8 +902,9 @@ rating was not checked.
 Mitigations, in order: bulk capacitance (13.3), lower transmit power
 (the cyw43 driver exposes a tx-power setting; verify the exact call
 before relying on it), and Wi-Fi off by default in `picoco.cfg`.
-D2 (1 A Schottky), the 0.5 mm power traces and the breakout's 0.5 A
-polyfuse all clear the Plus-W case.
+D2 (1 A Schottky), the main board's 0.20 mm power traces (no separate
+power netclass as of v2.3 — margin at 1 oz copper is fine at this
+current) and the breakout's 0.5 A polyfuse all clear the Plus-W case.
 
 ### 13.3 What the carrier gets, and what the Pico 2 build sees
 
@@ -956,8 +957,15 @@ Photos: IMG_8547.jpg (full underside), IMG_8548.jpg (close-up), taken
 - Whether the Plus-W can be soldered flat with the hidden pads reliably
   by hand, or whether the header route is needed.
 - The cyw43 tx-power call.
-- Which end of the module faces the board edge in `place_pcb.py`, for
-  the antenna overhang.
+- ~~Underside pad pitch~~ — **closed by the v2.3 spec**: 2.54 mm pitch,
+  1.5 mm pads (measured §13.4), carried into the `Pico-Carrier`
+  footprint as 1.8 mm pads on the same grid (1.4 mm at GP29/GP32/GP35
+  to clear the Pico 2's own debug rings).
+- ~~Which end of the module faces the board edge~~ — **closed by the
+  v2.3 spec**: USB-C end flush with the left side edge, antenna end
+  pointing right/inward, fixed this way specifically so a future HDMI
+  variant's reserved corner and module orientation don't need to move
+  (spec §5, §10).
 
 Sources: Waveshare wiki `RP2350B-Plus-W` (pinout and dimension
 images); RM2 datasheet RP-008943; Pico 2 datasheet RP-008299; Pico 2 W
