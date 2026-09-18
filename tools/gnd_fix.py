@@ -5,6 +5,8 @@ then give starved-thermal pads a track connection.
 
 usage: gnd_fix.py BOARD [--out OUT] [--drc DRC_JSON]   (KiCad's bundled python3)
 --drc: a kicad-cli DRC json of BOARD; its starved_thermal pads get a track each.
+Run after pour.py (it refills the pours itself). Exit status 1 if a cluster
+could not be linked (the board is still saved).
 """
 import argparse
 import json
@@ -196,7 +198,11 @@ def fix_starved(board, gc, drc_json):
         src = grid_route.find_anchor(board, gc, x, y)
         # target: nearest other anchor of the main cluster at least 1.5 mm away
         cands = [(pt, L) for pt, L in cl[0] if (pt - p).EuclideanNorm() > pcbnew.FromMM(1.5)]
-        d, s, t = nearest_pair([src], cands)
+        best = nearest_pair([src], cands)
+        if best is None:
+            print(f"  starved pad ({x},{y}): no main-cluster anchor to route to")
+            continue
+        d, s, t = best
         res = route(router, gc, s, t, "GND")
         print(f"  starved pad ({x},{y}): {'linked %.1f mm' % mm(res[1]) if res else 'FAILED'}")
     pcbnew.ZONE_FILLER(board).Fill(board.Zones())
@@ -213,9 +219,12 @@ def main():
     ok = close_clusters(b, gc)
     if a.drc:
         fix_starved(b, gc, a.drc)
+    else:
+        print("note: without --drc DRC_JSON starved-thermal pads are not fixed; run DRC and pass it")
     b.Save(a.out or a.board)
     print("saved", a.out or a.board, "| clusters closed:", ok)
+    return 0 if ok else 1
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

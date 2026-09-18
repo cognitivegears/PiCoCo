@@ -5,17 +5,20 @@ Must run under KiCad's bundled python3 (it imports pcbnew):
   /Applications/KiCad/KiCad.app/Contents/Frameworks/Python.framework/Versions/Current/bin/python3
 
 Usage:
-  grid_route.py BOARD [--out OUT] [--net NAME ...]
+  grid_route.py BOARD [--out OUT] --pair NET X1 Y1 X2 Y2 [--pair ...]
 
-Routes the given nets on a 0.2 mm grid using A* (8-connected, layer change =
-via), one net at a time, shortest first, adding each finished net's copper to
-the obstacle set before the next. Legality of every step is a real pcbnew
-SHAPE collision test against every other-net pad/track/via on that layer
-(netclass clearance), every hole (board hole clearance), rule areas that
-forbid tracks/vias, and the board outline eroded by 0.3 mm. Nets are named by
---net (using the HINTS table) or by --pair NET X1 Y1 X2 Y2 (mm), which routes
-between the existing items of NET nearest those two points. Written for the
-v2.3 main board after Freerouting left 7 nets (docs/kicad-workflow.md).
+Routes each requested net between the two existing items of that net nearest
+(X1,Y1) and (X2,Y2) (mm) on a 0.2 mm grid using A* (8-connected, layer change =
+via), shortest first, adding each finished net's copper to the obstacle set
+before the next. Legality of every step is a real pcbnew SHAPE collision test
+against every other-net pad/track/via on that layer (netclass clearance), every
+hole (board hole clearance), rule areas that forbid tracks/vias, and the board
+outline eroded by 0.3 mm. Zone fills are NOT obstacles (same-net pours simply
+re-fill around the new copper); the script refills all zones before saving.
+It routes exactly what you ask: check the ratsnest first, it does not detect an
+already-connected pair. Exit status 1 if any requested net could not be routed
+(the board is still saved so partial progress is kept).
+Finishing order used for v2.3: grid_route -> pour.py -> gnd_fix.py.
 """
 import argparse
 import heapq
@@ -470,31 +473,15 @@ class Router:
         self.edge_cache.clear()
 
 
-# Endpoint hints from BRIEF.md's DRC ratsnest report (net -> two (x_mm, y_mm)
-# coordinates). find_anchor() resolves each to the exact nearest existing pad
-# or track/via endpoint of that net, so small rounding in the hints is fine.
-HINTS = {
-    "SLENB_BUF": ((144.96, 58.74), (186.65, 92.64)),
-    "E_BUF": ((158.70, 62.00), (147.50, 61.28)),
-    "AUDIO_PWM": ((161.30, 62.00), (144.96, 53.66)),
-    "PICO_RUN": ((126.37, 47.31), (190.91, 84.00)),
-    "PICO_P34": ((116.21, 47.31), (160.00, 62.00)),
-    "A11_BUF": ((139.07, 47.31), (172.65, 92.64)),
-    "A6_BUF": ((146.69, 65.09), (158.65, 96.44)),
-}
-
-
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("board")
     ap.add_argument("--out")
-    ap.add_argument("--net", action="append", default=None)
-    ap.add_argument("--pair", nargs=5, action="append", metavar=("NET", "X1", "Y1", "X2", "Y2"),
+    ap.add_argument("--pair", nargs=5, action="append", required=True,
+                    metavar=("NET", "X1", "Y1", "X2", "Y2"),
                     help="route NET between the items nearest (X1,Y1) and (X2,Y2) in mm; repeatable")
     args = ap.parse_args()
-    for net, x1, y1, x2, y2 in args.pair or ():
-        HINTS[net] = ((float(x1), float(y1)), (float(x2), float(y2)))
-        args.net = (args.net or []) + [net]
+    HINTS = {net: ((float(x1), float(y1)), (float(x2), float(y2))) for net, x1, y1, x2, y2 in args.pair}
 
     t0 = time.time()
     board = pcbnew.LoadBoard(args.board)
@@ -509,7 +496,7 @@ def main():
     hole_clearance = ds.m_HoleClearance
     edge_clearance = pcbnew.FromMM(0.3)
 
-    net_names = args.net if args.net else list(HINTS.keys())
+    net_names = list(HINTS.keys())
 
     print(f"track_w={pcbnew.ToMM(track_w)}mm via_dia={pcbnew.ToMM(via_dia)}mm "
           f"via_drill={pcbnew.ToMM(via_drill)}mm clearance={pcbnew.ToMM(clearance)}mm "
@@ -562,6 +549,8 @@ def main():
               f"segs={len(ops)} time={time.time()-t1:.1f}s")
 
     out = args.out or args.board
+    if board.Zones().size() if hasattr(board.Zones(), "size") else len(board.Zones()):
+        pcbnew.ZONE_FILLER(board).Fill(board.Zones())  # keep pours current with the new copper
     board.Save(out)
     print(f"saved to {out}")
     print(f"total time: {time.time()-t0:.1f}s")
@@ -570,7 +559,8 @@ def main():
     print(f"routed {len(results)-len(fails)}/{len(results)} nets, {len(fails)} failed")
     for r in results:
         print(" ", r)
+    return 1 if fails else 0
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())
