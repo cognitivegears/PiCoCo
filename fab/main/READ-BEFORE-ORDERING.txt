@@ -39,6 +39,9 @@ PLUS-W INSTALL: fab/main/stencil-module/*F_Paste.gbr is a paste stencil for the 
   only — the 40 castellation apertures sit over plated holes and paste falls through them, so
   hand-solder the castellations (hot air or a paste syringe for the 15 grid pads); or mount on
   2x20 headers and forgo the 15 pads.
+FIT (measured 2026-09-18 on a CoCo 3): opening 114 x 30 mm, connector face 43 mm inside the case,
+  connector slot depth ~6 mm, so the case surface is ~49 mm from the finger tip; the shoulders
+  (10.2 mm from the tip) never touch the connector and the USB-C port is ~16 mm outside the case.
 MODULE: solder the Pico 2 flat on the castellations, or on 2x20 headers. Nothing under it.
   Pico 2 flat mount: its three underside SWD/debug pads sit on the carrier's GP29/GP32/GP35
   grid pads (they overlap by ~0.05 mm). Put Kapton tape over those three grid pads first, or

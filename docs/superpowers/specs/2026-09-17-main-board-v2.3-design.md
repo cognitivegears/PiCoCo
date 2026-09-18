@@ -383,8 +383,10 @@ firmware on top of that (RP2350B_IDEAS §4).
 
 Measured on the bench CoCo 3 (2026-09-18): cartridge opening 4 1/2 x 1 3/16 in
 (114.3 x 30.2 mm, sized for a cased Program Pak), connector face 1 11/16 in
-(43 mm, earlier note 44.5 mm) inside the case. With ~9 mm of tongue inside the
-connector the case surface sits 52-54 mm from the finger tip. The 98 mm body
+(43 mm, earlier note 44.5 mm) inside the case. Measured with the breakout on 2026-09-18: the connector
+swallows only ~6 mm of tongue (its slot depth), so the shoulders 10.16 mm
+from the tip never reach the connector face and the case surface sits
+~49 mm from the finger tip. The 98 mm body
 therefore passes the opening (the breakout README's "no wider than the finger
 tab" note was wrong and is corrected), but the module's USB-C port at 53 mm
 from the tip lands on the case surface and the HDMI reserve only 10 mm outside
@@ -393,7 +395,7 @@ it. Decision: grow the body 12 mm away from the fingers.
 - Outline: 98 x 67.0 mm body + 10.16 mm tongue (77.16 mm overall); board y now
   32.187..109.347. Everything at or above JP2's row (module U1, JP3, C10, TP1-6,
   antenna keepout, HDMI reserve, top-edge silk) moves up 12 mm; the buffer row,
-  power block and sound stage stay. USB-C ends up ~11 mm outside the case.
+  power block and sound stage stay. USB-C ends up ~16 mm outside the case.
 - JP3 default flips to the audio position: pin 1 = AUDIO_PWM, pin 3 = E_BUF
   (bridged 1-2 footprint kept), so a Pico 2 build has sound without cutting a
   jumper. Plus-W audio still arrives on pad GP34; do not bridge 2-3 and drive
