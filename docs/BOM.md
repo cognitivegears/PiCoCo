@@ -13,13 +13,9 @@ numbers from it, don't hand-patch around a mismatch.
 | U1  | Raspberry Pi Pico 2, or Waveshare RP2350B-Plus-W | SMD+TH module | (not stocked — order from authorized resellers: adafruit.com / pishop.us / waveshare.com) | n/a | Active | Not placed by JLC assembly; solder it yourself last |
 | U10–U13 | SN74LVC245ADWR (or Nexperia 74LVC245AD if cheaper at order) | SOIC-20W | C571201 | Extended | Active | Same part x4: U10 data bidi (A=Pico, B=cart), U11–U13 address/control in |
 | U14 | AMS1117-3.3 | SOT-223 | C6186 | Basic | Active | +5V → +3.3V LDO |
-| U15 | SN74LVC00AD (or Nexperia 74LVC00AD) | SOIC-14 | *see below* | Extended | Active | NAND-NAND decode, 2 of 4 gates used |
+| U15 | SN74LVC00ADR (TI; alt Nexperia 74LVC00AD) | SOIC-14 | C485072 | Extended | Active | NAND-NAND decode, 2 of 4 gates used |
 | Q2, Q3, Q4 | 2N7002 | SOT-23 | C8545 | Basic | Active | Q2 populated (/HALT drive); Q3, Q4 DNP (Plus-W /NMI, /CART drive) |
 | D2  | SS14 | SMA | C2480 | Basic | Active | +5V → VSYS_PICO |
-
-**U15 LCSC**: not yet set in `tools/gen_schematic.py` (`lcsc=""`) — confirm at
-order time and record it both there and here. Until then: LCSC: see
-`tools/gen_schematic.py`.
 
 ## Passives (all 0805 unless noted)
 

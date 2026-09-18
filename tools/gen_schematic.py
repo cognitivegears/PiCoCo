@@ -802,7 +802,7 @@ def build() -> tuple[str, "Sheet"]:
                       "4": "SEL_N", "5": "E_BUF", "6": "OE_BUS_RAW",
                       "9": "GND", "10": "GND", "12": "GND", "13": "GND",   # 8, 11 outputs NC
                       "7": "GND", "14": "+3V3"},
-            footprint="Package_SO:SOIC-14_3.9x8.7mm_P1.27mm", lcsc="", mpn="SN74LVC00AD")
+            footprint="Package_SO:SOIC-14_3.9x8.7mm_P1.27mm", lcsc="C485072", mpn="SN74LVC00ADR")  # LCSC checked 2026-09-17: TI, Active, 4225 in stock
 
     # ---------- JP2: U10 /OE source; JP3: header pin 34 = E or audio ----------
     SJ = "Jumper:SolderJumper-3_P1.3mm_Bridged12_RoundedPad1.0x1.5mm"

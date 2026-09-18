@@ -8761,7 +8761,7 @@
 				)
 			)
 		)
-		(property "LCSC" ""
+		(property "LCSC" "C485072"
 			(at 0 0 0)
 			(unlocked yes)
 			(layer "F.Fab")
@@ -8774,7 +8774,7 @@
 				)
 			)
 		)
-		(property "MPN" "SN74LVC00AD"
+		(property "MPN" "SN74LVC00ADR"
 			(at 0 0 0)
 			(unlocked yes)
 			(layer "F.Fab")
