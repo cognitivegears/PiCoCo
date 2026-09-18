@@ -1,5 +1,5 @@
 ================================================================
-PiCoCo — PCB Fabrication Checklist
+PiCoCo — PCB Fabrication Checklist (main board, v2.3)
 READ THIS BEFORE SUBMITTING TO ANY BOARD HOUSE
 ================================================================
 
@@ -8,23 +8,25 @@ JLCPCB's or PCBWay's default plating options WILL destroy the slot's
 bronze wipers over time. The settings below are not optional.
 
 -----------------------------------------------------------------
-JLCPCB ORDER SETTINGS (verified 2026-04; re-check before ordering)
+JLCPCB ORDER SETTINGS (v2.3, 2026-09)
 -----------------------------------------------------------------
 
-  Base material:         FR-4
-  Layers:                2
-  Dimensions:            ~98 x 55 mm (see Gerber outline)
-  PCB thickness:         1.6 mm       (*** critical — matches CoCo slot width)
-  PCB color:             Any (green is cheapest)
-  Silkscreen:            White (on green) or Black (on other colors)
-  Surface finish:        HASL with lead, or ENIG — does NOT affect fingers
-  Outer copper weight:   1 oz
-  Gold fingers:          YES          (*** critical)
-  Gold finger bevel:     30°          (*** critical)
-  Gold thickness:        1 µm minimum (*** critical; 2 µm is better)
-  Impedance control:     No
-  Castellated holes:     No
-  Remove order number:   User's choice
+  Base material FR-4 / Layers 2 / Dimensions 98 x 55 mm / Thickness 1.6 mm (critical)
+  Surface finish: ENIG (all pads gold; fingers get hard gold below, never HASL)
+  Outer copper 1 oz
+  Gold fingers: YES (critical) / Bevel: 30 deg (critical) / Gold thickness: 1 um min (2 um better)
+  Remove order number: "Specify a location" (the JLCJLCJLCJLC text on the bottom silkscreen)
+  Castellated holes: No / Impedance: No
+  SMT assembly: Top side, Economic. Files: fab/main/PiCoCo-BOM-jlc.csv, fab/main/PiCoCo-CPL-jlc.csv
+  Extended parts on this board: SN74LVC245A x4 (one part number), SN74LVC00A x1. Confirm stock.
+  Parts NOT placed (by design): U1 module (yours), R2 R3 C12 C15 Q3 Q4 R15 R16 R17 R18 (DNP).
+  Check the placement preview: every SOIC/SOT pin-1 dot matches the silkscreen. If any part is
+  rotated, fix the ROT table in tools/jlc_post.py, rerun tools/gen_fab.sh, re-upload.
+BUDGET VARIANT (bare boards, hobbyist): same Gerbers, ENIG, gold fingers NO, bevel NO.
+  ENIG fingers wear after tens of insertions; fine for a lightly used cart.
+PLUS-W INSTALL: fab/main/stencil-module/*F_Paste.gbr is a paste stencil for the 55 module pads
+  (15 hidden). Hot air or a paste syringe; or mount on 2x20 headers and forgo the 15 pads.
+MODULE: solder the Pico 2 flat on the castellations, or on 2x20 headers. Nothing under it.
 
 -----------------------------------------------------------------
 WHY THESE SETTINGS MATTER
@@ -45,21 +47,6 @@ WHY THESE SETTINGS MATTER
 * 1.6 mm board (= 0.062"): the CoCo slot is spec'd for 0.062"
   boards. 1.2 mm is too thin (loose fit, intermittent contact).
   2.0 mm is too thick and won't insert.
-
------------------------------------------------------------------
-ASSEMBLY (OPTIONAL)
------------------------------------------------------------------
-
-If ordering JLCPCB PCBA (SMT assembly):
-- Enable SMT Assembly, top side only.
-- Upload the BOM.csv and CPL.csv from this fab/ directory.
-- Confirm U15 (SN74LVC1G11) is available in JLC Extended Library;
-  if not, substitute with an equivalent 3-input AND gate in SC-70-6.
-- DNP parts (do-not-populate): R2, R3, J_CART, J_LVC. Mark these as
-  "Do not place" in the JLC order form or they will be soldered
-  unnecessarily.
-- Through-hole parts (P1 edge connector, JP1 header, J_SWD header)
-  must be hand-soldered after JLC assembly.
 
 -----------------------------------------------------------------
 POST-ORDER VERIFICATION
