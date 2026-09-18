@@ -273,7 +273,7 @@ class Router:
             ok = False
         elif self.idx.copper_blocked(B_CU, cu_shape, netcode, self.clearance):
             ok = False
-        elif self.idx.hole_blocked(hole_shape, netcode, self.hole_clearance):
+        elif self.idx.hole_blocked(hole_shape, -999, self.hole_clearance):  # hole-to-hole is net-independent
             ok = False
         self.edge_cache[key] = ok
         return ok

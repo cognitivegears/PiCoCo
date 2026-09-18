@@ -54,3 +54,6 @@ fab/main/*.g??
 fab/main/*.gbr
 fab/main/*.gbrjob
 fab/main/*.drl
+
+# finish_route.py backup of the pre-finish board
+*-pre-finish.kicad_pcb
