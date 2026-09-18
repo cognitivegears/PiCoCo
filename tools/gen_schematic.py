@@ -174,6 +174,7 @@ SYMBOLS = [
     ("Device:C_Polarized", KICAD_STOCK / "Device.kicad_sym", "C_Polarized"),
     ("Device:D_Schottky", KICAD_STOCK / "Device.kicad_sym", "D_Schottky"),
     ("Jumper:SolderJumper_3_Bridged12", KICAD_STOCK / "Jumper.kicad_sym", "SolderJumper_3_Bridged12"),
+    ("Jumper:SolderJumper_2_Open", KICAD_STOCK / "Jumper.kicad_sym", "SolderJumper_2_Open"),
     ("Mechanical:Fiducial", KICAD_STOCK / "Mechanical.kicad_sym", "Fiducial"),
     ("Connector:TestPoint", KICAD_STOCK / "Connector.kicad_sym", "TestPoint"),
     ("power:+5V", KICAD_STOCK / "power.kicad_sym", "+5V"),
@@ -714,8 +715,8 @@ def build() -> tuple[str, "Sheet"]:
     LVC245 = ("74xx:74LS245", "SN74LVC245A", "Package_SO:SOIC-20W_7.5x12.8mm_P1.27mm", "C571201", "SN74LVC245ADWR")
     R0805 = "Resistor_SMD:R_0805_2012Metric"
     C0805 = "Capacitor_SMD:C_0805_2012Metric"
-    RLC = {"33": "C17634", "100": "C17408", "1k": "C17513", "2.2k": "C17520", "4.7k": "C17673", "10k": "C17414", "100k": "C17407"}
-    CLC = {"10nF": "C1710", "100nF": "C49678", "10uF": "C15850", "22uF": "C45783"}
+    RLC = {"33": "C17634", "100": "C17408", "1k": "C17513", "2.2k": "C17520", "4.7k": "C17673", "10k": "C17414", "100k": "C149504", "0": "C17477"}  # C17407 discontinued 2026-09; C17477 (0805 0R) to confirm at order
+    CLC = {"10nF": "C1710", "100nF": "C49678", "1uF": "C28323", "10uF": "C15850", "22uF": "C45783"}  # C28323 (0805 1uF) to confirm at order
 
     def res(ref, value, x, y, a, b, dnp=False):
         s.place("Device:R", ref, value, x, y, pin_nets={"1": a, "2": b}, footprint=R0805,
@@ -809,13 +810,17 @@ def build() -> tuple[str, "Sheet"]:
     s.place("Jumper:SolderJumper_3_Bridged12", "JP2", "U10_OE_SEL", 200.0, 100.0,
             pin_nets={"1": "OE_BUS", "2": "U10_OE", "3": "OE_FW"}, footprint=SJ, in_bom="no")
     s.place("Jumper:SolderJumper_3_Bridged12", "JP3", "P34_SEL", 100.0, 60.0,
-            pin_nets={"1": "E_BUF", "2": "PICO_P34", "3": "AUDIO_PWM"}, footprint=SJ, in_bom="no")
+            pin_nets={"1": "AUDIO_PWM", "2": "PICO_P34", "3": "E_BUF"}, footprint=SJ, in_bom="no")
 
+    # ---------- JP4: Q -> /CART autostart tie (open; the classic Program Pak trick) ----------
+    s.place("Jumper:SolderJumper_2_Open", "JP4", "CART_TIE", 100.0, 80.0,
+            pin_nets={"1": "Q_CART", "2": "CART_CART"},
+            footprint="Jumper:SolderJumper-2_P1.3mm_Open_RoundedPad1.0x1.5mm", in_bom="no")
     # ---------- /HALT drive (Q2), /NMI and /CART drives (Q3, Q4: DNP) ----------
     res("R1", "4.7k", 30.0, 280.0, "+5V", "HALT_CART")
     res("R2", "4.7k", 40.0, 280.0, "+5V", "NMI_CART", dnp=True)
-    res("R3", "4.7k", 50.0, 280.0, "+5V", "RESET_CART", dnp=True)
-    res("R7", "100k", 40.0, 160.0, "+3V3", "GATE_Q2")
+    res("R3", "4.7k", 50.0, 280.0, "+5V", "RESET_CART")  # populated: bench use without a CoCo
+    res("R7", "10k", 40.0, 160.0, "+3V3", "GATE_Q2")  # 10k beats the RP2350 reset pull-down (100k did not)
     res("R8", "100", 50.0, 160.0, "HALT_GATE", "GATE_Q2")
     s.place("Transistor_FET:Q_NMOS_GSD", "Q2", "2N7002", 60.0, 170.0,
             pin_nets={"1": "GATE_Q2", "2": "GND", "3": "HALT_CART"},
@@ -832,7 +837,9 @@ def build() -> tuple[str, "Sheet"]:
     # ---------- Reset, 3V3_EN, series R ----------
     res("R4", "10k", 80.0, 280.0, "VSYS_PICO", "PICO_3V3_EN")
     res("R9", "100", 200.0, 260.0, "RESET_BUF", "PICO_RUN")
-    res("R10", "10k", 210.0, 260.0, "+3V3", "PICO_RUN")
+    res("R10", "10k", 210.0, 260.0, "+3V3", "PICO_RUN", dnp=True)
+    res("R23", "10k", 220.0, 260.0, "+5V", "SLENB_CART")    # pin 40 is cart->CoCo; nothing else drives U13 A5
+    res("R25", "10k", 230.0, 260.0, "+3V3", "U10_OE")      # unprogrammed module + JP2 2-3 must not enable U10  # DNP: held RUN low when USB-only (+3V3 dead)
     res("R11", "33", 210.0, 90.0, "OE_BUS_RAW", "OE_BUS")
     res("R12", "33", 140.0, 230.0, "RW_BUF_RAW", "RW_BUF")
 
@@ -841,9 +848,10 @@ def build() -> tuple[str, "Sheet"]:
     cap("C13", "10nF", 125.0, 310.0, "AUDIO_F1", "GND")
     res("R20", "1k", 130.0, 300.0, "AUDIO_F1", "AUDIO_F2")
     cap("C14", "10nF", 135.0, 310.0, "AUDIO_F2", "GND")
-    res("R21", "2.2k", 140.0, 300.0, "AUDIO_F2", "SND_CART")
+    res("R21", "2.2k", 140.0, 300.0, "AUDIO_AC", "SND_CART")
     res("R22", "1k", 150.0, 310.0, "SND_CART", "GND")
-    cap("C15", "100nF", 145.0, 290.0, "AUDIO_F2", "SND_CART", dnp=True)   # AC-coupling option
+    cap("C15", "1uF", 145.0, 290.0, "AUDIO_F2", "AUDIO_AC", dnp=True)   # AC-coupling option: fit C15, remove R24
+    res("R24", "0", 145.0, 300.0, "AUDIO_F2", "AUDIO_AC")            # DC-coupled default (bypasses C15)
 
     # ---------- Power ----------
     s.place("Device:D_Schottky", "D2", "SS14", 250.0, 70.0,
@@ -862,10 +870,10 @@ def build() -> tuple[str, "Sheet"]:
     for ref, net, tx, ty in (("TP1", "OE_BUS", 320.0, 60.0), ("TP2", "RW_BUF", 320.0, 70.0),
                              ("TP3", "CTS_BUF", 320.0, 80.0), ("TP4", "SCS_BUF", 320.0, 90.0),
                              ("TP5", "E_BUF", 310.0, 60.0), ("TP6", "+3V3", 310.0, 70.0),
-                             ("TP7", "SND_CART", 310.0, 80.0)):
+                             ("TP7", "SND_CART", 310.0, 80.0), ("TP8", "GND", 310.0, 90.0)):
         s.place("Connector:TestPoint", ref, net, tx, ty, pin_nets={"1": net},
                 footprint="TestPoint:TestPoint_Pad_1.0x1.0mm", in_bom="no")
-    for ref, fx in (("FID1", 330.0), ("FID2", 340.0)):
+    for ref, fx in (("FID1", 330.0), ("FID2", 340.0), ("FID3", 350.0)):
         s.place("Mechanical:Fiducial", ref, "FID", fx, 30.0, footprint="Fiducial:Fiducial_1mm_Mask2mm", in_bom="no")
 
     # ---------- PWR_FLAG on VSYS_PICO (D2 cathode is passive; ERC needs a driver) ----------
@@ -875,11 +883,11 @@ def build() -> tuple[str, "Sheet"]:
     title_block = (
         '  (title_block\n'
         '    (title "PiCoCo - Pi Pico 2 to Tandy CoCo Cartridge")\n'
-        '    (date "2026-09-17")\n'
-        '    (rev "2.3")\n'
+        '    (date "2026-09-18")\n'
+        '    (rev "2.3.1")\n'
         '    (company "Nathan Byrd")\n'
         '    (comment 1 "4x LVC245A at 3.3 V (U10 data bidi, U11-U13 in), 74LVC00 NAND-NAND /OE = (CTS|SCS) & E")\n'
-        '    (comment 2 "GPIO: GP0-7=D0-D7, GP8-21=A0-A13, GP22=/R/W, hdr31=OE_BUS, hdr32=HALT_GATE, hdr34=E (JP3: audio); '
+        '    (comment 2 "GPIO: GP0-7=D0-D7, GP8-21=A0-A13, GP22=/R/W, hdr31=OE_BUS, hdr32=HALT_GATE, hdr34=audio (JP3 2-3: E); '
         'Plus-W pads GP24-30 capture, GP31 FW /OE, GP32/33 NMI/CART drive, GP34 audio; '
         'no SWD header: use the module\'s own debug pads")\n'
         '    (comment 3 "MVP: HDB-DOS ROM over /CTS + Becker $FF41/$FF42 over /SCS; firmware disambiguates by A13")\n'
@@ -906,7 +914,7 @@ def check(s: "Sheet") -> None:
     u15 = next(c for c in s.placed if c["ref"] == "U15")["pin_nets"]
     assert (u15["1"], u15["2"], u15["3"]) == ("CTS_BUF", "SCS_BUF", "SEL_N") and (u15["4"], u15["5"], u15["6"]) == ("SEL_N", "E_BUF", "OE_BUS_RAW"), "decode wiring"
     jp3 = next(c for c in s.placed if c["ref"] == "JP3")["pin_nets"]
-    assert jp3["1"] == "E_BUF" and jp3["2"] == "PICO_P34", "JP3 wiring"
+    assert jp3["1"] == "AUDIO_PWM" and jp3["2"] == "PICO_P34" and jp3["3"] == "E_BUF", "JP3 wiring (audio default)"
     for c in s.placed:
         if c["in_bom"] == "yes" and not c["dnp"] and c["ref"] not in ("U15", "C12"):
             assert c["lcsc"], f'{c["ref"]} has no LCSC number'

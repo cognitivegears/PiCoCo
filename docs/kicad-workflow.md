@@ -3,13 +3,25 @@
 What's in the repo right now, what you do with it in KiCad, and how
 to verify the design is correct at each step.
 
-Current schematic/PCB revision: **v2.3** — carrier for either a
+Current schematic/PCB revision: **v2.3.1** — carrier for either a
 Raspberry Pi Pico 2 or a Waveshare RP2350B-Plus-W (`PiCoCo:Pico-Carrier`
 footprint/symbol, generated), U10–U13 all `SN74LVC245A` at 3.3 V, U15
-replaced by a `74LVC00` (SOIC-14) wired NAND-NAND, JP2/JP3 solder
+replaced by a `74LVC00` (SOIC-14) wired NAND-NAND, JP2/JP3/JP4 solder
 jumpers, a populated-by-default sound stage to cart pin 35, no `J_SWD`
 header and no mounting hole, fully routed with GND pours on both
 layers, and an order-ready JLCPCB fab package under `fab/main/`.
+
+**v2.3.1 (2026-09-18)**: bench measurement of a CoCo 3's cartridge
+opening showed the module's USB-C port and the reserved HDMI corner
+landed on or outside the case surface at the v2.3 board length, so the
+outline grew 12 mm away from the fingers — 98 x 67.16 mm body + 10.16 mm
+finger tongue, 77.32 mm overall (was 98 x 55 mm). Everything at or
+above JP2's row (module, JP3, C10, TP1–6, keepouts, top-edge silk)
+moved up with it. The same pass fixed several pre-order review items:
+R7 100 k -> 10 k, R10 DNP, R3 populated, new R23/R25 pull-ups, the
+sound stage's C15/R24 AC-coupling swap, JP3's default flipped to audio,
+new JP4 autostart tie, TP8 and FID3 added, and the 100 kΩ/0 Ω LCSC
+numbers updated. See spec §11 for the full list.
 
 ---
 
@@ -17,7 +29,7 @@ layers, and an order-ready JLCPCB fab package under `fab/main/`.
 
 | File | State |
 |------|-------|
-| `PiCoCo/PiCoCo.kicad_sch` | **v2.3 schematic** — generated from `tools/gen_schematic.py`. Adds JP2/JP3, Q3/Q4 (DNP), R15–R22, C12–C15, TP7, FID1/FID2; U10–U13 become `SN74LVC245A`; U15 becomes `74LVC00` (NAND-NAND); removes J_SWD, R6, JP1, C5, C11. ERC-clean except the one known cosmetic warning (COCO-CART symbol library quirk). |
+| `PiCoCo/PiCoCo.kicad_sch` | **v2.3.1 schematic** — generated from `tools/gen_schematic.py`. v2.3 added JP2/JP3, Q3/Q4 (DNP), R15–R22, C12–C15, TP7, FID1/FID2; U10–U13 become `SN74LVC245A`; U15 becomes `74LVC00` (NAND-NAND); removed J_SWD, R6, JP1, C5, C11. v2.3.1 adds JP4, R23–R25, TP8, FID3, and rewires C15/R24 for AC coupling; flips JP3's default to audio; R7 100k->10k, R10 DNP, R3 populated. ERC-clean except the one known cosmetic warning (COCO-CART symbol library quirk). |
 | `PiCoCo/PiCoCo.kicad_sch.v1-backup` | Old schematic — preserved for reference. |
 | `PiCoCo/PiCoCo.kicad_pcb` | **Fully routed and hand-finished** — GND pours on both layers, 0 DRC errors, 0 unconnected. Authoritative; KiCad GUI edits take precedence over any regenerator once you touch it directly. |
 | `PiCoCo/PiCoCo.kicad_pcb.v1-backup` | PCB backup (original v1). |
@@ -220,7 +232,7 @@ header-mounted Pico 2 doesn't need it at all).
   been checked against JLCPCB's preview.** Don't assume placements are
   correct without that check; fix the table and rerun `gen_fab.sh` if
   the preview shows a part rotated wrong, then re-upload.
-- Fiducials (`FID1`, `FID2`) currently still appear in the CPL —
+- Fiducials (`FID1`, `FID2`, `FID3`) currently still appear in the CPL —
   `kicad-cli`'s `--smd-only` flag treats the fiducial footprint as SMD
   at the PCB level. JLC's assembly process typically ignores fiducial
   refs in a CPL; left as-is rather than filtering it out.

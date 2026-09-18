@@ -119,8 +119,8 @@ in the original proposal.
 | GP22      | 29               | /R/W (input from U12; also drives U10 DIR) |
 | GP26      | 31               | **OE_BUS** — cart‑selected (U15 output) |
 | GP27      | 32               | **HALT_GATE** — output; drives Q2 → /HALT |
-| GP28      | 34               | E (input from U13) |
-| RUN       | 30               | CoCo /RESET (via R9 + R10 pull‑up) |
+| GP28      | 34               | AUDIO_PWM by default (JP3 1-2, v2.3.1); E (input from U13) if JP3 is cut to 2-3 |
+| RUN       | 30               | CoCo /RESET (via R9 series; R10 pull‑up footprint is DNP by default) |
 | VSYS      | 39               | +5V via D2 Schottky |
 
 `OE_BUS` is asserted whenever the cart is selected — i.e., whenever
@@ -150,7 +150,7 @@ on a Plus-W the same physical header pins are `GP40`/`GP41`/`GP42`.
 |---|---|---|
 | GP24 | CTS_BUF | capture |
 | GP25 | SCS_BUF | capture |
-| GP26 | E_BUF | capture (same net also reaches the module via header pin 34 by default, GP40/41/42 mapping: header 31/32/34 = GP40/41/42) |
+| GP26 | E_BUF | capture (also reaches the module's header pin 34 only if JP3 is cut to 2-3 — header pin 34 carries AUDIO_PWM by default as of v2.3.1; GP40/41/42 mapping: header 31/32/34 = GP40/41/42) |
 | GP27 | Q_BUF | capture |
 | GP28 | SLENB_BUF | capture |
 | GP29 | A14_BUF | capture |
@@ -173,7 +173,10 @@ It is simpler to debug and was judged fast enough: about 70 ns from
 The PIO/DMA design below is kept as the v2 engine, to be adopted only
 if the hardware logic analyzer shows jitter in the C loop once it's
 running on real hardware. Everything in 3.3, 3.4 and section 4 (PIO
-programs) describes that fallback, not the current implementation.
+programs) describes that fallback, not the current implementation. It
+also assumes E reaches header pin 34 (GP28), which as of v2.3.1 requires
+cutting JP3 to 2-3 — the default (1-2) routes `AUDIO_PWM` there instead
+(§3.2).
 
 PIO0 hosts three state machines:
 
@@ -540,7 +543,8 @@ settling cycles gives us a solid address sample.
 ## 8.1 /HALT hold‑until‑booted sequence
 
 The Pico drives CoCo `/HALT` through the 2N7002 N‑FET (Q2), whose
-gate is at pin 1 and is pulled up to +3V3 through R7 (100 kΩ). The
+gate is at pin 1 and is pulled up to +3V3 through R7 (10 kΩ, v2.3.1 —
+was 100 kΩ, which the RP2350's own reset pull-down on GP27 beat). The
 Pico's GP27 is connected to the gate through R8 (100 Ω series).
 
 Power‑on sequence:

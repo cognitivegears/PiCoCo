@@ -377,3 +377,41 @@ variant is a routing change only: the module orientation, the reserved
 corner, and the buffer placement. The generator gets a second pin table
 for it when it is built. Sound over HDMI and the VDG snoop renderer are
 firmware on top of that (RP2350B_IDEAS §4).
+
+
+## 11. Addendum 2026-09-18: outline growth and pre-order fixes (v2.3.1)
+
+Measured on the bench CoCo 3 (2026-09-18): cartridge opening 4 1/2 x 1 3/16 in
+(114.3 x 30.2 mm, sized for a cased Program Pak), connector face 1 11/16 in
+(43 mm, earlier note 44.5 mm) inside the case. With ~9 mm of tongue inside the
+connector the case surface sits 52-54 mm from the finger tip. The 98 mm body
+therefore passes the opening (the breakout README's "no wider than the finger
+tab" note was wrong and is corrected), but the module's USB-C port at 53 mm
+from the tip lands on the case surface and the HDMI reserve only 10 mm outside
+it. Decision: grow the body 12 mm away from the fingers.
+
+- Outline: 98 x 67.16 mm body + 10.16 mm tongue (77.32 mm overall); board y now
+  32.187..109.347. Everything at or above JP2's row (module U1, JP3, C10, TP1-6,
+  antenna keepout, HDMI reserve, top-edge silk) moves up 12 mm; the buffer row,
+  power block and sound stage stay. USB-C ends up ~11 mm outside the case.
+- JP3 default flips to the audio position: pin 1 = AUDIO_PWM, pin 3 = E_BUF
+  (bridged 1-2 footprint kept), so a Pico 2 build has sound without cutting a
+  jumper. Plus-W audio still arrives on pad GP34; do not bridge 2-3 and drive
+  GP34 at the same time.
+- Schematic fixes from the pre-order reviews: R7 100 k -> 10 k (RP2350 reset
+  pull-down beat 100 k, the /HALT boot hold was a lottery); R10 DNP (it held RUN
+  low when the board was USB-only); R3 populated (no floating /RESET buffer
+  input on the bench); R23 10 k pull-up on SLENB_CART (pin 40 is cart->CoCo,
+  nothing drives it); C15 moved in series ahead of R21 as a 1 uF DNP with R24
+  0 R bypass populated (the old parallel C15 was a treble boost, not AC
+  coupling); JP4 2-pad solder jumper Q_CART -> CART_CART (open; autostart tie
+  for Pico 2 builds); R25 10 k pull-up on U10_OE (an unprogrammed module with
+  JP2 in the firmware position drove the CoCo bus); TP8 = GND; FID3 third
+  fiducial; 100 k LCSC C17407 is discontinued -> C149504; 0 R = C17477.
+- Layout fixes: cart GND and +5V necks widened with extra vias; sound cluster
+  moved 1 mm off the right edge; "THIS SIDE UP" silk; order remark naming the
+  tongue edge for the 30 deg bevel; the module stencil is used for the 15 grid
+  pads only (castellation apertures sit over holes).
+- Known and accepted: no mounting holes unless the new strip has room; silk
+  lines at 0.12 mm (KiCad library default) and JP legends at 0.8 mm; C12 is a
+  10 mm can if populated; a Program Pak shell needs the roadmap board.

@@ -1,7 +1,8 @@
-# PiCoCo — Bill of Materials (v2.3)
+# PiCoCo — Bill of Materials (v2.3.1)
 
 Source of truth: symbol properties (`LCSC`, `MPN`) in `tools/gen_schematic.py`,
-looked up 2026-09-17 and reproduced here from spec §3.3
+looked up 2026-09-17 (revised 2026-09-18, see spec §11) and reproduced here
+from spec §3.3/§11
 (`docs/superpowers/specs/2026-09-17-main-board-v2.3-design.md`). If this table
 and the generator ever disagree, the generator wins — regenerate this file's
 numbers from it, don't hand-patch around a mismatch.
@@ -22,21 +23,26 @@ numbers from it, don't hand-patch around a mismatch.
 | Ref | Value | Package | LCSC | JLC library | Notes |
 |-----|-------|---------|------|-------------|-------|
 | R1  | 4.7 kΩ 1% | 0805 | C17673 | Basic | /HALT pull-up (required) |
-| R2, R3 | 4.7 kΩ 1% | 0805 | C17673 | Basic | /NMI, /RESET pull-up — **DNP** |
-| R4, R10 | 10 kΩ 1% | 0805 | C17414 | Basic | 3V3_EN and Pico RUN pull-ups |
-| R7 | 100 kΩ 1% | 0805 | C17407 | Basic | Q2 gate pull-up |
+| R2  | 4.7 kΩ 1% | 0805 | C17673 | Basic | /NMI pull-up — **DNP** |
+| R3  | 4.7 kΩ 1% | 0805 | C17673 | Basic | /RESET pull-up — populated (no floating /RESET buffer input on the bench) |
+| R4  | 10 kΩ 1% | 0805 | C17414 | Basic | 3V3_EN pull-up |
+| R7  | 10 kΩ 1% | 0805 | C17414 | Basic | Q2 gate pull-up — 10 k (was 100 k; the RP2350's own reset pull-down beat 100 k) |
 | R8, R9 | 100 Ω 1% | 0805 | C17408 | Basic | Q2 gate series, Pico RUN series |
+| R10 | 10 kΩ 1% | 0805 | C17414 | Basic | Pico RUN pull-up — **DNP** (held RUN low when the board was USB-only) |
 | R11, R12 | 33 Ω 1% | 0805 | C17634 | Basic | OE_BUS / RW_BUF series termination |
 | R15, R16 | 100 Ω 1% | 0805 | C17408 | Basic | Q3/Q4 gate series — **DNP** |
-| R17, R18 | 100 kΩ 1% | 0805 | C17407 | Basic | Q3/Q4 gate pull-downs — **DNP** |
+| R17, R18 | 100 kΩ 1% | 0805 | C149504 | Basic | Q3/Q4 gate pull-downs — **DNP** |
 | R19, R20, R22 | 1 kΩ 1% | 0805 | C17513 | Basic | Audio stage |
-| R21 | 2.2 kΩ 1% | 0805 | C17520 | Basic | Audio level divider |
+| R21 | 2.2 kΩ 1% | 0805 | C17520 | Basic | Audio level divider, AUDIO_AC -> SND_CART |
+| R23 | 10 kΩ 1% | 0805 | C17414 | Basic | SLENB_CART pull-up to +5V (pin 40 is cart->CoCo; nothing else drives U13 A5) |
+| R24 | 0 Ω | 0805 | C17477 | Basic | AUDIO_F2 -> AUDIO_AC bypass (DC-coupled default; remove + fit C15 for AC coupling) |
+| R25 | 10 kΩ 1% | 0805 | C17414 | Basic | U10_OE pull-up to +3V3 (guards an unprogrammed module with JP2 in the firmware position) |
 | C1, C2 | 10 µF X5R ≥10V | 0805 | C15850 | Basic | +5V edge bulk / LDO input |
 | C3 | 22 µF X5R ≥6.3V | 0805 | C45783 | Basic | LDO output — MLCC-compatible AMS1117 variant required |
 | C4, C6–C10 | 100 nF X7R 50V | 0805 | C49678 | Basic | Per-IC decoupling (C5 intentionally unused) |
 | C13, C14 | 10 nF X7R | 0805 | C1710 | Basic | Audio 2-pole RC filter |
 | C12 | 1000 µF 6.3V SMD electrolytic | D8x10 mm | pick at order (C970711 had stock 2026-09-17) | n/a | VSYS_PICO Wi-Fi burst cap — **DNP** on a Pico 2 |
-| C15 | 100 nF | 0805 | C49678 | Basic | AC-coupling option across R21 — **DNP** |
+| C15 | 1 µF | 0805 | C28323 | Basic | AC-coupling series cap, AUDIO_F2 -> AUDIO_AC ahead of R21 (fit + remove R24 for AC coupling) — **DNP** |
 
 ## Connectors and mechanical
 
@@ -44,9 +50,10 @@ numbers from it, don't hand-patch around a mismatch.
 |-----|------|-----------|-------|
 | P1  | (custom COCO-CART edge fingers) | `PiCoCo:COCO-CART-2.1X1.75` | PCB fingers only; no connector part |
 | JP2 | Solder jumper, 3-pad bridged 1-2 | `Jumper:SolderJumper-3_P1.3mm_Bridged12_RoundedPad1.0x1.5mm` | U10 /OE source select |
-| JP3 | Solder jumper, 3-pad bridged 1-2 | (same footprint) | Header pin 34: E (default) or audio |
-| TP1–TP7 | `TestPoint:TestPoint_Pad_1.0x1.0mm` | — | OE_BUS, RW_BUF, CTS_BUF, SCS_BUF, E_BUF, +3V3, SND_CART |
-| FID1, FID2 | `Fiducial:Fiducial_1mm_Mask2mm` | — | SMT assembly fiducials, no net, excluded from BOM |
+| JP3 | Solder jumper, 3-pad bridged 1-2 | (same footprint) | Header pin 34: audio (default, v2.3.1) or E |
+| JP4 | Solder jumper, 2-pad open | `Jumper:SolderJumper-2_P1.3mm_Open_RoundedPad1.0x1.5mm` | Q_CART <-> CART_CART autostart tie — open by default |
+| TP1–TP8 | `TestPoint:TestPoint_Pad_1.0x1.0mm` | — | OE_BUS, RW_BUF, CTS_BUF, SCS_BUF, E_BUF, +3V3, SND_CART, GND |
+| FID1–FID3 | `Fiducial:Fiducial_1mm_Mask2mm` | — | SMT assembly fiducials, no net, excluded from BOM |
 
 There is no `J_SWD` header and no mounting hole (`MTG1`) on this board — both
 were removed in v2.3 (see `CLAUDE.md` and `docs/hardware-design.md` §7, §9).
@@ -95,9 +102,11 @@ files) and the budget variant for bare boards.
   subtract roughly $30–$50 from the above — fine for a lightly used
   cart, but the fingers will wear faster in a well-used CoCo slot.
 
-Four LCSC numbers were not re-verified on 2026-09-17: C45783 (C3, must be
-22 µF at ≥6.3 V), C1710, C17513, C17520 — confirm them in JLCPCB's parts
-step. Prices drift; check DigiKey/Mouser/LCSC and JLCPCB's current quote
-before ordering. Substitute equivalents freely on the generics (0805
-passives, SOIC logic) — the part numbers above are one known-good
-source each.
+C45783 (C3, 22 µF ≥6.3 V) was re-verified on 2026-09-17 and is no longer on
+the unverified list. Five LCSC numbers remain unverified: C1710, C17513,
+C17520, C17477 (R24, 0 Ω), and C28323 (C15, 1 µF) — confirm them in JLCPCB's
+parts step. The 100 kΩ LCSC number changed from C17407 (discontinued
+2026-09) to C149504. Prices drift; check DigiKey/Mouser/LCSC and JLCPCB's
+current quote before ordering. Substitute equivalents freely on the
+generics (0805 passives, SOIC logic) — the part numbers above are one
+known-good source each.

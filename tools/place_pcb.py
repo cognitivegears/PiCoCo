@@ -35,13 +35,15 @@ PCB = PROJECT_ROOT / "PiCoCo" / "PiCoCo.kicad_pcb"
 
 # Ref -> (x, y, rotation), board mm, KiCad Y down.
 #
-# Board: x 99.59..197.59, y 44.187..99.187, fingers at the bottom.
+# Board: x 99.59..197.59, y 32.187..99.187, fingers at the bottom (v2.3.1: body grown
+# 12 mm away from the fingers so the module USB-C clears the CoCo 3 case surface, which
+# sits ~53 mm from the finger tip).
 # Finger x positions: cart pad n at x = 121.92 + 2.54*ceil(n/2) (pins 3/4 at
 # 127.0, 9 at 134.6, D0..D7 134.6..142.2, A0..A7 144.8..152.4, A8..A12
 # 155.0..160.0, /CTS 160.0, /SCS 167.6, A13/A14 168.9, A15//SLENB 171.5,
 # SND 167.6).
 #
-# Reserved HDMI corner: x 172.6..197.6, y 44.2..59.2 (nothing placed there).
+# Reserved HDMI corner: x 172.6..197.6, y 32.2..47.2 (nothing placed there).
 PLACEMENT: dict[str, tuple[float, float, float]] = {
     # Module along the top edge, horizontal: USB end flush with the LEFT board edge,
     # antenna end pointing right; body x 99.6..150.6, y 45.7..66.7. Rotation is verified
@@ -50,7 +52,7 @@ PLACEMENT: dict[str, tuple[float, float, float]] = {
     # x=149.2 (antenna/right end), matching spec. (An earlier hand-derived check with
     # a mis-signed rotation matrix wrongly suggested 270; 270 also collides pad 38-40
     # with P1's MTG1 mounting hole. 90 is correct and collision-free.)
-    "U1":   (125.1, 56.2, 90),
+    "U1":   (125.1, 44.2, 90),
     # Power block near the +5V finger (x 134.6): LDO, Schottky, bulk caps
     # U14/C1 nudged +/-3mm in x from the brief to give D2's 7mm-wide courtyard
     # clearance on both sides (measured courtyard overlap at the brief's coords).
@@ -68,19 +70,23 @@ PLACEMENT: dict[str, tuple[float, float, float]] = {
     "C4": (140.0, 83.0, 90), "C6": (154.0, 83.0, 90), "C7": (168.0, 83.0, 90), "C8": (182.0, 83.0, 90),
     "U15": (175.0, 77.0, 0), "C9": (181.0, 77.0, 90),
     "R11": (175.0, 71.0, 0), "R12": (163.0, 84.0, 0), "JP2": (146.0, 84.0, 0),
-    "R9": (190.0, 84.0, 0), "R10": (194.0, 84.0, 90),
+    "R9": (189.5, 84.0, 0), "R10": (192.2, 84.0, 90), "R24": (194.4, 84.0, 90),
     # Sound stage: regridded 2 rows x 4 cols (rot 90 on the 0805s) right of U13
     # (courtyard ends x=187.93) and clear of FID2's reserved corner (measured
     # courtyard: FID2 circle spans x 193.35..195.85, y 94.95..97.45). The brief's
     # single-row layout put R19/C13/R20 inside both U13's courtyard and FID2's.
-    "R21": (189.5, 87.5, 90), "R22": (191.7, 87.5, 90), "C15": (193.9, 87.5, 90), "TP7": (196.1, 87.5, 0),
-    "R19": (189.5, 91.5, 90), "C13": (191.7, 91.5, 90), "R20": (193.9, 91.5, 90), "C14": (196.1, 91.5, 90),
+    # v2.3.1: columns shifted -0.3 mm so C14 sits >1 mm from the board edge (JLC DFM).
+    "R21": (189.2, 87.5, 90), "R22": (191.4, 87.5, 90), "C15": (193.6, 87.5, 90), "TP7": (195.8, 87.5, 0),
+    "R19": (189.2, 91.5, 90), "C13": (191.4, 91.5, 90), "R20": (193.6, 91.5, 90), "C14": (195.8, 91.5, 90),
     # Between module and the reserved HDMI corner: JP3 by module pin 34, test points, C10.
     # JP3/C10 nudged +8mm in x from the brief: at x=152 both sat inside U1's
     # courtyard (ends x=155.52) and the antenna keepout (x 150.6..155.6).
-    "JP3": (160.0, 62.0, 0), "C10": (160.0, 66.0, 90),
-    "TP1": (166.0, 50.0, 0), "TP2": (166.0, 54.0, 0), "TP3": (166.0, 58.0, 0),
-    "TP4": (166.0, 62.0, 0), "TP5": (166.0, 66.0, 0), "TP6": (170.0, 50.0, 0),
+    "JP3": (160.0, 50.0, 0), "C10": (160.0, 54.0, 90),
+    "TP1": (166.0, 38.0, 0), "TP2": (166.0, 42.0, 0), "TP3": (166.0, 46.0, 0),
+    "TP4": (166.0, 50.0, 0), "TP5": (166.0, 54.0, 0), "TP6": (170.0, 38.0, 0), "TP8": (170.0, 42.0, 0),
+    # v2.3.1 additions: R23 SLENB pull-up by U13's inputs, R25 U10_OE pull-up by JP2,
+    # JP4 Q->/CART tie by the Q4 stage, FID3 on the left edge below the module.
+    "R23": (188.0, 72.0, 0), "R25": (150.0, 84.0, 0), "JP4": (124.0, 74.0, 0), "FID3": (102.6, 63.0, 0),
     # Fiducials 3 mm in from two diagonal corners. FID1 at (102.6, 80.0) per
     # review (measured clear with 1.5mm margin there); earlier fallbacks
     # (102.6, 47.2) sat inside U1's pad clearance/courtyard, (102.6, 70.0)
@@ -105,11 +111,11 @@ EXTRAS = [
     # courtyard by design) legitimately overlaps this zone; the rule's actual intent
     # is keeping OTHER components' copper out, which tracks/vias/pads/copperpour cover.
     _zone_keepout("antenna_keepout", '"F.Cu" "B.Cu"',
-                  [(151.3, 45.7), (155.6, 45.7), (155.6, 66.7), (151.3, 66.7)],
+                  [(151.3, 33.7), (155.6, 33.7), (155.6, 54.7), (151.3, 54.7)],
                   "(tracks not_allowed) (vias not_allowed) (pads not_allowed) (copperpour not_allowed)"),
     # Reserved HDMI corner: no footprints, routing allowed.
     _zone_keepout("hdmi_reserved", '"F.Cu"',
-                  [(172.6, 44.2), (197.6, 44.2), (197.6, 59.2), (172.6, 59.2)],
+                  [(172.6, 32.2), (197.6, 32.2), (197.6, 47.2), (172.6, 47.2)],
                   "(tracks allowed) (vias allowed) (pads not_allowed) (copperpour allowed) (footprints not_allowed)"),
 ]
 
@@ -136,7 +142,9 @@ def _u1_npth_keepouts() -> list[str]:
 
 EXTRAS += _u1_npth_keepouts()
 TEXTS = [  # (text, x, y, layer, size)
-    ("HDMI (future)", 185.0, 51.5, "F.SilkS", 1.0),
+    ("HDMI (future)", 185.0, 39.5, "F.SilkS", 1.0),
+    ("THIS SIDE UP", 163.5, 34.5, "F.SilkS", 1.0),
+    ("OTHER SIDE UP", 163.5, 34.5, "B.SilkS", 1.0),
     # Version/licence + URL moved to the back silkscreen (review F5): on the
     # front they crossed U1's lower pin labels and R3. Mirrored like the JLC
     # text, centred in the empty back-side area below the module.
@@ -152,8 +160,8 @@ TEXTS = [  # (text, x, y, layer, size)
     # line always bled into either U1 or R11 (which sits just past x=172.6).
     # Two lines fit that corridor comfortably and the y=68.5..71.5 band is
     # clear (below C10, above R12/U12's row at y>=82).
-    ("JP3 1-2=E", 164.0, 69.0, "F.SilkS", 0.8),
-    ("2-3=AUDIO (Pico2)", 164.0, 71.0, "F.SilkS", 0.8),
+    ("JP3 1-2=AUDIO", 164.0, 57.0, "F.SilkS", 0.8),
+    ("2-3=E on hdr34", 164.0, 59.0, "F.SilkS", 0.8),
     ("no parts under module", 125.0, 62.0, "F.Fab", 1.0),
 ]
 
@@ -168,6 +176,7 @@ _STALE_TEXT_PREFIX = '(gr_text "PiCoCo\\nUniversal Cartridge'
 # content string is a different marker and won't be found/replaced.
 _RETIRED_TEXTS = [
     "JP3 1-2=E  2-3=AUDIO (Pico2)",  # split into two lines (review F2)
+    "JP3 1-2=E", "2-3=AUDIO (Pico2)",  # v2.3.1: audio is the default now
 ]
 
 

@@ -40,8 +40,9 @@ GND pour that stops 1 mm short of the finger tab.
 
 The shroud of J1 is 58.4 mm long and the board is 52.8 mm wide, so the
 plastic overhangs each side edge by about 2.8 mm. That is deliberate:
-the board cannot be wider than the finger tab or it will not pass the
-case opening, and a keyed header is worth more than a flush one. A
+a keyed header is worth more than a flush one. (An earlier note here
+claimed the board could not be wider than the finger tab; measured on
+2026-09-18 the CoCo 3 opening is 114.3 x 30.2 mm, so it can.) A
 reversed ribbon at an unkeyed header would land +5V on /CTS.
 
 ### Finger geometry versus the original cart footprint

@@ -20,7 +20,9 @@ own `breakout/` and `cobbler/` subdirectories). Produces, under `main/`:
 - `PiCoCo-BOM-jlc.csv` / `PiCoCo-CPL-jlc.csv` — JLCPCB assembly BOM and
   CPL (DNP parts and non-BOM footprints excluded).
 - `stencil-module/PiCoCo-stencil-module-F_Paste.gbr` — standalone paste
-  stencil for hand-soldering the Pico 2 module onto U1's castellations.
+  stencil for U1's 15 hidden grid pads only (Plus-W builds). The 40
+  castellation apertures sit over plated holes and paste falls through
+  them, so hand-solder the castellations regardless of module.
 
 DRC is **not** run by the script because `kicad-cli pcb drc` crashes
 on the current macOS build with a Swift runtime error. Run DRC in the

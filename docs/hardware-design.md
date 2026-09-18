@@ -42,7 +42,7 @@ This document describes the **electrical design**. For firmware, see
   /CTS   ──── P1[32]      ──► [U12 ch8] → CTS_BUF ──► U15 gate 1
   /SCS   ──── P1[36]      ──► [U13 ch1] → SCS_BUF ──► U15 gate 1
   E      ──── P1[6]       ──► [U13 ch2] → E_BUF   ──► U15 gate 2, JP3 pad 1
-  /RESET ──── P1[5]       ──► [U13 ch7] → RESET_BUF──► R9 100Ω ──► Pico RUN (R10 10kΩ pull-up to +3V3)
+  /RESET ──── P1[5]       ──► [U13 ch7] → RESET_BUF──► R9 100Ω ──► Pico RUN (R10 10kΩ pull-up to +3V3, DNP)
   Q, /SLENB, /HALT, /NMI, /CART ──► [U13 input-only; outputs no-connect]
   SND    ──── P1[35]      ◄── R21/R22 ◄── 2-pole RC ◄── AUDIO_PWM (JP3: hdr34 on Pico 2 / GP34 on Plus-W)
 
@@ -53,7 +53,7 @@ This document describes the **electrical design**. For firmware, see
 
   Pico /HALT drive (hold-until-booted + DriveWire flow control):
     GP27 (HALT_GATE) ──► R8 100Ω ──► [Q2 2N7002] ──► /HALT_CART pin
-                         R7 100kΩ to +3V3 pulls gate high during Pico boot
+                         R7 10kΩ to +3V3 pulls gate high during Pico boot
                          → Q2 ON → /HALT held low until firmware releases
 ```
 
@@ -84,38 +84,43 @@ to routing both /CTS and /SCS separately.
 | U14 | AMS1117‑3.3  | SOT‑223  | +5V → +3.3V LDO (supplies buffers only) |
 | U15 | SN74LVC00AD  | SOIC‑14 | Quad NAND, two gates used NAND-NAND: `SEL_N = NAND(CTS_BUF,SCS_BUF)`, `OE_BUS_RAW = NAND(SEL_N,E_BUF)`; gates 3/4 grounded |
 | JP2 | Solder jumper, 3-pad bridged 1-2 | SMD | U10 `/OE` source: 1=OE_BUS (default), 2=U10 /OE, 3=OE_FW (Plus-W firmware /OE) |
-| JP3 | Solder jumper, 3-pad bridged 1-2 | SMD | Header pin 34: 1=E_BUF (default), 2=PICO_P34, 3=AUDIO_PWM (Pico 2 audio option) |
+| JP3 | Solder jumper, 3-pad bridged 1-2 | SMD | Header pin 34: 1=AUDIO_PWM (default, v2.3.1), 2=PICO_P34, 3=E_BUF (cut 1-2/bridge 2-3 for E on Pico 2) |
+| JP4 | Solder jumper, 2-pad, open | SMD | Q_CART <-> CART_CART autostart tie, open by default (v2.3.1) |
 | Q2  | 2N7002 | SOT‑23 | N‑FET: firmware‑controlled /HALT sink (hold at boot) |
 | Q3, Q4 | 2N7002 (DNP) | SOT‑23 | N‑FET stages for Plus-W-driven /NMI, /CART (pad-grid `NMI_DRV`/`CART_DRV`) |
 | D2  | Schottky SS14 | SMA | +5 V → VSYS_PICO (replaces cascade via LDO) |
 | R1  | 4.7 kΩ 0805 | — | /HALT pull‑up to +5 V (required; idles /HALT when Q2 off) |
-| R2, R3 | 4.7 kΩ 0805 (DNP) | — | /NMI, /RESET pull‑up footprints; CoCo already pulls these up, so DNP by default |
+| R2  | 4.7 kΩ 0805 (DNP) | — | /NMI pull‑up footprint; CoCo already pulls this up, so DNP by default |
+| R3  | 4.7 kΩ 0805 | — | /RESET pull‑up — populated (v2.3.1: avoids a floating /RESET buffer input on the bench) |
 | R4  | 10 kΩ 0805 | — | Pico 3V3_EN pull‑up to VSYS_PICO |
-| R7  | 100 kΩ 0805 | — | Q2 gate pull‑up to +3V3 (default‑on during Pico boot) |
+| R7  | 10 kΩ 0805 | — | Q2 gate pull‑up to +3V3 (default‑on during Pico boot) — 10 k (v2.3.1: was 100 k, which the RP2350's own reset pull-down beat, see §4.4) |
 | R8  | 100 Ω 0805 | — | Q2 gate series from GP27 |
 | R9  | 100 Ω 0805 | — | Pico RUN series from RESET_BUF |
-| R10 | 10 kΩ 0805 | — | Pico RUN pull‑up to +3V3 |
+| R10 | 10 kΩ 0805 (DNP) | — | Pico RUN pull‑up to +3V3 — DNP (v2.3.1: held RUN low when the board was USB-only, see §4.5) |
 | R11 | 33 Ω 0805 | — | OE_BUS series termination (fan‑out damping) |
 | R12 | 33 Ω 0805 | — | RW_BUF series termination |
 | R15, R16 | 100 Ω 0805 (DNP) | — | Q3/Q4 gate series from NMI_DRV/CART_DRV |
 | R17, R18 | 100 kΩ 0805 (DNP) | — | Q3/Q4 gate pull‑downs to GND (released when nothing drives them) |
 | R19, R20 | 1 kΩ 0805 | — | Audio 2-pole RC filter stage |
-| R21 | 2.2 kΩ 0805 | — | Audio level divider into SND_CART |
+| R21 | 2.2 kΩ 0805 | — | Audio level divider, AUDIO_AC -> SND_CART |
 | R22 | 1 kΩ 0805 | — | Audio level divider to GND |
+| R23 | 10 kΩ 0805 | — | SLENB_CART pull-up to +5V (v2.3.1: pin 40 is cart->CoCo, nothing else drives U13 A5, see §3.1) |
+| R24 | 0 Ω 0805 | — | AUDIO_F2 -> AUDIO_AC bypass (v2.3.1: DC-coupled default; remove + fit C15 for AC coupling, see §4.6) |
+| R25 | 10 kΩ 0805 | — | U10_OE pull-up to +3V3 (v2.3.1: guards against an unprogrammed module with JP2 in the firmware position driving the CoCo bus) |
 | C1  | 10 µF 0805 X5R ≥10V | — | +5V bulk at edge connector |
 | C2  | 10 µF 0805 X5R ≥10V | — | LDO input |
 | C3  | 22 µF 0805 X5R ≥6.3V | — | LDO output (MLCC‑compatible vendor required) |
 | C4, C6–C10 | 100 nF 0805 | — | Per‑IC decoupling (U10, U11–U13, U15, Pico local) |
 | C12 | 1000 µF 6.3V SMD electrolytic, D8x10 (DNP) | — | VSYS_PICO bulk cap for Plus-W Wi-Fi transmit bursts |
 | C13, C14 | 10 nF 0805 | — | Audio 2-pole RC filter stage |
-| C15 | 100 nF 0805 (DNP) | — | Optional AC-coupling across R21 |
+| C15 | 1 µF 0805 (DNP) | — | AC-coupling series cap, AUDIO_F2 -> AUDIO_AC ahead of R21 (v2.3.1: fit + remove R24 for AC coupling — the old parallel-R21 C15 was a treble boost, not AC coupling, see §4.6) |
 | P1  | COCO‑CART‑2.1X1.75 (custom footprint) | Edge fingers | Cartridge slot mate |
-| TP1–TP7 | 1×1 mm SMD pads | — | OE_BUS, RW_BUF, CTS_BUF, SCS_BUF, E_BUF, +3V3, SND_CART |
-| FID1, FID2 | 1 mm fiducial, 2 mm mask | — | SMT assembly fiducials, no net, excluded from BOM |
+| TP1–TP8 | 1×1 mm SMD pads | — | OE_BUS, RW_BUF, CTS_BUF, SCS_BUF, E_BUF, +3V3, SND_CART, GND |
+| FID1–FID3 | 1 mm fiducial, 2 mm mask | — | SMT assembly fiducials, no net, excluded from BOM |
 
 **Unique active parts: 7** (Pico 2 / Plus-W module, SN74LVC245A, AMS1117‑3.3,
 SN74LVC00A, 2N7002, SS14 Schottky). All are in the JLCPCB Basic or
-Extended Library. All passives are 0805; DNP refs (C12, C15, Q3, Q4, R2, R3,
+Extended Library. All passives are 0805; DNP refs (C12, C15, Q3, Q4, R2, R10,
 R15–R18) are populated footprints on the board but not fitted by default.
 No `J_SWD` header and no `MTG1` mounting hole on this board (see §7 and §9).
 
@@ -132,10 +137,10 @@ Reference Manual.
 | 2   | +12 V   | unused                | NC |
 | 3   | /HALT   | bidi (open‑drain) on CoCo | U13 in + R1 4.7 kΩ pull‑up to +5 V + Q2 drain (Pico‑controlled pull‑down) |
 | 4   | /NMI    | bidi (open‑drain)     | U13 in + R2 4.7 kΩ pull‑up (DNP) + Q3 drain (DNP, Plus-W drive stage) |
-| 5   | /RESET  | bidi (open‑drain)     | U13 in + R3 4.7 kΩ pull‑up (DNP); buffered copy (RESET_BUF) drives Pico RUN via R9+R10 |
-| 6   | E       | CoCo → cart           | U13 → E_BUF → U15 gate 2, JP3 pad 1 (default: header pin 34) |
-| 7   | Q       | CoCo → cart           | U13 in only; output left unconnected (not routed to Pico — saves one GPIO) |
-| 8   | /CART   | cart → CoCo (open collector) | U13 in only + Q4 drain (DNP, Plus-W drive stage). No pull-up populated by default — HDB-DOS autostarts on the DK signature with /CART open. |
+| 5   | /RESET  | bidi (open‑drain)     | U13 in + R3 4.7 kΩ pull‑up (populated, v2.3.1); buffered copy (RESET_BUF) drives Pico RUN via R9 (R10 pull‑up footprint is DNP) |
+| 6   | E       | CoCo → cart           | U13 → E_BUF → U15 gate 2, JP3 pad 3 (v2.3.1: default bridges 1-2 = AUDIO_PWM to header pin 34; cut 1-2/bridge 2-3 to route E there instead) |
+| 7   | Q       | CoCo → cart           | U13 in only; output left unconnected (not routed to Pico — saves one GPIO). JP4 (open by default, v2.3.1) can tie Q_CART to CART_CART (pin 8) as the classic Program Pak autostart trick. |
+| 8   | /CART   | cart → CoCo (open collector) | U13 in only + Q4 drain (DNP, Plus-W drive stage) + JP4 pad 2 (Q_CART tie, open by default). No pull-up populated by default — HDB-DOS autostarts on the DK signature with /CART open. |
 | 9   | +5 V    | power                 | C1 bulk, U14 in, D2 Schottky anode (→ VSYS_PICO), R1 pull‑up |
 | 10–17 | D0–D7 | bidirectional         | U10 B‑side |
 | 18  | /R/W    | CoCo → cart           | U12 in; U12 output → R12 33 Ω → U10 DIR + GP22 |
@@ -148,7 +153,7 @@ Reference Manual.
 | 37  | A13     | CoCo → cart           | U12 in → GP21 (serves double duty as address MSB and ROM/Becker selector) |
 | 38  | A14     | CoCo → cart           | P1 only; not routed to Pico or buffer |
 | 39  | A15     | CoCo → cart           | P1 only; not routed to Pico or buffer |
-| 40  | /SLENB  | CoCo → cart           | U13 in only; output left unconnected |
+| 40  | /SLENB  | cart → CoCo (v2.3.1: direction corrected — earlier drafts had this backwards) | U13 in + R23 10 kΩ pull‑up to +5 V (nothing on this board drives it, so it idles inactive); output left unconnected |
 
 A14 and A15 are not needed for the 16 KB `/CTS` window or the Becker
 port; they terminate at the cart edge fingers only. The
@@ -173,7 +178,7 @@ Plus-W column and the pad-grid table below.
 | GP23–GP25| — | same | *internal* | SMPS PS / VBUS sense / onboard LED (not header‑accessible) |
 | GP26     | 31 | GP26/GP40 | **OE_BUS** | Cart-selected signal from U15's NAND-NAND decode, through JP2 (default 1-2). `WAIT 0 PIN 18` (base 8) for cart-cycle gate. |
 | GP27     | 32 | GP27/GP41 | **HALT_GATE** | Firmware output; drives Q2 gate via R8 to sink /HALT_CART. HIGH = hold /HALT, LOW = release. |
-| GP28     | 34 | GP28/GP42 | E (default via JP3 1-2) | `WAIT 1/0 PIN 20` (base 8) for bus-phase sync. JP3 2-3 repurposes this pin as `AUDIO_PWM` on a Pico 2 (see §4.6); firmware does not use E today. |
+| GP28     | 34 | GP28/GP42 | `AUDIO_PWM` (default via JP3 1-2, v2.3.1) | Sound output stage (§4.6); firmware does not use E today. Cut JP3 1-2/bridge 2-3 to get E on this pin instead for `WAIT 1/0 PIN 20` (base 8) bus-phase sync, needed only by the v2 PIO engine (`docs/firmware-architecture.md` §3.3). |
 | Pin 30   | 30 | same | RUN    | CoCo /RESET input via U13 + R9 series + R10 pull‑up |
 
 Pico onboard LED (GP25) is used for heartbeat — no header GPIO spent.
@@ -191,7 +196,7 @@ captures all seven at once.
 |---|---|---|
 | GP24 | CTS_BUF | capture |
 | GP25 | SCS_BUF | capture |
-| GP26 | E_BUF | capture (same net also reaches the module via header pin 34 by default) |
+| GP26 | E_BUF | capture (also reaches the module's header pin 34 only if JP3 is cut to 2-3 — header pin 34 carries `AUDIO_PWM` by default as of v2.3.1) |
 | GP27 | Q_BUF | capture |
 | GP28 | SLENB_BUF | capture |
 | GP29 | A14_BUF | capture |
@@ -222,7 +227,11 @@ module through its own castellations/pads, or the test points in §7.
   without any Pico involvement.
 - `/OE` (pin 19) = `U10_OE`, the JP2 centre pad — `OE_BUS` by default
   (JP2 1-2), or a Plus-W firmware GPIO (`OE_FW`, JP2 2-3). Forces
-  tri‑state when the cart is not selected.
+  tri‑state when the cart is not selected. **R25 10 kΩ (v2.3.1)** pulls
+  `U10_OE` up to +3V3: with JP2 cut to 2-3 (firmware /OE) and an
+  unprogrammed or not-yet-booted module, an undriven GPIO could
+  otherwise float `U10_OE` low and drive the CoCo bus; R25 keeps it
+  tri-stated until firmware actively asserts it.
 
 Because direction is hardwired to the buffered `/R/W`, the Pico never
 has to drive a DIR pin. It only controls its own pindirs to decide when
@@ -287,7 +296,7 @@ The Pico can sink /HALT_CART through a 2N7002 N‑FET:
 ```
 GP27 (HALT_GATE) ─── R8 100 Ω ─── Q2 gate
                                       │
-                                      ├── R7 100 kΩ ─── +3V3
+                                      ├── R7 10 kΩ ─── +3V3
                                       │
 Q2 source ── GND                      │
 Q2 drain ── /HALT_CART (cart pin 3, pulled up by R1 4.7 kΩ to +5 V)
@@ -312,19 +321,26 @@ measured (breadboard plan step 8, now optional). Keeping the hold costs
 three parts on a pin that is already budgeted and doubles as DriveWire
 flow control, so it is kept without the measurement.
 
+**Decision 2026-09-18: R7 changed 100 kΩ → 10 kΩ.** A pre-order review
+found the RP2350's own internal reset pull-down on GP27 was strong
+enough to beat a 100 kΩ external pull-up, so the /HALT-held-at-boot
+default was a lottery depending on exactly when the SDK configured the
+pin. 10 kΩ wins that race reliably without materially changing R8's
+gate-drive current budget.
+
 ### 4.5 Reset path — Pico RUN from CoCo /RESET
 
 ```
 /RESET_CART ─── U13 B5 ─── RESET_BUF ─── R9 100 Ω ─── Pico RUN (pin 30)
                                                           │
-                                                       R10 10 kΩ ── +3V3
+                                                       R10 10 kΩ ── +3V3  (DNP, v2.3.1)
 ```
 
 When a CoCo user presses the RESET button (or the CPU asserts
 /RESET), RESET_BUF goes LOW at 3.3 V logic level. R9 limits transient
-current; R10 holds RUN HIGH while /RESET is deasserted. This resets
-the Pico in sync with the CoCo, clearing Becker FIFO state instead
-of leaving it drifted relative to the CoCo's software.
+current; R10, when fitted, holds RUN HIGH while /RESET is deasserted.
+This resets the Pico in sync with the CoCo, clearing Becker FIFO state
+instead of leaving it drifted relative to the CoCo's software.
 
 **Decided 2026-09-17: populate R9, keep the tie.** A CoCo reset must
 reach the Pico definitively, and the video design (RP2350B_IDEAS §4.5)
@@ -335,6 +351,12 @@ the Pico 2 does not have spare and the RP2350B budget does not either.
 Costs accepted: every reset press reboots the Pico (about 1.2 s to
 "halt released") and drops the USB console; the /HALT hold in §4.4 is
 what makes that reboot safe for the CoCo.
+
+**Decision 2026-09-18: R10 is DNP.** A pre-order review found R10 held
+RUN low when the board was powered from USB only (no +5 V at the cart
+edge, so +3V3 is dead and R10's own pull-up rail is gone). R9 alone is
+kept; the R10 footprint stays on the board if a future build finds a
+case that needs the pull-up back.
 
 ### 4.6 Sound stage — AUDIO_PWM to SND_CART
 
@@ -349,26 +371,34 @@ AUDIO_PWM ── R19 1k ── AUDIO_F1 ── C13 10nF to GND
                             │
                         R20 1k ── AUDIO_F2 ── C14 10nF to GND
                                         │
+                          R24 0R (default) or C15 1uF (DNP, AC coupling)
+                                        │
+                                    AUDIO_AC
+                                        │
                                     R21 2.2k ── SND_CART ── R22 1k ── GND
 ```
 
-- **JP3** (pad 1 = `E_BUF`, pad 2 = `PICO_P34` = module header pin 34,
-  pad 3 = `AUDIO_PWM`) is bridged 1-2 by default, so header pin 34
-  carries E as it always has. On a **Pico 2** build, where no GPIO is
-  spare, cut 1-2 and bridge 2-3 to turn GP28 into the PWM audio output
-  instead — firmware does not use E today (`OE_BUS` is already
-  E‑qualified in hardware; E was reserved for the v2 PIO engine, a
-  Plus-W-only path).
+- **JP3** (pad 1 = `AUDIO_PWM`, pad 2 = `PICO_P34` = module header pin
+  34, pad 3 = `E_BUF`) is bridged 1-2 by default as of **v2.3.1**, so
+  header pin 34 carries `AUDIO_PWM` out of the box — a Pico 2 build gets
+  sound without cutting a jumper. Cut 1-2 and bridge 2-3 to put E on
+  header pin 34 instead (needed only by the v2 PIO engine, a
+  Plus-W-only path — `OE_BUS` is already E‑qualified in hardware, so
+  firmware does not need E today).
 - **Plus-W**: the pad-grid's own GP34 drives `AUDIO_PWM` directly; JP3
-  stays at its default (1-2). Do not set JP3 to 2-3 on a Plus-W with
-  GP34 populated — that puts two outputs on one net. The silkscreen
-  says so.
-- The two-pole RC (R19/C13, R20/C14) rolls off around 16 kHz. R21/R22
-  form a DC-coupled divider to about 1 V full scale, the same way the
-  Orchestra-90 fed this input — this is the level knob: tune the exact
-  values against a real CoCo on the first board and record them here.
-  C15 (0805, DNP) sits in parallel with R21 for AC coupling if that
-  turns out to work better.
+  should stay at its default (1-2). Do not set JP3 to 2-3 on a Plus-W
+  with GP34 populated — that puts two outputs on one net. The
+  silkscreen says so.
+- The two-pole RC (R19/C13, R20/C14) rolls off around 16 kHz. **R24
+  (0 Ω, v2.3.1)** bridges `AUDIO_F2` to `AUDIO_AC` by default, giving a
+  DC-coupled divider (R21/R22) to about 1 V full scale, the same way
+  the Orchestra-90 fed this input — this is the level knob: tune the
+  exact values against a real CoCo on the first board and record them
+  here. **C15 (0805, 1 µF, DNP, v2.3.1)** sits in series in the same
+  spot: fit C15 and remove R24 for AC coupling instead. (The v2.3
+  layout put C15 in parallel with R21, which turned out to act as a
+  treble boost rather than AC-couple the signal — v2.3.1 corrects the
+  topology.)
 - TP7 is on `SND_CART` for scope access.
 - What this enables on **both** builds: any sound the Pico synthesizes
   itself, driven by firmware using PiCoCo's own registers in the /SCS
@@ -433,6 +463,16 @@ is shortest possible current loop.
 
 ## 6. PCB layer stack & rules
 
+**Board outline (v2.3.1):** 98.0 x 67.16 mm body + 10.16 mm finger
+tongue = 77.32 mm overall (board y 32.187..109.347 in the KiCad
+coordinate frame). Grown 12 mm away from the fingers from v2.3's
+98 x 55 mm outline after a bench measurement of a CoCo 3's cartridge
+opening (§9) showed the shorter board put the module's USB-C port and
+the reserved HDMI corner (§5) on or past the case surface. Everything
+at or above JP2's row (module U1, JP3, C10, TP1–6, the antenna keepout,
+the HDMI reserve, top-edge silk) moved up with the outline; the buffer
+row, power block and sound stage did not move.
+
 | Parameter | Value |
 |---|---|
 | Layers | 2 (F.Cu, B.Cu) |
@@ -482,7 +522,7 @@ the 1×4 `J_SWD` header: its pads at header pins 41-43 collide with the
 Plus-W pad grid, and a Pico 2's own SWD castellations can't be exposed
 on this footprint either way. Bring‑up debug happens via:
 
-- **TP1–TP7** SMD pads on the nets most likely to need scope access
+- **TP1–TP8** SMD pads on the nets most likely to need scope access
   (see the test‑point table below).
 - **The module's own debug pads/castellations**, or its USB CDC, for
   SWD-style debug of the Pico itself. A flat-mounted Pico 2 rests its
@@ -515,16 +555,18 @@ access during bring‑up:
 | TP5 | E_BUF | Buffered E clock (JP3 default: same as header pin 34) |
 | TP6 | +3V3 | 3.3 V rail |
 | TP7 | SND_CART | Sound stage output to the cart (§4.6) |
+| TP8 | GND | Ground reference (v2.3.1) |
 
 (+5 V can be probed at P1 pin 9 or C1; GND is ubiquitous via edge
 fingers and IC grounds.)
 
 ### Fiducials
 
-FID1 and FID2 (`Fiducial:Fiducial_1mm_Mask2mm`) are SMT-assembly
-fiducial marks in two open, copper-free areas of the board — no net,
-excluded from the BOM. They're for the assembler's placement-machine
-vision, not for hand debug.
+FID1, FID2 and FID3 (`Fiducial:Fiducial_1mm_Mask2mm`) are SMT-assembly
+fiducial marks in open, copper-free areas of the board — no net,
+excluded from the BOM. FID3 was added in v2.3.1 for a third reference
+point. They're for the assembler's placement-machine vision, not for
+hand debug.
 
 ### LEDs
 
@@ -539,8 +581,9 @@ vision, not for hand debug.
 - Hand‑assembly order (helps self‑test): U14 + C2 + C3 → verify 3.3 V
   with no other parts → D2 → verify VSYS_PICO ≈ 4.7 V with 5 V
   applied → U10–U13 + C4, C6–C10 → U15 → JP2/JP3 (leave at default
-  1-2) → Q2 + R7/R8 → passives → edge fingers → TP pads → module last.
-  Q3, Q4, R2, R3, R15–R18, C12, C15 are DNP by default (Plus-W-only or
+  1-2; JP4 left open) → Q2 + R7/R8 → passives → edge fingers → TP pads
+  → module last.
+  Q3, Q4, R2, R10, R15–R18, C12, C15 are DNP by default (Plus-W-only or
   optional provisions) — skip them on a Pico 2 build.
 - JLCPCB fab order: 2‑layer, 1.6 mm, **ENIG** surface finish (all pads
   gold; fingers still get hard gold below, never HASL), **Gold Fingers
@@ -569,7 +612,20 @@ vision, not for hand debug.
   grid — a Pico 2 build has no spare GPIO to use them. Firmware support
   for the pad grid is itself out of scope for this spin (spec §1,
   `docs/superpowers/specs/2026-09-17-main-board-v2.3-design.md`); see
-  `docs/firmware-architecture.md`'s Plus-W pin plan.
+  `docs/firmware-architecture.md`'s Plus-W pin plan. **v2.3.1** adds a
+  passive-only partial alternative for `/CART` specifically: JP4 (open
+  by default) ties `Q_CART` to `CART_CART`, the classic Program Pak
+  autostart trick, for a Pico 2 build that has no GPIO to drive `/CART`
+  from firmware.
+- **v2.3.1, outline growth.** A bench measurement of a real CoCo 3's
+  cartridge opening (114.3 x 30.2 mm) found the connector face sits
+  about 43 mm inside the case and the case surface about 52-54 mm from
+  the finger tip. At v2.3's 98 x 55 mm outline the module's USB-C port
+  landed almost exactly on that case surface and the reserved HDMI
+  corner (§5) only 10 mm past it — too tight to use either reliably.
+  The board grew 12 mm away from the fingers to fix this (§6); no
+  mounting hole was added in the new strip, so the board's lack of a
+  mounting hole (`CLAUDE.md`) is unchanged.
 
 ## 10. Cross‑references
 
