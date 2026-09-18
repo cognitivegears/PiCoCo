@@ -7,9 +7,12 @@ usage: jlc_post.py bom  in.csv out.csv
 import csv, re, sys
 
 # Rotation offsets (degrees, added to KiCad's rotation) so JLCPCB's pick-and-place preview
-# shows pin 1 where the footprint has it. Not yet verified against the JLCPCB preview; Task 8
-# step 2 fills in offsets and records the verification date in this comment.
-ROT = {"SOIC-20W": 0, "SOIC-14": 0, "SOT-23": 0, "SOT-223": 0, "D_SMA": 0, "0805": 0, "CP_Elec": 0}
+# shows pin 1 where the footprint has it. Verified against the JLCPCB placement preview on
+# 2026-09-18 (v2.3.1 order): KiCad SOIC footprints are vertical with pin 1 top-left, JLC's
+# are horizontal with pin 1 bottom-left -> +270; KiCad SOT-23/SOT-223 have pin 1 top-left,
+# JLC's bottom-right -> +180; D_SMA matched (band on the cathode/pad-1 side) -> 0.
+# Keys are substring matches on the footprint name, most specific first.
+ROT = {"SOIC-20W": 270, "SOIC-14": 270, "SOT-223": 180, "SOT-23": 180, "D_SMA": 0, "0805": 0, "CP_Elec": 0}
 
 def expand_refs(s):
     """'C4,C6-C10' -> 'C4,C6,C7,C8,C9,C10': JLCPCB does not expand KiCad's ranges."""
