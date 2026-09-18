@@ -112,6 +112,29 @@ EXTRAS = [
                   [(172.6, 44.2), (197.6, 44.2), (197.6, 59.2), (172.6, 59.2)],
                   "(tracks allowed) (vias allowed) (pads not_allowed) (copperpour allowed) (footprints not_allowed)"),
 ]
+
+
+def _u1_npth_keepouts() -> list[str]:
+    """Track/via keepouts round U1's four NPTH holes (USB-connector legs at the
+    module's USB end). The board's 0.25 mm hole-clearance rule can't be expressed
+    in a Specctra DSN, so Freerouting kept laying VSYS_PICO across a hole edge
+    (DRC hole_clearance, 0.22 mm). A square keepout of hole radius + 0.25 +
+    0.05 keeps the router honest; copper pour is still allowed (zone fill obeys
+    the hole clearance itself)."""
+    ux, uy, rot = PLACEMENT["U1"]
+    assert rot == 90, "NPTH keepouts assume U1 rotated 90 (x,y)->(y,-x)"
+    holes = [(-2.725, -24.0, 1.8), (-2.425, -20.97, 1.5), (2.425, -20.97, 1.5), (2.725, -24.0, 1.8)]
+    out = []
+    for i, (lx, ly, d) in enumerate(holes, 1):
+        cx, cy = ux + ly, uy - lx
+        h = d / 2 + 0.25 + 0.05
+        out.append(_zone_keepout(f"u1_npth_{i}", '"F.Cu" "B.Cu"',
+                                 [(cx - h, cy - h), (cx + h, cy - h), (cx + h, cy + h), (cx - h, cy + h)],
+                                 "(tracks not_allowed) (vias not_allowed) (pads allowed) (copperpour allowed)"))
+    return out
+
+
+EXTRAS += _u1_npth_keepouts()
 TEXTS = [  # (text, x, y, layer, size)
     ("HDMI (future)", 185.0, 51.5, "F.SilkS", 1.0),
     # Version/licence + URL moved to the back silkscreen (review F5): on the
