@@ -17,7 +17,7 @@ JLCPCB ORDER SETTINGS (v2.3.1, 2026-09)
   Gold fingers: YES (critical) / Bevel: 30 deg (critical) / Gold thickness: 1 um min (2 um better)
   Order remark: Gold fingers / 30 deg bevel on the protruding bottom tongue edge only (52.8 mm
   wide), not the full board edge.
-  Remove order number: "Specify a location" (the JLCJLCJLCJLC text on the bottom silkscreen)
+  Mark on PCB: "Remove Mark" (no order-number placeholder on the board since v2.3.1)
   Castellated holes: No / Impedance: No
   SMT assembly: Top side, Economic. Files: fab/main/PiCoCo-BOM-jlc.csv, fab/main/PiCoCo-CPL-jlc.csv
   Extended parts on this board: SN74LVC245A x4 (one part number), SN74LVC00A x1. Confirm stock.
