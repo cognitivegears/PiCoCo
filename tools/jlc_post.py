@@ -11,12 +11,25 @@ import csv, re, sys
 # step 2 fills in offsets and records the verification date in this comment.
 ROT = {"SOIC-20W": 0, "SOIC-14": 0, "SOT-23": 0, "SOT-223": 0, "D_SMA": 0, "0805": 0, "CP_Elec": 0}
 
+def expand_refs(s):
+    """'C4,C6-C10' -> 'C4,C6,C7,C8,C9,C10': JLCPCB does not expand KiCad's ranges."""
+    out = []
+    for part in s.split(","):
+        part = part.strip()
+        m = re.fullmatch(r"([A-Za-z]+)(\d+)-([A-Za-z]+)(\d+)", part)
+        if m and m.group(1) == m.group(3):
+            out += [f"{m.group(1)}{n}" for n in range(int(m.group(2)), int(m.group(4)) + 1)]
+        else:
+            out.append(part)
+    return ",".join(out)
+
+
 def bom(src, dst):
     rows = list(csv.DictReader(open(src, newline="")))
     with open(dst, "w", newline="") as f:
         w = csv.writer(f); w.writerow(["Comment", "Designator", "Footprint", "LCSC Part #", "MPN"])
         for r in rows:
-            w.writerow([r["Value"], r["Reference"], r["Footprint"].split(":")[-1], r.get("LCSC", ""), r.get("MPN", "")])
+            w.writerow([r["Value"], expand_refs(r["Reference"]), r["Footprint"].split(":")[-1], r.get("LCSC", ""), r.get("MPN", "")])
 
 def cpl(src, dst):
     rows = list(csv.DictReader(open(src, newline="")))
