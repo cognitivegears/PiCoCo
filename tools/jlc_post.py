@@ -23,6 +23,8 @@ def cpl(src, dst):
     with open(dst, "w", newline="") as f:
         w = csv.writer(f); w.writerow(["Designator", "Mid X", "Mid Y", "Layer", "Rotation"])
         for r in rows:
+            if r["Ref"].startswith("FID"):  # fiducials are not placed parts; JLC flags them as unmatched
+                continue
             off = next((v for k, v in ROT.items() if k in r["Package"]), 0)
             rot = (float(r["Rot"]) + off) % 360
             w.writerow([r["Ref"], f'{float(r["PosX"]):.3f}mm', f'{float(r["PosY"]):.3f}mm',

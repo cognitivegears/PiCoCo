@@ -32,6 +32,8 @@ if [ ! -f "$PCB" ]; then
 fi
 
 mkdir -p "$FAB_DIR"
+# Clear stale plots so the zip only ever holds this run's layer set.
+rm -f "$FAB_DIR"/*.g?? "$FAB_DIR"/*.gbr "$FAB_DIR"/*.gbrjob "$FAB_DIR"/*.drl
 
 echo "=> Gerbers"
 "$KICAD_CLI" pcb export gerbers \
