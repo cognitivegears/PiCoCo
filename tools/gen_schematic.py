@@ -839,7 +839,7 @@ def build() -> tuple[str, "Sheet"]:
     res("R9", "100", 200.0, 260.0, "RESET_BUF", "PICO_RUN")
     res("R10", "10k", 210.0, 260.0, "+3V3", "PICO_RUN", dnp=True)
     res("R23", "10k", 220.0, 260.0, "+5V", "SLENB_CART")    # pin 40 is cart->CoCo; nothing else drives U13 A5
-    res("R25", "10k", 230.0, 260.0, "+3V3", "U10_OE")      # unprogrammed module + JP2 2-3 must not enable U10  # DNP: held RUN low when USB-only (+3V3 dead)
+    res("R25", "10k", 230.0, 260.0, "+3V3", "U10_OE")  # populated: an unprogrammed module with JP2 at 2-3 must not enable U10
     res("R11", "33", 210.0, 90.0, "OE_BUS_RAW", "OE_BUS")
     res("R12", "33", 140.0, 230.0, "RW_BUF_RAW", "RW_BUF")
 

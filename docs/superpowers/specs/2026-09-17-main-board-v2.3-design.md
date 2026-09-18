@@ -390,7 +390,7 @@ tab" note was wrong and is corrected), but the module's USB-C port at 53 mm
 from the tip lands on the case surface and the HDMI reserve only 10 mm outside
 it. Decision: grow the body 12 mm away from the fingers.
 
-- Outline: 98 x 67.16 mm body + 10.16 mm tongue (77.32 mm overall); board y now
+- Outline: 98 x 67.0 mm body + 10.16 mm tongue (77.16 mm overall); board y now
   32.187..109.347. Everything at or above JP2's row (module U1, JP3, C10, TP1-6,
   antenna keepout, HDMI reserve, top-edge silk) moves up 12 mm; the buffer row,
   power block and sound stage stay. USB-C ends up ~11 mm outside the case.
@@ -408,7 +408,7 @@ it. Decision: grow the body 12 mm away from the fingers.
   for Pico 2 builds); R25 10 k pull-up on U10_OE (an unprogrammed module with
   JP2 in the firmware position drove the CoCo bus); TP8 = GND; FID3 third
   fiducial; 100 k LCSC C17407 is discontinued -> C149504; 0 R = C17477.
-- Layout fixes: cart GND and +5V necks widened with extra vias; sound cluster
+- Layout fixes: cart GND and +5V neck tracks widened to 0.5 mm (GND also on B.Cu with a via); sound cluster
   moved 1 mm off the right edge; "THIS SIDE UP" silk; order remark naming the
   tongue edge for the 30 deg bevel; the module stencil is used for the 15 grid
   pads only (castellation apertures sit over holes).

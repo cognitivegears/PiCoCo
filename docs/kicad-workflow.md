@@ -14,8 +14,8 @@ layers, and an order-ready JLCPCB fab package under `fab/main/`.
 **v2.3.1 (2026-09-18)**: bench measurement of a CoCo 3's cartridge
 opening showed the module's USB-C port and the reserved HDMI corner
 landed on or outside the case surface at the v2.3 board length, so the
-outline grew 12 mm away from the fingers — 98 x 67.16 mm body + 10.16 mm
-finger tongue, 77.32 mm overall (was 98 x 55 mm). Everything at or
+outline grew 12 mm away from the fingers — 98 x 67.0 mm body + 10.16 mm
+finger tongue, 77.16 mm overall (was 98 x 55 mm). Everything at or
 above JP2's row (module, JP3, C10, TP1–6, keepouts, top-edge silk)
 moved up with it. The same pass fixed several pre-order review items:
 R7 100 k -> 10 k, R10 DNP, R3 populated, new R23/R25 pull-ups, the

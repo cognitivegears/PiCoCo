@@ -148,7 +148,7 @@ TEXTS = [  # (text, x, y, layer, size)
     # Version/licence + URL moved to the back silkscreen (review F5): on the
     # front they crossed U1's lower pin labels and R3. Mirrored like the JLC
     # text, centred in the empty back-side area below the module.
-    ("PiCoCo v2.3  CERN-OHL-S-2.0", 150.0, 75.0, "B.SilkS", 1.0),
+    ("PiCoCo v2.3.1  CERN-OHL-S-2.0", 150.0, 75.0, "B.SilkS", 1.0),
     ("github.com/cognitivegears/PiCoCo", 150.0, 78.0, "B.SilkS", 0.8),
     ("JLCJLCJLCJLC", 110.0, 62.0, "B.SilkS", 1.0),
     # Shifted right from x=146 (review F5): the left end touched R15 (at x=136).
@@ -177,6 +177,7 @@ _STALE_TEXT_PREFIX = '(gr_text "PiCoCo\\nUniversal Cartridge'
 _RETIRED_TEXTS = [
     "JP3 1-2=E  2-3=AUDIO (Pico2)",  # split into two lines (review F2)
     "JP3 1-2=E", "2-3=AUDIO (Pico2)",  # v2.3.1: audio is the default now
+    "PiCoCo v2.3  CERN-OHL-S-2.0",
 ]
 
 

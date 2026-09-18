@@ -463,8 +463,8 @@ is shortest possible current loop.
 
 ## 6. PCB layer stack & rules
 
-**Board outline (v2.3.1):** 98.0 x 67.16 mm body + 10.16 mm finger
-tongue = 77.32 mm overall (board y 32.187..109.347 in the KiCad
+**Board outline (v2.3.1):** 98.0 x 67.0 mm body + 10.16 mm finger
+tongue = 77.16 mm overall (board y 32.187..109.347 in the KiCad
 coordinate frame). Grown 12 mm away from the fingers from v2.3's
 98 x 55 mm outline after a bench measurement of a CoCo 3's cartridge
 opening (§9) showed the shorter board put the module's USB-C port and

@@ -11,7 +11,7 @@ bronze wipers over time. The settings below are not optional.
 JLCPCB ORDER SETTINGS (v2.3.1, 2026-09)
 -----------------------------------------------------------------
 
-  Base material FR-4 / Layers 2 / Dimensions 98 x 77.3 mm overall (67.2 mm body + 10.2 mm finger tongue) / Thickness 1.6 mm (critical)
+  Base material FR-4 / Layers 2 / Dimensions 98 x 77.2 mm overall (67.0 mm body + 10.2 mm finger tongue) / Thickness 1.6 mm (critical)
   Surface finish: ENIG (all pads gold; fingers get hard gold below, never HASL)
   Outer copper 1 oz
   Gold fingers: YES (critical) / Bevel: 30 deg (critical) / Gold thickness: 1 um min (2 um better)
