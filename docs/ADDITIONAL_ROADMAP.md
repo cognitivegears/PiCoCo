@@ -182,7 +182,7 @@ no timeout, so a slow reply hangs the CoCo until the server answers.
 
 Sources: `.superpowers/sdd/2026-09-17-main-board-v2.3/quality-ee.md`, `quality-coco.md`,
 `quality-fw.md`. Hardware items from those reviews were folded into v2.3.1 before the
-first order (ground stitching, 0.5 mm power trunks, C16, sound values, JP5, J_EXP,
+first order (ground stitching, 0.5 mm power trunks, C16, sound values, JP5, J1,
 wider antenna keepout) or deferred to v2.4 (see hardware-design §9).
 
 ### Firmware, ordered by value

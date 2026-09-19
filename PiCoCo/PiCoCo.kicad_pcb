@@ -19126,7 +19126,7 @@
 	(gr_text "EXP Plus-W"
 		(at 112 63.2 0)
 		(layer "F.SilkS")
-		(uuid "2c7eeead-7b44-4fb7-9435-c257a5569703")
+		(uuid "fcdd96c9-c6ae-41a8-8fd3-f8b2e9fbd953")
 		(effects
 			(font
 				(size 0.8 0.8)
@@ -19135,9 +19135,9 @@
 		)
 	)
 	(gr_text "JP5: hdr34-> 1-2 /CART  2-3 /NMI"
-		(at 133.5 63.5 0)
+		(at 138 63.5 0)
 		(layer "F.SilkS")
-		(uuid "d108cb84-bea5-4be2-abda-0d1cc6bbb4ee")
+		(uuid "03c3de92-4d2b-4c36-b72c-fc610a6ce4ec")
 		(effects
 			(font
 				(size 0.8 0.8)
@@ -19146,9 +19146,9 @@
 		)
 	)
 	(gr_text "(JP3 or JP5, never both)"
-		(at 133.5 65.5 0)
+		(at 138 65.5 0)
 		(layer "F.SilkS")
-		(uuid "a85d8007-ae20-43e9-b750-6e52622b9e1a")
+		(uuid "ce34cabf-07d3-494d-b255-9b488cd68a69")
 		(effects
 			(font
 				(size 0.8 0.8)
@@ -19159,7 +19159,7 @@
 	(gr_text "JP2 1-2=HW /OE  2-3=FW"
 		(at 152 79.3 0)
 		(layer "F.SilkS")
-		(uuid "d06ac3b7-0848-490e-9d9e-d58e517e9f43")
+		(uuid "74aaf956-567f-4461-a7f7-6009e83b6dc1")
 		(effects
 			(font
 				(size 0.8 0.8)
@@ -19170,7 +19170,7 @@
 	(gr_text "JP3 1-2=AUDIO"
 		(at 164.5 58.5 0)
 		(layer "F.SilkS")
-		(uuid "0fb4a8ed-2cd8-4c5f-8e0c-289caa60e9fe")
+		(uuid "da9fdf6e-6fc5-4139-b609-00efcbd0441a")
 		(effects
 			(font
 				(size 0.8 0.8)
@@ -19181,7 +19181,7 @@
 	(gr_text "2-3=E on hdr34"
 		(at 164.5 60.5 0)
 		(layer "F.SilkS")
-		(uuid "70cc3659-5025-48cd-a49c-dfa1a767c38f")
+		(uuid "003adf4b-7f44-4839-965e-e6a505ba1efc")
 		(effects
 			(font
 				(size 0.8 0.8)
@@ -19192,7 +19192,7 @@
 	(gr_text "THIS SIDE UP"
 		(at 163.5 34.5 0)
 		(layer "F.SilkS")
-		(uuid "361c3b6b-a9e6-4def-a9d2-52cd69c6d8f1")
+		(uuid "d17b2e56-eb9c-4b9c-b59d-4534944983ea")
 		(effects
 			(font
 				(size 1 1)
@@ -19203,7 +19203,7 @@
 	(gr_text "HDMI (future)"
 		(at 185 39.5 0)
 		(layer "F.SilkS")
-		(uuid "a1f20801-880a-47e6-bcd3-48481ccf6493")
+		(uuid "925a5b13-61e7-4f6e-b0e8-8b19da2f363f")
 		(effects
 			(font
 				(size 1 1)
@@ -19214,7 +19214,7 @@
 	(gr_text "github.com/cognitivegears/PiCoCo"
 		(at 150 78 0)
 		(layer "B.SilkS")
-		(uuid "83c75efa-3bd1-4d02-923e-17d49a308a1a")
+		(uuid "0ca86e3b-0327-47f5-88d0-40866b8fb2c8")
 		(effects
 			(font
 				(size 0.8 0.8)
@@ -19226,7 +19226,7 @@
 	(gr_text "PiCoCo v2.3.1  CERN-OHL-S-2.0"
 		(at 150 75 0)
 		(layer "B.SilkS")
-		(uuid "62101af7-659f-4f95-bea0-fd3107a8f3c9")
+		(uuid "22b92ced-c872-40cf-a9c6-de0927c6c33e")
 		(effects
 			(font
 				(size 1 1)
@@ -19238,7 +19238,7 @@
 	(gr_text "OTHER SIDE UP"
 		(at 163.5 34.5 0)
 		(layer "B.SilkS")
-		(uuid "3618162e-6d3c-4d07-8c33-d8cbd0809861")
+		(uuid "cf2bf66e-3023-44d1-8de2-5703bf3ed6b4")
 		(effects
 			(font
 				(size 1 1)
@@ -19250,7 +19250,7 @@
 	(gr_text "no parts under module"
 		(at 125 62 0)
 		(layer "F.Fab")
-		(uuid "5106f8f0-203f-4743-86ce-3f8a36e3381a")
+		(uuid "ad930acb-0f3e-4644-a281-022103a40935")
 		(effects
 			(font
 				(size 1 1)
@@ -32467,37 +32467,6 @@
 		(uuid "dbd4e7f5-9133-4e23-87d1-a04048cef452")
 	)
 	(zone
-		(layer "F.Cu")
-		(uuid "409941a5-086d-4b54-aed2-544425723690")
-		(name "hdmi_reserved")
-		(hatch edge 0.5)
-		(connect_pads
-			(clearance 0)
-		)
-		(min_thickness 0.25)
-		(keepout
-			(tracks allowed)
-			(vias allowed)
-			(pads not_allowed)
-			(copperpour allowed)
-			(footprints not_allowed)
-		)
-		(placement
-			(enabled no)
-			(sheetname "")
-		)
-		(fill
-			(thermal_gap 0.5)
-			(thermal_bridge_width 0.5)
-			(island_removal_mode 0)
-		)
-		(polygon
-			(pts
-				(xy 172.6 32.2) (xy 197.6 32.2) (xy 197.6 47.2) (xy 172.6 47.2)
-			)
-		)
-	)
-	(zone
 		(net "GND")
 		(layer "F.Cu")
 		(uuid "9fb50cb3-b373-4036-9c5a-4472039ffcdb")
@@ -35198,51 +35167,20 @@
 		)
 	)
 	(zone
-		(layers "F.Cu" "B.Cu")
-		(uuid "0a3dc867-c72b-495a-bdd2-0669e4c72d99")
-		(name "antenna_keepout")
+		(layer "F.Cu")
+		(uuid "d10f85a3-a639-45ac-ada1-297c154f5870")
+		(name "hdmi_reserved")
 		(hatch edge 0.5)
 		(connect_pads
 			(clearance 0)
 		)
 		(min_thickness 0.25)
 		(keepout
-			(tracks not_allowed)
-			(vias not_allowed)
+			(tracks allowed)
+			(vias allowed)
 			(pads not_allowed)
-			(copperpour not_allowed)
-			(footprints allowed)
-		)
-		(placement
-			(enabled no)
-			(sheetname "")
-		)
-		(fill
-			(thermal_gap 0.5)
-			(thermal_bridge_width 0.5)
-			(island_removal_mode 0)
-		)
-		(polygon
-			(pts
-				(xy 151.3 33.7) (xy 158 33.7) (xy 158 54.7) (xy 151.3 54.7)
-			)
-		)
-	)
-	(zone
-		(layers "F.Cu" "B.Cu")
-		(uuid "47a62f40-f029-4d15-9ad0-6d874393d256")
-		(name "u1_npth_2")
-		(hatch edge 0.5)
-		(connect_pads
-			(clearance 0)
-		)
-		(min_thickness 0.25)
-		(keepout
-			(tracks not_allowed)
-			(vias not_allowed)
-			(pads allowed)
 			(copperpour allowed)
-			(footprints allowed)
+			(footprints not_allowed)
 		)
 		(placement
 			(enabled no)
@@ -35255,44 +35193,13 @@
 		)
 		(polygon
 			(pts
-				(xy 103.08 45.575) (xy 105.18 45.575) (xy 105.18 47.675) (xy 103.08 47.675)
+				(xy 172.6 32.2) (xy 197.6 32.2) (xy 197.6 47.2) (xy 172.6 47.2)
 			)
 		)
 	)
 	(zone
 		(layers "F.Cu" "B.Cu")
-		(uuid "83c32d02-e08c-4e56-a6a3-7d642f6db87f")
-		(name "u1_npth_1")
-		(hatch edge 0.5)
-		(connect_pads
-			(clearance 0)
-		)
-		(min_thickness 0.25)
-		(keepout
-			(tracks not_allowed)
-			(vias not_allowed)
-			(pads allowed)
-			(copperpour allowed)
-			(footprints allowed)
-		)
-		(placement
-			(enabled no)
-			(sheetname "")
-		)
-		(fill
-			(thermal_gap 0.5)
-			(thermal_bridge_width 0.5)
-			(island_removal_mode 0)
-		)
-		(polygon
-			(pts
-				(xy 99.9 45.725) (xy 102.3 45.725) (xy 102.3 48.125) (xy 99.9 48.125)
-			)
-		)
-	)
-	(zone
-		(layers "F.Cu" "B.Cu")
-		(uuid "940d117f-15ad-4a3c-97b2-42712e51c9cc")
+		(uuid "1fc29dec-5711-4688-b38d-8c82f2453e36")
 		(name "u1_npth_4")
 		(hatch edge 0.5)
 		(connect_pads
@@ -35323,7 +35230,7 @@
 	)
 	(zone
 		(layers "F.Cu" "B.Cu")
-		(uuid "b2d4bee0-fb60-4fb2-86d9-0101a5a7bf2c")
+		(uuid "27a56de5-70e2-411c-aec8-bcec411a3bad")
 		(name "u1_npth_3")
 		(hatch edge 0.5)
 		(connect_pads
@@ -35349,6 +35256,99 @@
 		(polygon
 			(pts
 				(xy 103.08 40.725) (xy 105.18 40.725) (xy 105.18 42.825) (xy 103.08 42.825)
+			)
+		)
+	)
+	(zone
+		(layers "F.Cu" "B.Cu")
+		(uuid "955b2631-92ec-476f-881f-69fcc818462b")
+		(name "u1_npth_1")
+		(hatch edge 0.5)
+		(connect_pads
+			(clearance 0)
+		)
+		(min_thickness 0.25)
+		(keepout
+			(tracks not_allowed)
+			(vias not_allowed)
+			(pads allowed)
+			(copperpour allowed)
+			(footprints allowed)
+		)
+		(placement
+			(enabled no)
+			(sheetname "")
+		)
+		(fill
+			(thermal_gap 0.5)
+			(thermal_bridge_width 0.5)
+			(island_removal_mode 0)
+		)
+		(polygon
+			(pts
+				(xy 99.9 45.725) (xy 102.3 45.725) (xy 102.3 48.125) (xy 99.9 48.125)
+			)
+		)
+	)
+	(zone
+		(layers "F.Cu" "B.Cu")
+		(uuid "abd84890-5d4c-48d4-ac2d-4da2476de63a")
+		(name "u1_npth_2")
+		(hatch edge 0.5)
+		(connect_pads
+			(clearance 0)
+		)
+		(min_thickness 0.25)
+		(keepout
+			(tracks not_allowed)
+			(vias not_allowed)
+			(pads allowed)
+			(copperpour allowed)
+			(footprints allowed)
+		)
+		(placement
+			(enabled no)
+			(sheetname "")
+		)
+		(fill
+			(thermal_gap 0.5)
+			(thermal_bridge_width 0.5)
+			(island_removal_mode 0)
+		)
+		(polygon
+			(pts
+				(xy 103.08 45.575) (xy 105.18 45.575) (xy 105.18 47.675) (xy 103.08 47.675)
+			)
+		)
+	)
+	(zone
+		(layers "F.Cu" "B.Cu")
+		(uuid "eebfd3fe-b0b5-41c1-b795-48b3993a5826")
+		(name "antenna_keepout")
+		(hatch edge 0.5)
+		(connect_pads
+			(clearance 0)
+		)
+		(min_thickness 0.25)
+		(keepout
+			(tracks not_allowed)
+			(vias not_allowed)
+			(pads not_allowed)
+			(copperpour not_allowed)
+			(footprints allowed)
+		)
+		(placement
+			(enabled no)
+			(sheetname "")
+		)
+		(fill
+			(thermal_gap 0.5)
+			(thermal_bridge_width 0.5)
+			(island_removal_mode 0)
+		)
+		(polygon
+			(pts
+				(xy 151.3 33.7) (xy 158 33.7) (xy 158 54.7) (xy 151.3 54.7)
 			)
 		)
 	)

@@ -164,8 +164,8 @@ TEXTS = [  # (text, x, y, layer, size)
     # line always bled into either U1 or R11 (which sits just past x=172.6).
     # Two lines fit that corridor comfortably and the y=68.5..71.5 band is
     # clear (below C10, above R12/U12's row at y>=82).
-    ("JP5: hdr34-> 1-2 /CART  2-3 /NMI", 133.5, 63.5, "F.SilkS", 0.8),
-    ("(JP3 or JP5, never both)", 133.5, 65.5, "F.SilkS", 0.8),
+    ("JP5: hdr34-> 1-2 /CART  2-3 /NMI", 138.0, 63.5, "F.SilkS", 0.8),
+    ("(JP3 or JP5, never both)", 138.0, 65.5, "F.SilkS", 0.8),
     ("EXP Plus-W", 112.0, 63.2, "F.SilkS", 0.8),
     ("JP3 1-2=AUDIO", 164.5, 58.5, "F.SilkS", 0.8),
     ("2-3=E on hdr34", 164.5, 60.5, "F.SilkS", 0.8),
