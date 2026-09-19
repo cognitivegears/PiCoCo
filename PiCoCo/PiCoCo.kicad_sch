@@ -1,5 +1,5 @@
 (kicad_sch (version 20230121) (generator gen_schematic_py)
-  (uuid 88b0342d-54f3-4dbb-a5db-939bca88afbb)
+  (uuid d041c4bc-74a9-4dc3-835e-4e59f8c971a7)
   (paper "A2")
   (title_block
     (title "PiCoCo - Pi Pico 2 to Tandy CoCo Cartridge")
@@ -2553,6 +2553,513 @@
   		)
   		(embedded_fonts no)
   	)
+  	(symbol "Jumper:SolderJumper_3_Open"
+  		(pin_names
+  			(offset 0)
+  			(hide yes)
+  		)
+  		(exclude_from_sim no)
+  		(in_bom no)
+  		(on_board yes)
+  		(in_pos_files yes)
+  		(duplicate_pin_numbers_are_jumpers no)
+  		(property "Reference" "JP"
+  			(at -2.54 -2.54 0)
+  			(show_name no)
+  			(do_not_autoplace no)
+  			(effects
+  				(font
+  					(size 1.27 1.27)
+  				)
+  			)
+  		)
+  		(property "Value" "SolderJumper_3_Open"
+  			(at 0 2.794 0)
+  			(show_name no)
+  			(do_not_autoplace no)
+  			(effects
+  				(font
+  					(size 1.27 1.27)
+  				)
+  			)
+  		)
+  		(property "Footprint" ""
+  			(at 0 0 0)
+  			(show_name no)
+  			(do_not_autoplace no)
+  			(hide yes)
+  			(effects
+  				(font
+  					(size 1.27 1.27)
+  				)
+  			)
+  		)
+  		(property "Datasheet" ""
+  			(at 0 -15.24 0)
+  			(show_name no)
+  			(do_not_autoplace no)
+  			(hide yes)
+  			(effects
+  				(font
+  					(size 1.27 1.27)
+  				)
+  			)
+  		)
+  		(property "Description" "Solder Jumper, 3-pole, open"
+  			(at 0 -12.7 0)
+  			(show_name no)
+  			(do_not_autoplace no)
+  			(hide yes)
+  			(effects
+  				(font
+  					(size 1.27 1.27)
+  				)
+  			)
+  		)
+  		(property private "KLC_S5.1" "This is a generic symbol, it has fp-filter, but no default footprint"
+  			(at 0 -17.78 0)
+  			(show_name yes)
+  			(do_not_autoplace no)
+  			(hide yes)
+  			(effects
+  				(font
+  					(size 1.27 1.27)
+  				)
+  			)
+  		)
+  		(property private "KLC_S3.3" "Graphical-Symbol: thickness is 6mm, fill is background"
+  			(at 0 -20.32 0)
+  			(show_name yes)
+  			(do_not_autoplace no)
+  			(hide yes)
+  			(effects
+  				(font
+  					(size 1.27 1.27)
+  				)
+  			)
+  		)
+  		(property "ki_keywords" "Solder Jumper SPDT"
+  			(at 0 0 0)
+  			(show_name no)
+  			(do_not_autoplace no)
+  			(hide yes)
+  			(effects
+  				(font
+  					(size 1.27 1.27)
+  				)
+  			)
+  		)
+  		(property "ki_fp_filters" "SolderJumper*Open*"
+  			(at 0 0 0)
+  			(show_name no)
+  			(do_not_autoplace no)
+  			(hide yes)
+  			(effects
+  				(font
+  					(size 1.27 1.27)
+  				)
+  			)
+  		)
+  		(symbol "SolderJumper_3_Open_0_1"
+  			(polyline
+  				(pts
+  					(xy -2.54 0) (xy -2.032 0)
+  				)
+  				(stroke
+  					(width 0)
+  					(type default)
+  				)
+  				(fill
+  					(type none)
+  				)
+  			)
+  			(polyline
+  				(pts
+  					(xy -1.016 1.016) (xy -1.016 -1.016)
+  				)
+  				(stroke
+  					(width 0.1524)
+  					(type default)
+  				)
+  				(fill
+  					(type none)
+  				)
+  			)
+  			(arc
+  				(start -1.016 -1.016)
+  				(mid -2.0276 0)
+  				(end -1.016 1.016)
+  				(stroke
+  					(width 0.1524)
+  					(type default)
+  				)
+  				(fill
+  					(type outline)
+  				)
+  			)
+  			(rectangle
+  				(start -0.508 1.016)
+  				(end 0.508 -1.016)
+  				(stroke
+  					(width 0.1524)
+  					(type default)
+  				)
+  				(fill
+  					(type outline)
+  				)
+  			)
+  			(polyline
+  				(pts
+  					(xy 0 -1.27) (xy 0 -1.016)
+  				)
+  				(stroke
+  					(width 0)
+  					(type default)
+  				)
+  				(fill
+  					(type none)
+  				)
+  			)
+  			(arc
+  				(start 1.016 1.016)
+  				(mid 2.0276 0)
+  				(end 1.016 -1.016)
+  				(stroke
+  					(width 0.1524)
+  					(type default)
+  				)
+  				(fill
+  					(type outline)
+  				)
+  			)
+  			(polyline
+  				(pts
+  					(xy 1.016 1.016) (xy 1.016 -1.016)
+  				)
+  				(stroke
+  					(width 0.1524)
+  					(type default)
+  				)
+  				(fill
+  					(type none)
+  				)
+  			)
+  			(polyline
+  				(pts
+  					(xy 2.54 0) (xy 2.032 0)
+  				)
+  				(stroke
+  					(width 0)
+  					(type default)
+  				)
+  				(fill
+  					(type none)
+  				)
+  			)
+  		)
+  		(symbol "SolderJumper_3_Open_1_1"
+  			(pin passive line
+  				(at -5.08 0 0)
+  				(length 2.54)
+  				(name "A"
+  					(effects
+  						(font
+  							(size 1.27 1.27)
+  						)
+  					)
+  				)
+  				(number "1"
+  					(effects
+  						(font
+  							(size 1.27 1.27)
+  						)
+  					)
+  				)
+  			)
+  			(pin passive line
+  				(at 0 -3.81 90)
+  				(length 2.54)
+  				(name "C"
+  					(effects
+  						(font
+  							(size 1.27 1.27)
+  						)
+  					)
+  				)
+  				(number "2"
+  					(effects
+  						(font
+  							(size 1.27 1.27)
+  						)
+  					)
+  				)
+  			)
+  			(pin passive line
+  				(at 5.08 0 180)
+  				(length 2.54)
+  				(name "B"
+  					(effects
+  						(font
+  							(size 1.27 1.27)
+  						)
+  					)
+  				)
+  				(number "3"
+  					(effects
+  						(font
+  							(size 1.27 1.27)
+  						)
+  					)
+  				)
+  			)
+  		)
+  		(embedded_fonts no)
+  	)
+  	(symbol "Connector_Generic:Conn_01x05"
+  		(pin_names
+  			(offset 1.016)
+  			(hide yes)
+  		)
+  		(exclude_from_sim no)
+  		(in_bom yes)
+  		(on_board yes)
+  		(in_pos_files yes)
+  		(duplicate_pin_numbers_are_jumpers no)
+  		(property "Reference" "J"
+  			(at 0 7.62 0)
+  			(show_name no)
+  			(do_not_autoplace no)
+  			(effects
+  				(font
+  					(size 1.27 1.27)
+  				)
+  			)
+  		)
+  		(property "Value" "Conn_01x05"
+  			(at 0 -7.62 0)
+  			(show_name no)
+  			(do_not_autoplace no)
+  			(effects
+  				(font
+  					(size 1.27 1.27)
+  				)
+  			)
+  		)
+  		(property "Footprint" ""
+  			(at 0 0 0)
+  			(show_name no)
+  			(do_not_autoplace no)
+  			(hide yes)
+  			(effects
+  				(font
+  					(size 1.27 1.27)
+  				)
+  			)
+  		)
+  		(property "Datasheet" ""
+  			(at 0 0 0)
+  			(show_name no)
+  			(do_not_autoplace no)
+  			(hide yes)
+  			(effects
+  				(font
+  					(size 1.27 1.27)
+  				)
+  			)
+  		)
+  		(property "Description" "Generic connector, single row, 01x05, script generated (kicad-library-utils/schlib/autogen/connector/)"
+  			(at 0 0 0)
+  			(show_name no)
+  			(do_not_autoplace no)
+  			(hide yes)
+  			(effects
+  				(font
+  					(size 1.27 1.27)
+  				)
+  			)
+  		)
+  		(property "ki_keywords" "connector"
+  			(at 0 0 0)
+  			(show_name no)
+  			(do_not_autoplace no)
+  			(hide yes)
+  			(effects
+  				(font
+  					(size 1.27 1.27)
+  				)
+  			)
+  		)
+  		(property "ki_fp_filters" "Connector*:*_1x??_*"
+  			(at 0 0 0)
+  			(show_name no)
+  			(do_not_autoplace no)
+  			(hide yes)
+  			(effects
+  				(font
+  					(size 1.27 1.27)
+  				)
+  			)
+  		)
+  		(symbol "Conn_01x05_1_1"
+  			(rectangle
+  				(start -1.27 6.35)
+  				(end 1.27 -6.35)
+  				(stroke
+  					(width 0.254)
+  					(type default)
+  				)
+  				(fill
+  					(type background)
+  				)
+  			)
+  			(rectangle
+  				(start -1.27 5.207)
+  				(end 0 4.953)
+  				(stroke
+  					(width 0.1524)
+  					(type default)
+  				)
+  				(fill
+  					(type none)
+  				)
+  			)
+  			(rectangle
+  				(start -1.27 2.667)
+  				(end 0 2.413)
+  				(stroke
+  					(width 0.1524)
+  					(type default)
+  				)
+  				(fill
+  					(type none)
+  				)
+  			)
+  			(rectangle
+  				(start -1.27 0.127)
+  				(end 0 -0.127)
+  				(stroke
+  					(width 0.1524)
+  					(type default)
+  				)
+  				(fill
+  					(type none)
+  				)
+  			)
+  			(rectangle
+  				(start -1.27 -2.413)
+  				(end 0 -2.667)
+  				(stroke
+  					(width 0.1524)
+  					(type default)
+  				)
+  				(fill
+  					(type none)
+  				)
+  			)
+  			(rectangle
+  				(start -1.27 -4.953)
+  				(end 0 -5.207)
+  				(stroke
+  					(width 0.1524)
+  					(type default)
+  				)
+  				(fill
+  					(type none)
+  				)
+  			)
+  			(pin passive line
+  				(at -5.08 5.08 0)
+  				(length 3.81)
+  				(name "Pin_1"
+  					(effects
+  						(font
+  							(size 1.27 1.27)
+  						)
+  					)
+  				)
+  				(number "1"
+  					(effects
+  						(font
+  							(size 1.27 1.27)
+  						)
+  					)
+  				)
+  			)
+  			(pin passive line
+  				(at -5.08 2.54 0)
+  				(length 3.81)
+  				(name "Pin_2"
+  					(effects
+  						(font
+  							(size 1.27 1.27)
+  						)
+  					)
+  				)
+  				(number "2"
+  					(effects
+  						(font
+  							(size 1.27 1.27)
+  						)
+  					)
+  				)
+  			)
+  			(pin passive line
+  				(at -5.08 0 0)
+  				(length 3.81)
+  				(name "Pin_3"
+  					(effects
+  						(font
+  							(size 1.27 1.27)
+  						)
+  					)
+  				)
+  				(number "3"
+  					(effects
+  						(font
+  							(size 1.27 1.27)
+  						)
+  					)
+  				)
+  			)
+  			(pin passive line
+  				(at -5.08 -2.54 0)
+  				(length 3.81)
+  				(name "Pin_4"
+  					(effects
+  						(font
+  							(size 1.27 1.27)
+  						)
+  					)
+  				)
+  				(number "4"
+  					(effects
+  						(font
+  							(size 1.27 1.27)
+  						)
+  					)
+  				)
+  			)
+  			(pin passive line
+  				(at -5.08 -5.08 0)
+  				(length 3.81)
+  				(name "Pin_5"
+  					(effects
+  						(font
+  							(size 1.27 1.27)
+  						)
+  					)
+  				)
+  				(number "5"
+  					(effects
+  						(font
+  							(size 1.27 1.27)
+  						)
+  					)
+  				)
+  			)
+  		)
+  		(embedded_fonts no)
+  	)
   	(symbol "Mechanical:Fiducial"
   		(exclude_from_sim no)
   		(in_bom no)
@@ -3283,835 +3790,875 @@
   )
   (global_label "D0" (shape bidirectional) (at 58.41 95.87 0) (fields_autoplaced)
     (effects (font (size 1.27 1.27)) (justify left))
-    (uuid 7c511279-1c44-487a-8907-c5a538170f5e)
+    (uuid 06e4c57d-7a33-48a2-ad40-a5592c8537ac)
   )
   (global_label "D7" (shape bidirectional) (at 58.41 118.73 0) (fields_autoplaced)
     (effects (font (size 1.27 1.27)) (justify left))
-    (uuid 993cd604-8d7e-41de-98ad-737ed6ba5641)
+    (uuid 5f739218-9ca4-4bff-be7e-f74ac9db9e5f)
   )
   (global_label "A0_BUF" (shape bidirectional) (at 58.41 121.27 0) (fields_autoplaced)
     (effects (font (size 1.27 1.27)) (justify left))
-    (uuid e9b4dbe8-a449-45bf-923b-90d64f499aba)
+    (uuid ebe14f23-75a5-4bf3-94a1-a7db95511d22)
   )
   (global_label "A1_BUF" (shape bidirectional) (at 58.41 123.81 0) (fields_autoplaced)
     (effects (font (size 1.27 1.27)) (justify left))
-    (uuid 50240e83-5a98-4ad4-b8cb-93e0e478860d)
+    (uuid c65e2368-5c79-4ab9-acfb-e74df904eb46)
   )
   (global_label "A2_BUF" (shape bidirectional) (at 58.41 128.89 0) (fields_autoplaced)
     (effects (font (size 1.27 1.27)) (justify left))
-    (uuid ea9fe4cc-ea7f-450d-a694-ad7c8b6fb4df)
+    (uuid ddd649f2-dc45-4afd-b054-c5a057b24846)
   )
   (global_label "A3_BUF" (shape bidirectional) (at 58.41 131.43 0) (fields_autoplaced)
     (effects (font (size 1.27 1.27)) (justify left))
-    (uuid 50dbadce-b22c-43e1-9d50-5f7193e478df)
+    (uuid 4de5a52d-77f1-46a1-a754-1dde09eda159)
   )
   (global_label "A4_BUF" (shape bidirectional) (at 58.41 133.97 0) (fields_autoplaced)
     (effects (font (size 1.27 1.27)) (justify left))
-    (uuid dcf5ffc8-a6d2-4d48-8025-07adf0b12456)
+    (uuid 90702d68-f77e-463e-966a-11119fb9c4da)
   )
   (global_label "A5_BUF" (shape bidirectional) (at 58.41 136.51 0) (fields_autoplaced)
     (effects (font (size 1.27 1.27)) (justify left))
-    (uuid b2890aa1-7f49-4b5c-87ba-20d04a6ecffc)
+    (uuid c4d8c14c-c7e6-4882-9e81-b46bdb537f88)
   )
   (global_label "A6_BUF" (shape bidirectional) (at 58.41 141.59 0) (fields_autoplaced)
     (effects (font (size 1.27 1.27)) (justify left))
-    (uuid 0da1e3d8-59ec-4402-8eda-aceeb071b1fb)
+    (uuid 41159982-9e8c-41de-af1a-32b6142d6685)
   )
   (global_label "D1" (shape bidirectional) (at 58.41 98.41 0) (fields_autoplaced)
     (effects (font (size 1.27 1.27)) (justify left))
-    (uuid 6974efe9-aa2e-4203-9cb3-142d76a663a8)
+    (uuid 4847b0e1-2e3a-4678-a7d1-d355e06b0091)
   )
   (global_label "A7_BUF" (shape bidirectional) (at 58.41 144.13 0) (fields_autoplaced)
     (effects (font (size 1.27 1.27)) (justify left))
-    (uuid 1c4fd8c2-dc27-4207-83c2-a179be89e9c6)
+    (uuid ab4aec01-43d4-4153-b229-bfa277ad2a1f)
   )
   (global_label "A8_BUF" (shape bidirectional) (at 101.59 144.13 180) (fields_autoplaced)
     (effects (font (size 1.27 1.27)) (justify right))
-    (uuid 32f60819-8038-434c-b830-c2bb93ddd163)
+    (uuid c2af5e70-703f-489b-a386-5d706a9e3377)
   )
   (global_label "A9_BUF" (shape bidirectional) (at 101.59 141.59 180) (fields_autoplaced)
     (effects (font (size 1.27 1.27)) (justify right))
-    (uuid 9f888e2b-6701-4e9d-ba6b-7d4837e55625)
+    (uuid 57101eb8-4482-4ca3-bf09-e53f275fc5c0)
   )
   (global_label "A10_BUF" (shape bidirectional) (at 101.59 136.51 180) (fields_autoplaced)
     (effects (font (size 1.27 1.27)) (justify right))
-    (uuid 0d48c62a-4a57-4730-bd5a-20d312104582)
+    (uuid fbd1b5ab-a80f-458c-b5ca-7f1209e28e65)
   )
   (global_label "A11_BUF" (shape bidirectional) (at 101.59 133.97 180) (fields_autoplaced)
     (effects (font (size 1.27 1.27)) (justify right))
-    (uuid 07091196-74e2-457a-afc3-863cb7911f25)
+    (uuid b5b9ef12-f489-408b-a3a1-076f29ccfeef)
   )
   (global_label "A12_BUF" (shape bidirectional) (at 101.59 131.43 180) (fields_autoplaced)
     (effects (font (size 1.27 1.27)) (justify right))
-    (uuid 513c03db-3cee-4c0f-9908-4f19ab8529c3)
+    (uuid 2b9d1731-3466-4058-8b7c-027a1941351a)
   )
   (global_label "A13_BUF" (shape bidirectional) (at 101.59 128.89 180) (fields_autoplaced)
     (effects (font (size 1.27 1.27)) (justify right))
-    (uuid 5ea38b20-1fea-4045-9394-4d0f7bd6fa25)
+    (uuid ca1725bc-2c40-49e2-ae6b-69ee6cbda897)
   )
   (global_label "RW_BUF" (shape bidirectional) (at 101.59 123.81 180) (fields_autoplaced)
     (effects (font (size 1.27 1.27)) (justify right))
-    (uuid 1f759349-5d23-4b47-8a4f-0c93734aabc7)
+    (uuid 4feba2fd-3a0b-4abf-acb5-66419206d8b7)
   )
   (global_label "PICO_RUN" (shape output) (at 101.59 121.27 180) (fields_autoplaced)
     (effects (font (size 1.27 1.27)) (justify right))
-    (uuid 0d32bf83-a252-46d8-a644-d6142df9c612)
+    (uuid ffd9c055-08b2-47cc-b4b4-72cc25d568d0)
   )
   (global_label "OE_BUS" (shape bidirectional) (at 101.59 118.73 180) (fields_autoplaced)
     (effects (font (size 1.27 1.27)) (justify right))
-    (uuid acbf7482-a31b-4f98-9661-9d1dd0834073)
+    (uuid 353373d3-e8e5-4027-9d29-24946fe19f84)
   )
   (global_label "HALT_GATE" (shape bidirectional) (at 101.59 116.19 180) (fields_autoplaced)
     (effects (font (size 1.27 1.27)) (justify right))
-    (uuid f598b379-5574-42cd-84c3-86afea73fe3c)
+    (uuid af16eb87-dbd5-4ff5-a93e-377173673259)
   )
   (global_label "PICO_P34" (shape bidirectional) (at 101.59 111.11 180) (fields_autoplaced)
     (effects (font (size 1.27 1.27)) (justify right))
-    (uuid ead22aa8-55da-4433-8f41-b79802f4794a)
+    (uuid d21cf1ca-9bdd-4f8e-a611-4d2db3fb9ee9)
   )
   (global_label "PICO_3V3_EN" (shape output) (at 101.59 103.49 180) (fields_autoplaced)
     (effects (font (size 1.27 1.27)) (justify right))
-    (uuid 6a6425ef-13a1-4ee6-a15a-669b658c9cc1)
+    (uuid 471293cb-cd5c-4331-abb7-ba7018e55455)
   )
   (global_label "VSYS_PICO" (shape bidirectional) (at 101.59 98.41 180) (fields_autoplaced)
     (effects (font (size 1.27 1.27)) (justify right))
-    (uuid 96b9280d-6aae-46b6-b2fa-052823b8a075)
+    (uuid 3df4014a-0602-4ef9-9274-9185e9033399)
   )
   (global_label "D2" (shape bidirectional) (at 58.41 103.49 0) (fields_autoplaced)
     (effects (font (size 1.27 1.27)) (justify left))
-    (uuid 1efd2cbf-f28e-4534-bc58-d0d5e200e3ef)
+    (uuid 3713927b-08cb-4b7a-adc3-c36f2fcd875f)
   )
   (global_label "D3" (shape bidirectional) (at 58.41 106.03 0) (fields_autoplaced)
     (effects (font (size 1.27 1.27)) (justify left))
-    (uuid db2ebd1b-1553-4162-be25-1452b18437b6)
+    (uuid ddcd1dc4-cb73-46e3-8418-58671eede282)
   )
   (global_label "D4" (shape bidirectional) (at 58.41 108.57 0) (fields_autoplaced)
     (effects (font (size 1.27 1.27)) (justify left))
-    (uuid c860e4e8-a71b-4455-b9c4-69c057902e05)
+    (uuid 547e69f7-489b-4f3c-acd2-97c5f0a1b9c0)
   )
   (global_label "D5" (shape bidirectional) (at 58.41 111.11 0) (fields_autoplaced)
     (effects (font (size 1.27 1.27)) (justify left))
-    (uuid 3cbf6558-6c10-4874-bf1e-98b1014ee77f)
+    (uuid 4fc38dce-4577-40b4-85ac-ae5935baa4cc)
   )
   (global_label "D6" (shape bidirectional) (at 58.41 116.19 0) (fields_autoplaced)
     (effects (font (size 1.27 1.27)) (justify left))
-    (uuid e8324729-5460-4dd0-8849-7c1f9e556518)
+    (uuid abf8bd62-b2d2-4321-8bee-7cdcd5dbf451)
   )
   (global_label "CTS_BUF" (shape bidirectional) (at 62.22 90.79 270) (fields_autoplaced)
     (effects (font (size 1.27 1.27)) (justify right))
-    (uuid 2c73a3c2-38b9-4b6a-bc1d-141363243be9)
+    (uuid be91878d-02dc-4019-8283-f5c4325ccd6e)
   )
   (global_label "SCS_BUF" (shape bidirectional) (at 64.76 90.79 270) (fields_autoplaced)
     (effects (font (size 1.27 1.27)) (justify right))
-    (uuid d291ca76-1f2d-4f57-831f-105667a6f037)
+    (uuid 9963c3b1-88d7-4927-b073-824bb0860468)
   )
   (global_label "E_BUF" (shape bidirectional) (at 67.30 90.79 270) (fields_autoplaced)
     (effects (font (size 1.27 1.27)) (justify right))
-    (uuid f1718d05-c357-4e39-8b6b-f1b1585540af)
+    (uuid 5b6a855d-f4fe-4479-bc24-8c16ef2bbb4a)
   )
   (global_label "Q_BUF" (shape bidirectional) (at 69.84 90.79 270) (fields_autoplaced)
     (effects (font (size 1.27 1.27)) (justify right))
-    (uuid 13f5d0d8-dd97-4a6f-a206-6e41da51129d)
+    (uuid 6b31b957-2f37-4f91-9896-1097c76dd020)
   )
   (global_label "SLENB_BUF" (shape bidirectional) (at 72.38 90.79 270) (fields_autoplaced)
     (effects (font (size 1.27 1.27)) (justify right))
-    (uuid 3aceaabe-1119-4a9b-b26f-a01f6a0844cd)
+    (uuid 0813ae8d-9a83-48ff-ac53-958eeeda4806)
   )
   (global_label "A14_BUF" (shape bidirectional) (at 74.92 90.79 270) (fields_autoplaced)
     (effects (font (size 1.27 1.27)) (justify right))
-    (uuid 5ae3a789-bc35-4a05-9aaa-b2b20873b580)
+    (uuid 35016578-7405-402c-b3e3-968eeac81acb)
   )
   (global_label "A15_BUF" (shape bidirectional) (at 77.46 90.79 270) (fields_autoplaced)
     (effects (font (size 1.27 1.27)) (justify right))
-    (uuid 26d5d446-a9eb-4caa-b520-5264b520f580)
+    (uuid 0cc9ee4c-2a14-4369-b846-b7b7ad41decd)
   )
   (global_label "OE_FW" (shape bidirectional) (at 80.00 90.79 270) (fields_autoplaced)
     (effects (font (size 1.27 1.27)) (justify right))
-    (uuid 12503b79-e9f3-4fc7-9014-69fa4df7794b)
+    (uuid f7c59ad3-cb2a-483e-8bf1-254e2fcf5e74)
   )
   (global_label "NMI_DRV" (shape bidirectional) (at 82.54 90.79 270) (fields_autoplaced)
     (effects (font (size 1.27 1.27)) (justify right))
-    (uuid 10509ac6-f073-4434-836b-d686b6cf61cc)
+    (uuid 81090cca-2fd2-4b70-9819-e0f16581d2ea)
   )
   (global_label "CART_DRV" (shape bidirectional) (at 85.08 90.79 270) (fields_autoplaced)
     (effects (font (size 1.27 1.27)) (justify right))
-    (uuid 7535b02b-251f-4bda-9279-450823e27935)
+    (uuid fded02cc-aca7-4767-b87b-afcfdb97e7dc)
   )
   (global_label "AUDIO_PWM" (shape bidirectional) (at 87.62 90.79 270) (fields_autoplaced)
     (effects (font (size 1.27 1.27)) (justify right))
-    (uuid 19144fd1-c860-4f41-964a-b1511bf975ff)
+    (uuid dcae0fa9-8264-4311-b971-69f4c408124f)
+  )
+  (global_label "EXP_GP35" (shape bidirectional) (at 90.16 90.79 270) (fields_autoplaced)
+    (effects (font (size 1.27 1.27)) (justify right))
+    (uuid a09c3b2b-58ca-4d4a-a8c7-b078ac168c1f)
+  )
+  (global_label "EXP_GP43" (shape bidirectional) (at 92.70 90.79 270) (fields_autoplaced)
+    (effects (font (size 1.27 1.27)) (justify right))
+    (uuid 475a192b-6c0b-4d2f-a2f5-0ad096a1497c)
+  )
+  (global_label "EXP_GP44" (shape bidirectional) (at 95.24 90.79 270) (fields_autoplaced)
+    (effects (font (size 1.27 1.27)) (justify right))
+    (uuid e763ffd8-c364-4b9b-8493-d605edd65c2d)
+  )
+  (global_label "EXP_GP45" (shape bidirectional) (at 97.78 90.79 270) (fields_autoplaced)
+    (effects (font (size 1.27 1.27)) (justify right))
+    (uuid 2a1c7e53-5a7b-4ee8-b451-88b5851fca9b)
   )
   (global_label "D0_CART" (shape bidirectional) (at 244.76 109.52 0) (fields_autoplaced)
     (effects (font (size 1.27 1.27)) (justify left))
-    (uuid 56a37ff5-2629-469c-bbaa-7194cd114661)
+    (uuid d9a80c34-bb5d-4071-85df-cd1156369683)
   )
   (global_label "D1_CART" (shape bidirectional) (at 244.76 112.06 0) (fields_autoplaced)
     (effects (font (size 1.27 1.27)) (justify left))
-    (uuid e283af16-d930-4aa1-8517-1a2c73b86d64)
+    (uuid 36e857ab-4812-4e02-892d-7df6286be88a)
   )
   (global_label "D2_CART" (shape bidirectional) (at 244.76 114.60 0) (fields_autoplaced)
     (effects (font (size 1.27 1.27)) (justify left))
-    (uuid 207c8acb-a9ce-44b4-9034-48ed4723030b)
+    (uuid c9e0f108-b5ad-423a-ad8b-2b0b75e66558)
   )
   (global_label "D3_CART" (shape bidirectional) (at 244.76 117.14 0) (fields_autoplaced)
     (effects (font (size 1.27 1.27)) (justify left))
-    (uuid 1d88196d-4e25-441c-b45c-fe0fcad3d22c)
+    (uuid 76f21042-a8f2-4d37-a2e9-978b9ed36823)
   )
   (global_label "D4_CART" (shape bidirectional) (at 244.76 119.68 0) (fields_autoplaced)
     (effects (font (size 1.27 1.27)) (justify left))
-    (uuid 850f05f0-b6c3-4c34-a681-0b8f4e194c92)
+    (uuid 8eaa3bbd-aee7-4bbe-bdb1-3bfdcb9abfec)
   )
   (global_label "D5_CART" (shape bidirectional) (at 244.76 122.22 0) (fields_autoplaced)
     (effects (font (size 1.27 1.27)) (justify left))
-    (uuid fb2f93f1-8c60-4a0a-8b68-9846d36a9d8d)
+    (uuid 84bbf988-e90f-474a-b4e1-b504faab9857)
   )
   (global_label "D6_CART" (shape bidirectional) (at 244.76 124.76 0) (fields_autoplaced)
     (effects (font (size 1.27 1.27)) (justify left))
-    (uuid f6a5abb7-6aa7-4f79-b816-b56705c58e80)
+    (uuid e44cb426-e7dd-4444-8309-7bbad93487cd)
   )
   (global_label "D7_CART" (shape bidirectional) (at 244.76 127.30 0) (fields_autoplaced)
     (effects (font (size 1.27 1.27)) (justify left))
-    (uuid 19eac4f0-dd6c-47f7-ae12-60c3a57fdd12)
+    (uuid 7f4c22f3-3672-417c-b6f8-f424f0a4f61b)
   )
   (global_label "RW_CART" (shape input) (at 275.24 160.32 180) (fields_autoplaced)
     (effects (font (size 1.27 1.27)) (justify right))
-    (uuid def3d4b3-6320-458e-8e3f-3a18a5ae9424)
+    (uuid 8b71dd1d-0101-49fa-bc1a-6c6acd8aa0cf)
   )
   (global_label "A0_CART" (shape input) (at 275.24 109.52 180) (fields_autoplaced)
     (effects (font (size 1.27 1.27)) (justify right))
-    (uuid 5dae1b81-fca1-4a13-8640-7943acbcda8b)
+    (uuid 09518c49-6d81-409a-b0be-49131638fbc9)
   )
   (global_label "A1_CART" (shape input) (at 275.24 112.06 180) (fields_autoplaced)
     (effects (font (size 1.27 1.27)) (justify right))
-    (uuid 3636e73c-8b07-4b6d-a5f9-f01a70da9f0b)
+    (uuid 8d8cc4b4-f642-4d1e-82a6-6b8fc5e8b963)
   )
   (global_label "A2_CART" (shape input) (at 275.24 114.60 180) (fields_autoplaced)
     (effects (font (size 1.27 1.27)) (justify right))
-    (uuid 0faf4e09-5454-4f43-ba3c-4b6c813432ad)
+    (uuid 43c12e36-f7a5-49b6-bb91-c758700aa562)
   )
   (global_label "A3_CART" (shape input) (at 275.24 117.14 180) (fields_autoplaced)
     (effects (font (size 1.27 1.27)) (justify right))
-    (uuid ddf07cbd-267b-46ca-bb4c-633b51126008)
+    (uuid b2038863-a3b5-4808-83e7-5eaf74eee072)
   )
   (global_label "A4_CART" (shape input) (at 275.24 119.68 180) (fields_autoplaced)
     (effects (font (size 1.27 1.27)) (justify right))
-    (uuid 4dde101c-f5e7-4b34-8ed9-cc23c22ff69c)
+    (uuid 90274025-3d07-42d4-8f13-071616a1958f)
   )
   (global_label "A5_CART" (shape input) (at 275.24 122.22 180) (fields_autoplaced)
     (effects (font (size 1.27 1.27)) (justify right))
-    (uuid b47a3e1f-b073-4075-a126-171b92c5c24f)
+    (uuid 11cc3378-5c1f-44ea-9851-d9bd89afa068)
   )
   (global_label "A6_CART" (shape input) (at 275.24 124.76 180) (fields_autoplaced)
     (effects (font (size 1.27 1.27)) (justify right))
-    (uuid 25323ece-8b24-4041-b98c-54d55777f88e)
+    (uuid 6b207a7f-32dd-4100-9b97-1f1a659b5a55)
   )
   (global_label "A7_CART" (shape input) (at 275.24 127.30 180) (fields_autoplaced)
     (effects (font (size 1.27 1.27)) (justify right))
-    (uuid ff9efefe-ec41-49c5-adc0-8237580ee4ac)
+    (uuid 80f22657-59ea-4484-a425-86e938ab0ecb)
   )
   (global_label "A8_CART" (shape input) (at 275.24 129.84 180) (fields_autoplaced)
     (effects (font (size 1.27 1.27)) (justify right))
-    (uuid 44017d2d-6b73-4b10-993c-e616c01c8562)
+    (uuid 5bdc51b2-8dea-46c7-afd4-844df5c28f2d)
   )
   (global_label "A9_CART" (shape input) (at 275.24 132.38 180) (fields_autoplaced)
     (effects (font (size 1.27 1.27)) (justify right))
-    (uuid 948f6978-90de-4845-8d67-d18fbc226323)
+    (uuid 013f7684-850f-4722-bdaf-9e5f96d01004)
   )
   (global_label "A10_CART" (shape input) (at 275.24 134.92 180) (fields_autoplaced)
     (effects (font (size 1.27 1.27)) (justify right))
-    (uuid 3ff95bce-f79a-4b65-9057-00173bb592de)
+    (uuid 9e3c70f6-c768-44d8-9f56-7aba8b44deb7)
   )
   (global_label "HALT_CART" (shape bidirectional) (at 244.76 150.16 0) (fields_autoplaced)
     (effects (font (size 1.27 1.27)) (justify left))
-    (uuid f5966863-599d-4f81-8375-fa631322aa9b)
+    (uuid 1a4644e6-a32c-46ec-bb43-b326af3eb477)
   )
   (global_label "A11_CART" (shape input) (at 275.24 137.46 180) (fields_autoplaced)
     (effects (font (size 1.27 1.27)) (justify right))
-    (uuid f5639378-8bff-4ce5-95c3-5892fcd270fb)
+    (uuid 03347b78-7709-4484-8c22-884ad081a1f2)
   )
   (global_label "A12_CART" (shape input) (at 275.24 140.00 180) (fields_autoplaced)
     (effects (font (size 1.27 1.27)) (justify right))
-    (uuid 439a0399-176d-4400-826f-64ecfbb96eec)
+    (uuid cc64135b-0c59-4af7-83ed-76491d8dcbb6)
   )
   (global_label "CTS_CART" (shape input) (at 275.24 152.70 180) (fields_autoplaced)
     (effects (font (size 1.27 1.27)) (justify right))
-    (uuid a5c49a8c-1145-4157-935a-c40ae0e911e6)
+    (uuid 322ba00f-ef32-493d-a03e-ca31d798eabe)
   )
   (global_label "SND_CART" (shape bidirectional) (at 244.76 160.32 0) (fields_autoplaced)
     (effects (font (size 1.27 1.27)) (justify left))
-    (uuid 9cca049b-1d08-4067-8586-408aef97e95c)
+    (uuid 6e0bdbee-f0e0-4c71-a4dd-7bb05ddf6412)
   )
   (global_label "SCS_CART" (shape input) (at 275.24 155.24 180) (fields_autoplaced)
     (effects (font (size 1.27 1.27)) (justify right))
-    (uuid 1e8fc0fb-9864-4918-81e0-a22db7d11d6b)
+    (uuid a6f360d3-ee1c-4c23-b35e-a8e092e12ecb)
   )
   (global_label "A13_CART" (shape input) (at 275.24 142.54 180) (fields_autoplaced)
     (effects (font (size 1.27 1.27)) (justify right))
-    (uuid c582872e-94db-4187-90f8-b2df816d45ef)
+    (uuid fa8f4e74-0090-4d74-b462-282635e0ae87)
   )
   (global_label "A14_CART" (shape input) (at 275.24 145.08 180) (fields_autoplaced)
     (effects (font (size 1.27 1.27)) (justify right))
-    (uuid 0e2d26f4-2dd0-4c6c-9941-4b994e6449c1)
+    (uuid d6c1ebe3-f9f8-4952-9bf6-c0f736ed9f6e)
   )
   (global_label "A15_CART" (shape input) (at 275.24 147.62 180) (fields_autoplaced)
     (effects (font (size 1.27 1.27)) (justify right))
-    (uuid 619665ee-69f5-424b-bc22-f4ea13173d83)
+    (uuid 0f972623-28cb-46d6-a1de-aae444592695)
   )
   (global_label "NMI_CART" (shape bidirectional) (at 244.76 145.08 0) (fields_autoplaced)
     (effects (font (size 1.27 1.27)) (justify left))
-    (uuid 440d0b20-70df-435d-8192-2593811f0e91)
+    (uuid cb662af6-7b07-4c39-9f6c-75c914267371)
   )
   (global_label "SLENB_CART" (shape output) (at 244.76 155.24 0) (fields_autoplaced)
     (effects (font (size 1.27 1.27)) (justify left))
-    (uuid 91a69c48-03ff-4890-a397-6da9ad9e318a)
+    (uuid b904bd12-c0e9-4729-9c9f-c2dbf4fe555e)
   )
   (global_label "RESET_CART" (shape bidirectional) (at 244.76 140.00 0) (fields_autoplaced)
     (effects (font (size 1.27 1.27)) (justify left))
-    (uuid 2cf0f189-6670-4b32-85fe-ca6cb14f6c62)
+    (uuid 4dd78687-a9b7-4e7c-8b2a-17f83e213289)
   )
   (global_label "E_CART" (shape input) (at 275.24 165.40 180) (fields_autoplaced)
     (effects (font (size 1.27 1.27)) (justify right))
-    (uuid c3c2fea5-faa4-406c-b4f6-a6812ba68f88)
+    (uuid 62655a89-637e-4dfe-8b81-0b3241af5caa)
   )
   (global_label "Q_CART" (shape input) (at 275.24 167.94 180) (fields_autoplaced)
     (effects (font (size 1.27 1.27)) (justify right))
-    (uuid 5f0326d1-1b6e-4499-a1eb-45b1588c847d)
+    (uuid 2305d0ae-dd03-4cb6-af38-216ab9806f9c)
   )
   (global_label "CART_CART" (shape output) (at 275.24 173.02 180) (fields_autoplaced)
     (effects (font (size 1.27 1.27)) (justify right))
-    (uuid 55796269-8718-4787-a4f2-aa304090c96d)
+    (uuid 4b607509-e211-414c-8bb1-df90063c75a7)
   )
   (global_label "RW_BUF" (shape output) (at 157.30 140.16 0) (fields_autoplaced)
     (effects (font (size 1.27 1.27)) (justify left))
-    (uuid f14103df-a804-491e-8ede-5bbe095ec2c8)
+    (uuid 243354d6-21df-43c0-9de2-0082c2521317)
   )
   (global_label "D0" (shape bidirectional) (at 157.30 117.30 0) (fields_autoplaced)
     (effects (font (size 1.27 1.27)) (justify left))
-    (uuid 6fffd4c3-b8d3-4c13-a223-093a2903dff8)
+    (uuid d9bea096-f814-4551-b824-d0a3a3a9f9f0)
   )
   (global_label "D1" (shape bidirectional) (at 157.30 119.84 0) (fields_autoplaced)
     (effects (font (size 1.27 1.27)) (justify left))
-    (uuid 5d3b8b69-a85f-4593-a425-5cbce84d51e1)
+    (uuid 6f5d025a-4ef3-4ee5-8127-f42bd789c221)
   )
   (global_label "D2" (shape bidirectional) (at 157.30 122.38 0) (fields_autoplaced)
     (effects (font (size 1.27 1.27)) (justify left))
-    (uuid f952dd41-792f-4f04-a182-386524abf441)
+    (uuid bf0702d1-f830-4cf6-8373-e750a951f70c)
   )
   (global_label "D3" (shape bidirectional) (at 157.30 124.92 0) (fields_autoplaced)
     (effects (font (size 1.27 1.27)) (justify left))
-    (uuid 2774c767-ff95-48aa-a25e-d868b5d828f7)
+    (uuid cd7d5377-8e48-438e-99fa-05edd2c458ed)
   )
   (global_label "D4" (shape bidirectional) (at 157.30 127.46 0) (fields_autoplaced)
     (effects (font (size 1.27 1.27)) (justify left))
-    (uuid 51a5937e-fa6b-48e1-8056-f94b5bc9c1df)
+    (uuid d0e0a365-7172-4e2f-b103-ebb06eb8bcef)
   )
   (global_label "D5" (shape bidirectional) (at 157.30 130.00 0) (fields_autoplaced)
     (effects (font (size 1.27 1.27)) (justify left))
-    (uuid 89b777a3-2ad4-42f1-89db-f84fbeafae77)
+    (uuid 31d8887f-ac62-4690-b3cc-ad8cf15fcb42)
   )
   (global_label "D6" (shape bidirectional) (at 157.30 132.54 0) (fields_autoplaced)
     (effects (font (size 1.27 1.27)) (justify left))
-    (uuid ed0fc64e-cf12-47d9-abde-740173d995fd)
+    (uuid 0e064a0f-93d8-4485-aa10-96107e382963)
   )
   (global_label "D7" (shape bidirectional) (at 157.30 135.08 0) (fields_autoplaced)
     (effects (font (size 1.27 1.27)) (justify left))
-    (uuid 60d330c8-786d-42d5-81d9-129ffd43241c)
+    (uuid 698b8d30-8589-4b51-84a1-cafdc55afd5b)
   )
   (global_label "D7_CART" (shape bidirectional) (at 182.70 135.08 180) (fields_autoplaced)
     (effects (font (size 1.27 1.27)) (justify right))
-    (uuid 30001e89-31a9-47db-9d58-bea207b30f25)
+    (uuid 773471b7-8ed6-4bda-962d-f7a12bbe1479)
   )
   (global_label "D6_CART" (shape bidirectional) (at 182.70 132.54 180) (fields_autoplaced)
     (effects (font (size 1.27 1.27)) (justify right))
-    (uuid d001786f-24fe-4d86-8ce0-74754210ea0e)
+    (uuid ece0e2e2-ed97-473b-b648-05e80bbcb9ed)
   )
   (global_label "D5_CART" (shape bidirectional) (at 182.70 130.00 180) (fields_autoplaced)
     (effects (font (size 1.27 1.27)) (justify right))
-    (uuid 17eb1d22-d167-4e09-b3a2-a6ae3825e2b8)
+    (uuid f823ac2b-1414-438a-8c5c-39e850078b42)
   )
   (global_label "D4_CART" (shape bidirectional) (at 182.70 127.46 180) (fields_autoplaced)
     (effects (font (size 1.27 1.27)) (justify right))
-    (uuid 7e9ba7a1-c892-4f41-87ed-7d9a3cb501fe)
+    (uuid e6ab5b19-b07e-438d-8b75-020b754db98b)
   )
   (global_label "D3_CART" (shape bidirectional) (at 182.70 124.92 180) (fields_autoplaced)
     (effects (font (size 1.27 1.27)) (justify right))
-    (uuid 31526b0d-88d9-41e0-a55a-39099d1e6932)
+    (uuid a318d140-b906-433e-9e31-9bd8972fc4fe)
   )
   (global_label "D2_CART" (shape bidirectional) (at 182.70 122.38 180) (fields_autoplaced)
     (effects (font (size 1.27 1.27)) (justify right))
-    (uuid b136aac3-5bd7-4d4a-aeec-3c0d2c783bbf)
+    (uuid c431eb23-5ef1-4f7a-84cf-b09f9c7133f4)
   )
   (global_label "D1_CART" (shape bidirectional) (at 182.70 119.84 180) (fields_autoplaced)
     (effects (font (size 1.27 1.27)) (justify right))
-    (uuid f096a2d5-4416-441a-933d-30ed28500128)
+    (uuid 4b7ec40c-3ec3-4dd3-bac1-88969468b2e5)
   )
   (global_label "D0_CART" (shape bidirectional) (at 182.70 117.30 180) (fields_autoplaced)
     (effects (font (size 1.27 1.27)) (justify right))
-    (uuid b7c77b69-1f3a-486e-a73a-097cd72224e0)
+    (uuid d58a607e-9d79-427b-8fd8-1da871c1844b)
   )
   (global_label "U10_OE" (shape output) (at 157.30 142.70 0) (fields_autoplaced)
     (effects (font (size 1.27 1.27)) (justify left))
-    (uuid e8619626-0843-479a-950c-86bd37be874f)
+    (uuid 7c83304b-6444-4768-ac78-7f3b226ee972)
   )
   (global_label "A0_CART" (shape bidirectional) (at 67.30 207.30 0) (fields_autoplaced)
     (effects (font (size 1.27 1.27)) (justify left))
-    (uuid ac15b95c-4f49-4a50-abbf-644b34ac7248)
+    (uuid 85546b55-d281-4519-a38f-a8749cfaab7c)
   )
   (global_label "A1_CART" (shape bidirectional) (at 67.30 209.84 0) (fields_autoplaced)
     (effects (font (size 1.27 1.27)) (justify left))
-    (uuid f0625f39-65c0-4511-abc6-675a3bb7286c)
+    (uuid 116c35f3-6709-4d85-b9ae-cba2299f56c3)
   )
   (global_label "A2_CART" (shape bidirectional) (at 67.30 212.38 0) (fields_autoplaced)
     (effects (font (size 1.27 1.27)) (justify left))
-    (uuid 8e9aa8aa-4b26-4027-8b1a-1a9f08843880)
+    (uuid 3be8be10-6c78-418b-8a17-3169226eaa9b)
   )
   (global_label "A3_CART" (shape bidirectional) (at 67.30 214.92 0) (fields_autoplaced)
     (effects (font (size 1.27 1.27)) (justify left))
-    (uuid e64ac866-7a59-4f9a-b935-4bf4ccb8f532)
+    (uuid ebdd78e0-091c-4969-886d-3bf59e7021bb)
   )
   (global_label "A4_CART" (shape bidirectional) (at 67.30 217.46 0) (fields_autoplaced)
     (effects (font (size 1.27 1.27)) (justify left))
-    (uuid d28a0532-f955-46b2-b931-f6e3e3515124)
+    (uuid a4237b82-78d7-4467-8b5b-ab0678096891)
   )
   (global_label "A5_CART" (shape bidirectional) (at 67.30 220.00 0) (fields_autoplaced)
     (effects (font (size 1.27 1.27)) (justify left))
-    (uuid 79c790c4-0c0b-410d-9ba4-4a292e569613)
+    (uuid cc1cc9ff-c781-429c-9750-c27b635c45db)
   )
   (global_label "A6_CART" (shape bidirectional) (at 67.30 222.54 0) (fields_autoplaced)
     (effects (font (size 1.27 1.27)) (justify left))
-    (uuid d399f967-a2dd-413a-9ea7-9ba5585df56f)
+    (uuid 36002972-9582-42d7-a68c-19ebd3c70210)
   )
   (global_label "A7_CART" (shape bidirectional) (at 67.30 225.08 0) (fields_autoplaced)
     (effects (font (size 1.27 1.27)) (justify left))
-    (uuid a837c348-1c78-4326-bc6b-6787beafd91e)
+    (uuid 2c9aaa5a-158d-45f3-9aa1-ff427ab6613a)
   )
   (global_label "A7_BUF" (shape bidirectional) (at 92.70 225.08 180) (fields_autoplaced)
     (effects (font (size 1.27 1.27)) (justify right))
-    (uuid 8ec3c589-e240-4e26-a202-52aa65012f11)
+    (uuid 513851b6-3ad0-4d38-b972-8dfb1b667d1d)
   )
   (global_label "A6_BUF" (shape bidirectional) (at 92.70 222.54 180) (fields_autoplaced)
     (effects (font (size 1.27 1.27)) (justify right))
-    (uuid 3fdac307-5a35-463f-8986-6cdd35e6c589)
+    (uuid 7a290a83-5d23-43d8-b08e-2425a66d6e21)
   )
   (global_label "A5_BUF" (shape bidirectional) (at 92.70 220.00 180) (fields_autoplaced)
     (effects (font (size 1.27 1.27)) (justify right))
-    (uuid ac9147e8-babc-4e80-bc4b-e02b21ff813d)
+    (uuid 8b695637-e82a-4e8b-a9b3-f10049fed684)
   )
   (global_label "A4_BUF" (shape bidirectional) (at 92.70 217.46 180) (fields_autoplaced)
     (effects (font (size 1.27 1.27)) (justify right))
-    (uuid d6556e68-7bf6-4acb-8c4e-d469260e3cb8)
+    (uuid a93f59fd-35a9-4167-a67d-763cb78b6cba)
   )
   (global_label "A3_BUF" (shape bidirectional) (at 92.70 214.92 180) (fields_autoplaced)
     (effects (font (size 1.27 1.27)) (justify right))
-    (uuid 43d63a41-f827-4e67-b31d-0d05b65c4635)
+    (uuid 0d3dcd3a-74ba-4933-ac3e-c1ee83f6e2fd)
   )
   (global_label "A2_BUF" (shape bidirectional) (at 92.70 212.38 180) (fields_autoplaced)
     (effects (font (size 1.27 1.27)) (justify right))
-    (uuid 388f0ce8-3a19-4d21-adaf-30b7c6d801f9)
+    (uuid 66a8c1b9-94a7-4af1-b594-ee3a95bc967b)
   )
   (global_label "A1_BUF" (shape bidirectional) (at 92.70 209.84 180) (fields_autoplaced)
     (effects (font (size 1.27 1.27)) (justify right))
-    (uuid 79827be0-b904-48bd-97d9-0b4384b0c7c0)
+    (uuid d51a7b78-e94c-4024-8dd8-e5647b63e973)
   )
   (global_label "A0_BUF" (shape bidirectional) (at 92.70 207.30 180) (fields_autoplaced)
     (effects (font (size 1.27 1.27)) (justify right))
-    (uuid 1573bd93-e0a7-4cca-9462-a9e71303dbf5)
+    (uuid 72066108-2e26-44e2-9234-ed3d195288d3)
   )
   (global_label "A8_CART" (shape bidirectional) (at 117.30 207.30 0) (fields_autoplaced)
     (effects (font (size 1.27 1.27)) (justify left))
-    (uuid 8448034d-bf51-4591-82c7-f0d198a0d864)
+    (uuid 8c1d4461-fca0-4cd8-b918-cc943d52c40b)
   )
   (global_label "A9_CART" (shape bidirectional) (at 117.30 209.84 0) (fields_autoplaced)
     (effects (font (size 1.27 1.27)) (justify left))
-    (uuid 69062181-7b54-4ec2-8669-dca414d59dfc)
+    (uuid f497c913-ae72-4578-97ca-cc23bf160ef7)
   )
   (global_label "A10_CART" (shape bidirectional) (at 117.30 212.38 0) (fields_autoplaced)
     (effects (font (size 1.27 1.27)) (justify left))
-    (uuid 9bcc43a0-c84c-4024-91c7-70c93eb5684b)
+    (uuid 524b2a10-bdcd-47c4-88c1-e76b0c008971)
   )
   (global_label "A11_CART" (shape bidirectional) (at 117.30 214.92 0) (fields_autoplaced)
     (effects (font (size 1.27 1.27)) (justify left))
-    (uuid 70624235-3182-4b7f-ab39-f083dd553c4a)
+    (uuid 20171aa8-d79e-49fa-a5b7-927321b289f5)
   )
   (global_label "A12_CART" (shape bidirectional) (at 117.30 217.46 0) (fields_autoplaced)
     (effects (font (size 1.27 1.27)) (justify left))
-    (uuid 0203d9c2-ae2f-4046-9b17-6f917082dc95)
+    (uuid 0862661f-05ee-405b-bdbd-2ceae4e459d9)
   )
   (global_label "A13_CART" (shape bidirectional) (at 117.30 220.00 0) (fields_autoplaced)
     (effects (font (size 1.27 1.27)) (justify left))
-    (uuid b4d5fe3f-4b5c-4dc2-b972-1016b908c609)
+    (uuid 4dc87e30-e9d0-4161-baa8-df6c32842fc9)
   )
   (global_label "RW_CART" (shape bidirectional) (at 117.30 222.54 0) (fields_autoplaced)
     (effects (font (size 1.27 1.27)) (justify left))
-    (uuid bff1cd01-a1f0-4d77-b046-be0992cc50f8)
+    (uuid e9614661-77a8-4930-a940-78c0124432eb)
   )
   (global_label "CTS_CART" (shape bidirectional) (at 117.30 225.08 0) (fields_autoplaced)
     (effects (font (size 1.27 1.27)) (justify left))
-    (uuid ae801450-6065-44a0-8c7e-6525c7600828)
+    (uuid 2e640258-77e8-44d1-ab47-37ba2bb7f341)
   )
   (global_label "CTS_BUF" (shape bidirectional) (at 142.70 225.08 180) (fields_autoplaced)
     (effects (font (size 1.27 1.27)) (justify right))
-    (uuid b7db7c6d-407f-4075-83d5-3ba3079a6e3e)
+    (uuid 65ac037d-fb0d-4991-acf8-aa0073883df2)
   )
   (global_label "RW_BUF_RAW" (shape bidirectional) (at 142.70 222.54 180) (fields_autoplaced)
     (effects (font (size 1.27 1.27)) (justify right))
-    (uuid febd06ea-0cda-45dc-9d36-826817c79bac)
+    (uuid ccabc11b-1972-460a-9124-a84924dd3b6d)
   )
   (global_label "A13_BUF" (shape bidirectional) (at 142.70 220.00 180) (fields_autoplaced)
     (effects (font (size 1.27 1.27)) (justify right))
-    (uuid 3c1bad64-2b25-4049-bd16-4bb7253a0a8f)
+    (uuid d3cc0a9e-b843-4f71-a12b-c320ea59c38e)
   )
   (global_label "A12_BUF" (shape bidirectional) (at 142.70 217.46 180) (fields_autoplaced)
     (effects (font (size 1.27 1.27)) (justify right))
-    (uuid c78cb773-81f0-40af-8f63-5c23314bbd0a)
+    (uuid 0f0506e2-5717-4274-bc03-eff0940a0fd0)
   )
   (global_label "A11_BUF" (shape bidirectional) (at 142.70 214.92 180) (fields_autoplaced)
     (effects (font (size 1.27 1.27)) (justify right))
-    (uuid d77a3000-dd3f-42f4-ad73-5aaf99c630c5)
+    (uuid df936746-9905-4dbb-9da7-7266abbd8693)
   )
   (global_label "A10_BUF" (shape bidirectional) (at 142.70 212.38 180) (fields_autoplaced)
     (effects (font (size 1.27 1.27)) (justify right))
-    (uuid 1ca0c696-f305-41bd-99fe-831eab7c6a75)
+    (uuid 151b0446-25fb-4c26-a0c5-d7d459e31323)
   )
   (global_label "A9_BUF" (shape bidirectional) (at 142.70 209.84 180) (fields_autoplaced)
     (effects (font (size 1.27 1.27)) (justify right))
-    (uuid 48443484-f2be-474e-9435-ed82fcd14422)
+    (uuid 8ea1241f-cab1-41a8-adc7-9fb30c69d899)
   )
   (global_label "A8_BUF" (shape bidirectional) (at 142.70 207.30 180) (fields_autoplaced)
     (effects (font (size 1.27 1.27)) (justify right))
-    (uuid 0287c781-b033-48ff-82e3-33d612bafadf)
+    (uuid 5a324840-13c8-4cf4-9642-b25f2eda25b6)
   )
   (global_label "SCS_CART" (shape bidirectional) (at 167.30 207.30 0) (fields_autoplaced)
     (effects (font (size 1.27 1.27)) (justify left))
-    (uuid 44008ec1-0f7e-417c-9c92-b8a08e77334e)
+    (uuid cf587eb9-1058-485c-b3de-5cd7cc4fc00c)
   )
   (global_label "E_CART" (shape bidirectional) (at 167.30 209.84 0) (fields_autoplaced)
     (effects (font (size 1.27 1.27)) (justify left))
-    (uuid 8b4d80dc-3034-4fd1-8972-4b7dd5f0f06c)
+    (uuid 3d2656fb-0326-47fc-aa82-94db6d90ae65)
   )
   (global_label "Q_CART" (shape bidirectional) (at 167.30 212.38 0) (fields_autoplaced)
     (effects (font (size 1.27 1.27)) (justify left))
-    (uuid 844e326f-fb5f-4ec4-8378-5764539b47e1)
+    (uuid a14948d7-3902-4ce0-89d5-2548a1a19714)
   )
   (global_label "SLENB_CART" (shape bidirectional) (at 167.30 214.92 0) (fields_autoplaced)
     (effects (font (size 1.27 1.27)) (justify left))
-    (uuid 0b72a911-9113-4638-a65c-112549c06624)
+    (uuid 4840365b-b953-4ca8-aa75-824c48e75027)
   )
   (global_label "RESET_CART" (shape bidirectional) (at 167.30 217.46 0) (fields_autoplaced)
     (effects (font (size 1.27 1.27)) (justify left))
-    (uuid aa612077-7d44-485b-a3f2-24ec24e6050c)
+    (uuid 6a99fc06-8fcd-4a92-beef-ee1f44d8db6c)
   )
   (global_label "A14_CART" (shape bidirectional) (at 167.30 220.00 0) (fields_autoplaced)
     (effects (font (size 1.27 1.27)) (justify left))
-    (uuid 76bbd27a-6260-4582-8e54-37e2744b511d)
+    (uuid 4f80c701-91f9-4b57-8e02-1bf82dcfb2f3)
   )
   (global_label "A15_CART" (shape bidirectional) (at 167.30 222.54 0) (fields_autoplaced)
     (effects (font (size 1.27 1.27)) (justify left))
-    (uuid 2c0eb83c-c26c-4ba3-8ae3-3daf305c303d)
+    (uuid 7c6cf52f-f27d-4144-923c-64a7d612ebd3)
   )
   (global_label "A15_BUF" (shape bidirectional) (at 192.70 222.54 180) (fields_autoplaced)
     (effects (font (size 1.27 1.27)) (justify right))
-    (uuid b9158115-61ff-4b01-a12b-cf79f09abb9e)
+    (uuid 1e20a936-1ef9-4e4b-9846-3ced0dea4c95)
   )
   (global_label "A14_BUF" (shape bidirectional) (at 192.70 220.00 180) (fields_autoplaced)
     (effects (font (size 1.27 1.27)) (justify right))
-    (uuid ec7b48c0-0f1c-4862-a82e-c02646b813ca)
+    (uuid 075bae3d-a567-4387-872c-e06dc130e7ba)
   )
   (global_label "RESET_BUF" (shape bidirectional) (at 192.70 217.46 180) (fields_autoplaced)
     (effects (font (size 1.27 1.27)) (justify right))
-    (uuid 79cd8a47-cd59-4f80-a750-553161d44b33)
+    (uuid f4a41a4f-3d25-410f-a9e9-a79f4aebbcc8)
   )
   (global_label "SLENB_BUF" (shape bidirectional) (at 192.70 214.92 180) (fields_autoplaced)
     (effects (font (size 1.27 1.27)) (justify right))
-    (uuid 42a96103-d0d7-4c9d-9231-4f16ce8936e6)
+    (uuid 8239b8cd-b5d7-4863-9584-c5e70898a387)
   )
   (global_label "Q_BUF" (shape bidirectional) (at 192.70 212.38 180) (fields_autoplaced)
     (effects (font (size 1.27 1.27)) (justify right))
-    (uuid 04c69bf0-3e0b-4df0-8dd1-ab2a661f90c0)
+    (uuid f9a014d4-e25d-4e3e-b02a-fe7d4328bda2)
   )
   (global_label "E_BUF" (shape bidirectional) (at 192.70 209.84 180) (fields_autoplaced)
     (effects (font (size 1.27 1.27)) (justify right))
-    (uuid d8852e78-83b5-4ae8-9fbf-9fd54461d8f0)
+    (uuid a93ea267-1581-41f1-8a8a-7903cb07b67a)
   )
   (global_label "SCS_BUF" (shape bidirectional) (at 192.70 207.30 180) (fields_autoplaced)
     (effects (font (size 1.27 1.27)) (justify right))
-    (uuid 1b3865aa-d34f-48b6-ab00-c3815702ab96)
+    (uuid 70fe17c0-abdd-4947-9938-a4e3bf97639b)
   )
   (global_label "CTS_BUF" (shape output) (at 207.30 72.38 0) (fields_autoplaced)
     (effects (font (size 1.27 1.27)) (justify left))
-    (uuid 71529e54-41aa-4703-a685-e1bbb006b10e)
+    (uuid 516991a8-2a75-42fc-a545-b8a6413cffb3)
   )
   (global_label "SCS_BUF" (shape output) (at 207.30 74.92 0) (fields_autoplaced)
     (effects (font (size 1.27 1.27)) (justify left))
-    (uuid b3526169-62f6-4f00-be6a-a766bf8b710d)
+    (uuid 3c5b343b-94fe-415a-a5c5-d6909b1edc35)
   )
   (global_label "SEL_N" (shape output) (at 207.30 77.46 0) (fields_autoplaced)
     (effects (font (size 1.27 1.27)) (justify left))
-    (uuid fcee0e3a-d556-4b89-b1ab-73a6b4ebab38)
+    (uuid 887cade3-7847-4677-81a2-11242328c280)
   )
   (global_label "E_BUF" (shape output) (at 207.30 80.00 0) (fields_autoplaced)
     (effects (font (size 1.27 1.27)) (justify left))
-    (uuid e3321ff9-71db-46cf-96b2-8feb57ca67d1)
+    (uuid ea55f1ae-682b-4004-902d-f4e66e70d41c)
   )
   (global_label "SEL_N" (shape input) (at 232.70 73.65 180) (fields_autoplaced)
     (effects (font (size 1.27 1.27)) (justify right))
-    (uuid 088c868c-37da-44e1-b33b-a2a5dcf106ea)
+    (uuid 41f64b5e-6517-4ba4-b35e-991c61683261)
   )
   (global_label "OE_BUS_RAW" (shape input) (at 232.70 78.73 180) (fields_autoplaced)
     (effects (font (size 1.27 1.27)) (justify right))
-    (uuid 579bd441-4098-4602-a8ca-84f934121dea)
+    (uuid 8591d821-49aa-42fe-9fa4-3dc81fa69c4b)
   )
   (global_label "OE_BUS" (shape bidirectional) (at 194.92 100.00 0) (fields_autoplaced)
     (effects (font (size 1.27 1.27)) (justify left))
-    (uuid 7da02a86-ef01-44c2-bc38-afe96bd96895)
+    (uuid d976e323-0d20-402b-97b6-5a8b1bfea6e8)
   )
   (global_label "U10_OE" (shape bidirectional) (at 200.00 103.81 90) (fields_autoplaced)
     (effects (font (size 1.27 1.27)) (justify left))
-    (uuid 911706b0-5262-43be-99d0-c2bef3531539)
+    (uuid b1c4570c-2a54-4048-8446-75d9e46b8d22)
   )
   (global_label "OE_FW" (shape bidirectional) (at 205.08 100.00 180) (fields_autoplaced)
     (effects (font (size 1.27 1.27)) (justify right))
-    (uuid dff0dba9-06bf-435c-a4fe-2c3101bb17f0)
+    (uuid 7b604947-57cb-44a2-9caa-cd6482792315)
   )
   (global_label "AUDIO_PWM" (shape bidirectional) (at 94.92 60.00 0) (fields_autoplaced)
     (effects (font (size 1.27 1.27)) (justify left))
-    (uuid 015ea9ae-3ea9-4775-bad5-1a9b7d91e38f)
+    (uuid 9b1e5d57-6df2-4abd-8235-67c4bad6f8c1)
   )
   (global_label "PICO_P34" (shape bidirectional) (at 100.00 63.81 90) (fields_autoplaced)
     (effects (font (size 1.27 1.27)) (justify left))
-    (uuid 2a7aa38d-7103-4fc2-91fe-b737080b39ff)
+    (uuid a84dddfb-0157-43f5-b1a5-81db9e077d8d)
   )
   (global_label "E_BUF" (shape bidirectional) (at 105.08 60.00 180) (fields_autoplaced)
     (effects (font (size 1.27 1.27)) (justify right))
-    (uuid 7da187e5-2c48-4cec-b6bd-6a05b95a5115)
+    (uuid ef87cd2f-52a1-4df2-9727-9d1cc20dafa6)
   )
   (global_label "Q_CART" (shape bidirectional) (at 94.92 80.00 0) (fields_autoplaced)
     (effects (font (size 1.27 1.27)) (justify left))
-    (uuid 731530e8-bf95-435c-8af5-b6be1f09420c)
+    (uuid 8798661c-7013-4524-96b0-a7e09fb522b0)
   )
   (global_label "CART_CART" (shape bidirectional) (at 105.08 80.00 180) (fields_autoplaced)
     (effects (font (size 1.27 1.27)) (justify right))
-    (uuid 4a9ea83b-8f4f-45b4-a96c-4da42351b506)
+    (uuid 1bd6659e-9fc6-4574-8652-75d46bc7b34a)
   )
   (global_label "HALT_CART" (shape bidirectional) (at 30.00 283.81 90) (fields_autoplaced)
     (effects (font (size 1.27 1.27)) (justify left))
-    (uuid 91e79a08-6745-4b3f-b68a-00bf5dfaae12)
+    (uuid a6951191-0439-4754-a541-14396a2e5f6d)
   )
   (global_label "NMI_CART" (shape bidirectional) (at 40.00 283.81 90) (fields_autoplaced)
     (effects (font (size 1.27 1.27)) (justify left))
-    (uuid 07c014ff-90d8-49c4-a1ba-57181a5827fe)
+    (uuid 688d8ffc-2fef-4b23-97a4-95772b193952)
   )
   (global_label "RESET_CART" (shape bidirectional) (at 50.00 283.81 90) (fields_autoplaced)
     (effects (font (size 1.27 1.27)) (justify left))
-    (uuid ca97fbd3-b78a-4db8-aad9-fd2bdacdc884)
+    (uuid 638a4769-10aa-4214-b28e-8abc9ab8f3d4)
   )
   (global_label "GATE_Q2" (shape bidirectional) (at 40.00 163.81 90) (fields_autoplaced)
     (effects (font (size 1.27 1.27)) (justify left))
-    (uuid 9c7a667f-a182-4f3e-9f40-edd08034e883)
+    (uuid 11b7b7ac-fac9-4531-bfc9-d8c569790d67)
   )
   (global_label "HALT_GATE" (shape bidirectional) (at 50.00 156.19 270) (fields_autoplaced)
     (effects (font (size 1.27 1.27)) (justify right))
-    (uuid 76381842-6b60-47a2-bd69-b9027ad2e83f)
+    (uuid bc5160d3-de93-48a3-a9bf-46ed110ca72a)
   )
   (global_label "GATE_Q2" (shape bidirectional) (at 50.00 163.81 90) (fields_autoplaced)
     (effects (font (size 1.27 1.27)) (justify left))
-    (uuid 7ca1ece0-777d-413e-be94-676457c22043)
+    (uuid 9f34a469-f093-4613-b320-b112b6053a01)
   )
   (global_label "GATE_Q2" (shape output) (at 54.92 170.00 0) (fields_autoplaced)
     (effects (font (size 1.27 1.27)) (justify left))
-    (uuid ee02a55c-1676-4ba0-a43e-dc98d5a98c9d)
+    (uuid a6367ea2-e80b-42d5-a548-9d07e602e29f)
   )
   (global_label "HALT_CART" (shape bidirectional) (at 62.54 164.92 270) (fields_autoplaced)
     (effects (font (size 1.27 1.27)) (justify right))
-    (uuid ba86eee2-3817-4370-afcf-0aa28e98986c)
+    (uuid 44fa8288-1cfa-42ae-adb5-ba42f5efbf5d)
+  )
+  (global_label "CART_DRV" (shape bidirectional) (at 244.92 40.00 0) (fields_autoplaced)
+    (effects (font (size 1.27 1.27)) (justify left))
+    (uuid ff325261-ab11-44a1-9cc1-d81a248d8cc3)
+  )
+  (global_label "PICO_P34" (shape bidirectional) (at 250.00 43.81 90) (fields_autoplaced)
+    (effects (font (size 1.27 1.27)) (justify left))
+    (uuid 4c622cf1-b8f5-484a-a6c9-2592b36d32c3)
+  )
+  (global_label "NMI_DRV" (shape bidirectional) (at 255.08 40.00 180) (fields_autoplaced)
+    (effects (font (size 1.27 1.27)) (justify right))
+    (uuid f954139c-71a1-4f5f-bc44-825ee70dc2ca)
   )
   (global_label "NMI_DRV" (shape bidirectional) (at 40.00 186.19 270) (fields_autoplaced)
     (effects (font (size 1.27 1.27)) (justify right))
-    (uuid f6c9a5a3-bc40-4c61-ac3c-ce2d8af06669)
+    (uuid 3d6c1204-afa1-4dd3-96d5-c53c5aceba34)
   )
   (global_label "GATE_Q3" (shape bidirectional) (at 40.00 193.81 90) (fields_autoplaced)
     (effects (font (size 1.27 1.27)) (justify left))
-    (uuid 533f7767-2c1c-4b36-9625-f5ab224bc84f)
+    (uuid 591fa0d1-7395-41ee-ab77-98f492571e9a)
   )
   (global_label "GATE_Q3" (shape bidirectional) (at 50.00 186.19 270) (fields_autoplaced)
     (effects (font (size 1.27 1.27)) (justify right))
-    (uuid 0cd3c151-5ccc-4442-ac54-18643cdab1dd)
+    (uuid a21c77eb-1d40-4cbc-9e9c-be5e5598e1c3)
   )
   (global_label "GATE_Q3" (shape output) (at 54.92 200.00 0) (fields_autoplaced)
     (effects (font (size 1.27 1.27)) (justify left))
-    (uuid 5a36c829-547f-4da5-a35f-48f03d28053c)
+    (uuid fe2afc9f-a335-4973-b168-fb50dfa3fec0)
   )
   (global_label "NMI_CART" (shape bidirectional) (at 62.54 194.92 270) (fields_autoplaced)
     (effects (font (size 1.27 1.27)) (justify right))
-    (uuid 959e917f-a852-40d1-bf2e-a2d687ecee65)
+    (uuid 23c77331-1052-4abc-bab7-e032b808258c)
   )
   (global_label "CART_DRV" (shape bidirectional) (at 70.00 186.19 270) (fields_autoplaced)
     (effects (font (size 1.27 1.27)) (justify right))
-    (uuid eb58825f-7492-4ba2-9b0c-296829986dcc)
+    (uuid 842ae095-b4cf-4374-9e61-d206b0983816)
   )
   (global_label "GATE_Q4" (shape bidirectional) (at 70.00 193.81 90) (fields_autoplaced)
     (effects (font (size 1.27 1.27)) (justify left))
-    (uuid 8a0a5b1b-2103-402b-b8f5-202e55779f4c)
+    (uuid d4cc0f60-6b7d-44cc-88c0-c8dd5698e2d3)
   )
   (global_label "GATE_Q4" (shape bidirectional) (at 80.00 186.19 270) (fields_autoplaced)
     (effects (font (size 1.27 1.27)) (justify right))
-    (uuid 24ad7e9b-feec-41d7-ad6a-90c753452005)
+    (uuid ecb3a83e-c017-463e-97ea-c55e2680f696)
   )
   (global_label "GATE_Q4" (shape output) (at 84.92 200.00 0) (fields_autoplaced)
     (effects (font (size 1.27 1.27)) (justify left))
-    (uuid 135f137b-980a-48a8-b340-9767c1bf637c)
+    (uuid 234eef8d-1aee-4c66-b74c-1b4ed15da303)
   )
   (global_label "CART_CART" (shape bidirectional) (at 92.54 194.92 270) (fields_autoplaced)
     (effects (font (size 1.27 1.27)) (justify right))
-    (uuid 253c8ef5-7685-47d8-8558-491122908c8c)
+    (uuid e7983701-256a-4e43-bba5-2ee4b3c2d157)
   )
   (global_label "VSYS_PICO" (shape bidirectional) (at 80.00 276.19 270) (fields_autoplaced)
     (effects (font (size 1.27 1.27)) (justify right))
-    (uuid c244493c-bad7-4cf4-97c9-a7e625d0a2ae)
+    (uuid f0c23a66-db13-44c4-8a44-c70f2cb3601c)
   )
   (global_label "PICO_3V3_EN" (shape bidirectional) (at 80.00 283.81 90) (fields_autoplaced)
     (effects (font (size 1.27 1.27)) (justify left))
-    (uuid 95bddb02-b846-4fa1-a5cc-81395fba4b59)
+    (uuid 51d0c75a-68a6-4245-8761-167b61c32445)
   )
   (global_label "RESET_BUF" (shape bidirectional) (at 200.00 256.19 270) (fields_autoplaced)
     (effects (font (size 1.27 1.27)) (justify right))
-    (uuid 245118c5-2ab9-4224-ada4-c4d66a0a9bd5)
+    (uuid c334b39a-0a28-428c-b17f-6f831d91a640)
   )
   (global_label "PICO_RUN" (shape bidirectional) (at 200.00 263.81 90) (fields_autoplaced)
     (effects (font (size 1.27 1.27)) (justify left))
-    (uuid 7c37235c-e4ab-42b0-bc68-b464e1790ad4)
+    (uuid 2435da84-1ce5-4d94-a4c0-6832ec20e7c6)
   )
   (global_label "PICO_RUN" (shape bidirectional) (at 210.00 263.81 90) (fields_autoplaced)
     (effects (font (size 1.27 1.27)) (justify left))
-    (uuid 77d08769-7624-4172-ae9e-c7a043fa691e)
+    (uuid 35e95488-7386-449e-acd7-7603428fe2f6)
   )
   (global_label "SLENB_CART" (shape bidirectional) (at 220.00 263.81 90) (fields_autoplaced)
     (effects (font (size 1.27 1.27)) (justify left))
-    (uuid 13daa9e7-2532-4cf3-a532-492944eae7cf)
+    (uuid 915b7137-de08-418e-978b-bfd37b6ef688)
   )
   (global_label "U10_OE" (shape bidirectional) (at 230.00 263.81 90) (fields_autoplaced)
     (effects (font (size 1.27 1.27)) (justify left))
-    (uuid 7da69ca7-edf9-4516-b48e-9971a0881153)
+    (uuid aec9588a-4dd3-4f2a-9f2d-e6942033d2e9)
   )
   (global_label "OE_BUS_RAW" (shape bidirectional) (at 210.00 86.19 270) (fields_autoplaced)
     (effects (font (size 1.27 1.27)) (justify right))
-    (uuid 446547f4-c635-4c63-b0ac-18c82e79be0d)
+    (uuid 5514379d-449c-4598-b354-38c149571109)
   )
   (global_label "OE_BUS" (shape bidirectional) (at 210.00 93.81 90) (fields_autoplaced)
     (effects (font (size 1.27 1.27)) (justify left))
-    (uuid 40a2dbf5-f096-4330-90d1-de2a9ddfb5e2)
+    (uuid 9950efad-2105-4be8-a6e5-4365c1e168db)
   )
   (global_label "RW_BUF_RAW" (shape bidirectional) (at 140.00 226.19 270) (fields_autoplaced)
     (effects (font (size 1.27 1.27)) (justify right))
-    (uuid 216ad49d-d1e5-4c88-a766-744bd2551739)
+    (uuid 18cd60b8-76e6-47b8-938b-f4560c2b4ed3)
   )
   (global_label "RW_BUF" (shape bidirectional) (at 140.00 233.81 90) (fields_autoplaced)
     (effects (font (size 1.27 1.27)) (justify left))
-    (uuid 79f19328-cd5f-434d-9927-dc954bd09a82)
+    (uuid 2c1d1330-2097-4848-a186-70a7198c6530)
   )
   (global_label "AUDIO_PWM" (shape bidirectional) (at 120.00 296.19 270) (fields_autoplaced)
     (effects (font (size 1.27 1.27)) (justify right))
-    (uuid a0cbad6a-32ef-49b3-b5f3-a674dd43e71f)
+    (uuid 7d71be9c-65a3-4bb6-a27d-09ec44f213ee)
   )
   (global_label "AUDIO_F1" (shape bidirectional) (at 120.00 303.81 90) (fields_autoplaced)
     (effects (font (size 1.27 1.27)) (justify left))
-    (uuid cf4541bb-be3c-435b-9593-bb3ead1958ea)
+    (uuid 6f2c3e37-aca3-4074-aa47-2c968ce9e39b)
   )
   (global_label "AUDIO_F1" (shape bidirectional) (at 125.00 306.19 270) (fields_autoplaced)
     (effects (font (size 1.27 1.27)) (justify right))
-    (uuid e63479d5-2107-4833-8842-28525f093a32)
+    (uuid dc31a6d6-ead7-4334-9c29-0335bc9fbd88)
   )
   (global_label "AUDIO_F1" (shape bidirectional) (at 130.00 296.19 270) (fields_autoplaced)
     (effects (font (size 1.27 1.27)) (justify right))
-    (uuid c66090d0-b319-47bb-874c-f3e42e4ad15f)
+    (uuid eb6b2a9b-d228-4e12-a272-bb0e299facb3)
   )
   (global_label "AUDIO_F2" (shape bidirectional) (at 130.00 303.81 90) (fields_autoplaced)
     (effects (font (size 1.27 1.27)) (justify left))
-    (uuid eec6d333-3cd8-4771-b666-d25987bff6e5)
+    (uuid 37f73c5b-ea90-47df-bb08-414184953a37)
   )
   (global_label "AUDIO_F2" (shape bidirectional) (at 135.00 306.19 270) (fields_autoplaced)
     (effects (font (size 1.27 1.27)) (justify right))
-    (uuid 244ce495-a7fa-41f2-935b-245e52cf370f)
+    (uuid 1942a24c-3c7d-4522-8d24-8930685c6ca9)
   )
   (global_label "AUDIO_AC" (shape bidirectional) (at 140.00 296.19 270) (fields_autoplaced)
     (effects (font (size 1.27 1.27)) (justify right))
-    (uuid 24ecbc4c-c5cf-420d-a59c-566f4cacc153)
+    (uuid 501d5fc0-8965-4e3e-84ad-237b41e3ec13)
   )
   (global_label "SND_CART" (shape bidirectional) (at 140.00 303.81 90) (fields_autoplaced)
     (effects (font (size 1.27 1.27)) (justify left))
-    (uuid 0b45b7b2-13fd-4e07-a7db-e47bf9d3be7b)
+    (uuid 1a07f2a5-f8c1-47ed-bcd9-0d9e6f24d02b)
   )
   (global_label "SND_CART" (shape bidirectional) (at 150.00 306.19 270) (fields_autoplaced)
     (effects (font (size 1.27 1.27)) (justify right))
-    (uuid e790dc4c-40af-40cb-9e97-2e154f6e5b96)
+    (uuid a2d60144-3308-4396-a4d3-94ca0261bc92)
   )
   (global_label "AUDIO_F2" (shape bidirectional) (at 145.00 286.19 270) (fields_autoplaced)
     (effects (font (size 1.27 1.27)) (justify right))
-    (uuid 3c1569df-e253-4183-9974-a3ad40afd876)
+    (uuid a2834bef-6b64-4d8b-a4f7-814369637ad2)
   )
   (global_label "AUDIO_AC" (shape bidirectional) (at 145.00 293.81 90) (fields_autoplaced)
     (effects (font (size 1.27 1.27)) (justify left))
-    (uuid 4f0f8b5d-2e2b-420d-bcaf-5d10196fcd39)
+    (uuid f884a5d0-9579-4f16-a8ba-db2e973effa5)
   )
   (global_label "AUDIO_F2" (shape bidirectional) (at 145.00 296.19 270) (fields_autoplaced)
     (effects (font (size 1.27 1.27)) (justify right))
-    (uuid fd3b3540-f23b-4621-a3fa-72a8f38c9a67)
+    (uuid 946be220-ed55-41f4-80ab-231b6812e441)
   )
   (global_label "AUDIO_AC" (shape bidirectional) (at 145.00 303.81 90) (fields_autoplaced)
     (effects (font (size 1.27 1.27)) (justify left))
-    (uuid 66e0b622-fab6-4912-9fdf-b28ce0a6f305)
+    (uuid 7bd99e2b-110f-4719-a5b8-4963932a7501)
   )
   (global_label "VSYS_PICO" (shape bidirectional) (at 246.19 70.00 0) (fields_autoplaced)
     (effects (font (size 1.27 1.27)) (justify left))
-    (uuid 2995e79f-39ae-48c2-891c-60ab95271368)
+    (uuid ae05ccd7-2dc7-42b2-a1f1-ce37f860591a)
   )
   (global_label "VSYS_PICO" (shape bidirectional) (at 270.00 76.19 270) (fields_autoplaced)
     (effects (font (size 1.27 1.27)) (justify right))
-    (uuid 87568e62-1456-4340-bc16-a134f7e26e81)
+    (uuid e7c4e8ca-55b8-4a80-8bf3-e1ef7f057227)
+  )
+  (global_label "EXP_GP35" (shape bidirectional) (at 314.92 104.92 0) (fields_autoplaced)
+    (effects (font (size 1.27 1.27)) (justify left))
+    (uuid fa4d4a49-d924-4d6a-b5bc-3a6ff9e6c3f3)
+  )
+  (global_label "EXP_GP43" (shape bidirectional) (at 314.92 107.46 0) (fields_autoplaced)
+    (effects (font (size 1.27 1.27)) (justify left))
+    (uuid efbf7c5f-9d17-4fb3-afbd-79d9fc71d099)
+  )
+  (global_label "EXP_GP44" (shape bidirectional) (at 314.92 110.00 0) (fields_autoplaced)
+    (effects (font (size 1.27 1.27)) (justify left))
+    (uuid b936bf22-b2e5-486c-b93c-559cc67870fb)
+  )
+  (global_label "EXP_GP45" (shape bidirectional) (at 314.92 112.54 0) (fields_autoplaced)
+    (effects (font (size 1.27 1.27)) (justify left))
+    (uuid 9a7f09d1-0781-447e-8e28-ea83dfc7cee1)
   )
   (global_label "OE_BUS" (shape bidirectional) (at 320.00 60.00 90) (fields_autoplaced)
     (effects (font (size 1.27 1.27)) (justify left))
-    (uuid da4880e7-8897-4630-bc3b-f478148fa9ac)
+    (uuid ac7e7b35-a675-40ce-acd7-3cb7d3e216b7)
   )
   (global_label "RW_BUF" (shape bidirectional) (at 320.00 70.00 90) (fields_autoplaced)
     (effects (font (size 1.27 1.27)) (justify left))
-    (uuid 40eee6b4-2111-4ec9-a14d-e82176349b70)
+    (uuid 67464e51-0cb1-46a5-aaf1-835262c1606b)
   )
   (global_label "CTS_BUF" (shape bidirectional) (at 320.00 80.00 90) (fields_autoplaced)
     (effects (font (size 1.27 1.27)) (justify left))
-    (uuid 54407b79-dc3e-42ae-a679-e52dc2861c29)
+    (uuid 3d00a928-294a-462a-932e-b3f93ef539f2)
   )
   (global_label "SCS_BUF" (shape bidirectional) (at 320.00 90.00 90) (fields_autoplaced)
     (effects (font (size 1.27 1.27)) (justify left))
-    (uuid cfbf3e4b-f46f-4957-ac02-242da0b64cd5)
+    (uuid 86deac09-d23d-4ebb-95c3-4d3c064d26bc)
   )
   (global_label "E_BUF" (shape bidirectional) (at 310.00 60.00 90) (fields_autoplaced)
     (effects (font (size 1.27 1.27)) (justify left))
-    (uuid 1eceb29c-634f-4820-a1af-caf96d527b5a)
+    (uuid 2144e494-cb19-4503-8b22-9a7272e118fe)
   )
   (global_label "SND_CART" (shape bidirectional) (at 310.00 80.00 90) (fields_autoplaced)
     (effects (font (size 1.27 1.27)) (justify left))
-    (uuid 3ea0018c-28f6-43ed-9ec1-a51b940838aa)
+    (uuid dd404bf1-a0cb-4cab-9be6-32af65f12d38)
   )
   (global_label "VSYS_PICO" (shape bidirectional) (at 250.00 60.00 0) (fields_autoplaced)
     (effects (font (size 1.27 1.27)) (justify left))
-    (uuid 6910a9ba-2086-4d63-b1f8-1cbe516e0e1c)
+    (uuid 421d750a-147c-480c-945b-219417b63489)
   )
-  (no_connect (at 101.59 108.57) (uuid a2858ceb-3048-4283-bdc3-c7684a793af7))
-  (no_connect (at 101.59 106.03) (uuid 25df8d8e-98b9-4d88-ab68-239ff5ec6b0e))
-  (no_connect (at 101.59 95.87) (uuid 558163a0-0520-468c-a5d9-d83fa08aabbf))
-  (no_connect (at 90.16 90.79) (uuid 78893bac-235e-409a-860c-6e4efc956432))
-  (no_connect (at 92.70 90.79) (uuid 544c6f49-85bb-4004-a237-a4576202be8b))
-  (no_connect (at 95.24 90.79) (uuid 0b7ebf1f-7526-45f3-9ba9-54653ffd0362))
-  (no_connect (at 97.78 90.79) (uuid 42e66688-4ae1-42e8-b70e-ae59f06036f2))
-  (no_connect (at 265.08 94.28) (uuid 28307b20-95ca-4fe4-9730-e990fd181edb))
-  (no_connect (at 260.00 94.28) (uuid f8678fa5-32e0-4d4d-b0fe-c2c1a799e8d6))
-  (no_connect (at 192.70 225.08) (uuid 39a5cb26-7e5c-4239-9c43-65d868b1684f))
-  (no_connect (at 232.70 83.81) (uuid 38f1b2d3-dffe-480c-b45a-9bb9fb85544a))
-  (no_connect (at 232.70 88.89) (uuid 261a1bc8-334b-4570-b449-029c0cf62fcd))
+  (no_connect (at 101.59 108.57) (uuid 3c5abd5f-f7fc-40a8-8a8b-1c930ff2dd9f))
+  (no_connect (at 101.59 106.03) (uuid b61f6d57-8245-4201-8f0e-262855eb9f6a))
+  (no_connect (at 101.59 95.87) (uuid a5221d20-63c3-4c39-844b-6ec67cca2798))
+  (no_connect (at 265.08 94.28) (uuid a91745b3-96ca-4213-ae0c-f04f9ce356d1))
+  (no_connect (at 260.00 94.28) (uuid e45b3dbd-8b01-49a1-b233-f1dba327da97))
+  (no_connect (at 192.70 225.08) (uuid 9adf4607-625c-4cbc-b881-01a4df447421))
+  (no_connect (at 232.70 83.81) (uuid 3c176911-342a-4d08-8dc2-77255e6218f9))
+  (no_connect (at 232.70 88.89) (uuid 02e80d01-41e0-49c1-a5b4-0625a9d70b75))
   (symbol (lib_id "PiCoCo:Pico-Carrier") (at 80.00 120.00 0) (unit 1)
     (in_bom no) (on_board yes) (dnp no)
-    (uuid be94b8ab-8796-47a9-9449-21545f73d8ea)
+    (uuid 6f7119da-9311-4c8b-85ea-1f844cd1b65c)
     (property "Reference" "U1" (at 80.00 107.30 0)
       (effects (font (size 1.27 1.27)))
     )
@@ -4132,7 +4679,7 @@
     )
     (instances
       (project "PiCoCo"
-        (path "/88b0342d-54f3-4dbb-a5db-939bca88afbb"
+        (path "/d041c4bc-74a9-4dc3-835e-4e59f8c971a7"
           (reference "U1") (unit 1)
         )
       )
@@ -4140,7 +4687,7 @@
   )
   (symbol (lib_id "PiCoCo:COCO-CART") (at 260.00 140.00 0) (unit 1)
     (in_bom no) (on_board yes) (dnp no)
-    (uuid de5c3794-cb7f-4ca8-ab4e-2b733bf15473)
+    (uuid 2013914d-0b85-4b78-8025-b19b034c0b55)
     (property "Reference" "P1" (at 260.00 127.30 0)
       (effects (font (size 1.27 1.27)))
     )
@@ -4161,7 +4708,7 @@
     )
     (instances
       (project "PiCoCo"
-        (path "/88b0342d-54f3-4dbb-a5db-939bca88afbb"
+        (path "/d041c4bc-74a9-4dc3-835e-4e59f8c971a7"
           (reference "P1") (unit 1)
         )
       )
@@ -4169,7 +4716,7 @@
   )
   (symbol (lib_id "74xx:74LS245") (at 170.00 130.00 0) (unit 1)
     (in_bom yes) (on_board yes) (dnp no)
-    (uuid ed60a207-bfab-43b1-a394-8fa026286898)
+    (uuid 1f4552d6-968f-4009-b9e6-bf029f998348)
     (property "Reference" "U10" (at 170.00 117.30 0)
       (effects (font (size 1.27 1.27)))
     )
@@ -4190,7 +4737,7 @@
     )
     (instances
       (project "PiCoCo"
-        (path "/88b0342d-54f3-4dbb-a5db-939bca88afbb"
+        (path "/d041c4bc-74a9-4dc3-835e-4e59f8c971a7"
           (reference "U10") (unit 1)
         )
       )
@@ -4198,7 +4745,7 @@
   )
   (symbol (lib_id "74xx:74LS245") (at 80.00 220.00 0) (unit 1)
     (in_bom yes) (on_board yes) (dnp no)
-    (uuid a97682ad-b007-49b5-993f-926af053a551)
+    (uuid 9fdc1662-90ee-4007-bd5b-5aa0f05ac404)
     (property "Reference" "U11" (at 80.00 207.30 0)
       (effects (font (size 1.27 1.27)))
     )
@@ -4219,7 +4766,7 @@
     )
     (instances
       (project "PiCoCo"
-        (path "/88b0342d-54f3-4dbb-a5db-939bca88afbb"
+        (path "/d041c4bc-74a9-4dc3-835e-4e59f8c971a7"
           (reference "U11") (unit 1)
         )
       )
@@ -4227,7 +4774,7 @@
   )
   (symbol (lib_id "74xx:74LS245") (at 130.00 220.00 0) (unit 1)
     (in_bom yes) (on_board yes) (dnp no)
-    (uuid a5355ef4-616d-4a4b-9b3b-c24a2d2c446b)
+    (uuid cea16315-1270-433b-9c97-87ed83b20a44)
     (property "Reference" "U12" (at 130.00 207.30 0)
       (effects (font (size 1.27 1.27)))
     )
@@ -4248,7 +4795,7 @@
     )
     (instances
       (project "PiCoCo"
-        (path "/88b0342d-54f3-4dbb-a5db-939bca88afbb"
+        (path "/d041c4bc-74a9-4dc3-835e-4e59f8c971a7"
           (reference "U12") (unit 1)
         )
       )
@@ -4256,7 +4803,7 @@
   )
   (symbol (lib_id "74xx:74LS245") (at 180.00 220.00 0) (unit 1)
     (in_bom yes) (on_board yes) (dnp no)
-    (uuid 8f41bc5a-692f-4c3a-899f-495f3720f4eb)
+    (uuid 2d692f45-9236-4296-a790-cf8013aa53e2)
     (property "Reference" "U13" (at 180.00 207.30 0)
       (effects (font (size 1.27 1.27)))
     )
@@ -4277,7 +4824,7 @@
     )
     (instances
       (project "PiCoCo"
-        (path "/88b0342d-54f3-4dbb-a5db-939bca88afbb"
+        (path "/d041c4bc-74a9-4dc3-835e-4e59f8c971a7"
           (reference "U13") (unit 1)
         )
       )
@@ -4285,7 +4832,7 @@
   )
   (symbol (lib_id "Regulator_Linear:AP1117-15") (at 260.00 50.00 0) (unit 1)
     (in_bom yes) (on_board yes) (dnp no)
-    (uuid cbaf4e30-8d3c-490d-93a1-be49b23e419c)
+    (uuid 0feb5260-2d48-4cee-8249-44872985ce35)
     (property "Reference" "U14" (at 260.00 37.30 0)
       (effects (font (size 1.27 1.27)))
     )
@@ -4306,7 +4853,7 @@
     )
     (instances
       (project "PiCoCo"
-        (path "/88b0342d-54f3-4dbb-a5db-939bca88afbb"
+        (path "/d041c4bc-74a9-4dc3-835e-4e59f8c971a7"
           (reference "U14") (unit 1)
         )
       )
@@ -4314,7 +4861,7 @@
   )
   (symbol (lib_id "PiCoCo:74LVC00") (at 220.00 80.00 0) (unit 1)
     (in_bom yes) (on_board yes) (dnp no)
-    (uuid 93d14c8b-003a-4fa5-8196-0c1ef030584f)
+    (uuid bc026ddc-f83c-4b0e-804f-8bb26462c9d4)
     (property "Reference" "U15" (at 220.00 67.30 0)
       (effects (font (size 1.27 1.27)))
     )
@@ -4335,7 +4882,7 @@
     )
     (instances
       (project "PiCoCo"
-        (path "/88b0342d-54f3-4dbb-a5db-939bca88afbb"
+        (path "/d041c4bc-74a9-4dc3-835e-4e59f8c971a7"
           (reference "U15") (unit 1)
         )
       )
@@ -4343,7 +4890,7 @@
   )
   (symbol (lib_id "Jumper:SolderJumper_3_Bridged12") (at 200.00 100.00 0) (unit 1)
     (in_bom no) (on_board yes) (dnp no)
-    (uuid 537980ee-75a2-4af7-bf42-5f1b314e75e2)
+    (uuid 2f3b31ac-a016-4951-9bb1-b1827c388c8c)
     (property "Reference" "JP2" (at 200.00 87.30 0)
       (effects (font (size 1.27 1.27)))
     )
@@ -4364,7 +4911,7 @@
     )
     (instances
       (project "PiCoCo"
-        (path "/88b0342d-54f3-4dbb-a5db-939bca88afbb"
+        (path "/d041c4bc-74a9-4dc3-835e-4e59f8c971a7"
           (reference "JP2") (unit 1)
         )
       )
@@ -4372,7 +4919,7 @@
   )
   (symbol (lib_id "Jumper:SolderJumper_3_Bridged12") (at 100.00 60.00 0) (unit 1)
     (in_bom no) (on_board yes) (dnp no)
-    (uuid 4315dff6-e918-4562-bdea-ccdceff41f5c)
+    (uuid 5e2b0c93-26f8-4721-962c-0ccd226020b9)
     (property "Reference" "JP3" (at 100.00 47.30 0)
       (effects (font (size 1.27 1.27)))
     )
@@ -4393,7 +4940,7 @@
     )
     (instances
       (project "PiCoCo"
-        (path "/88b0342d-54f3-4dbb-a5db-939bca88afbb"
+        (path "/d041c4bc-74a9-4dc3-835e-4e59f8c971a7"
           (reference "JP3") (unit 1)
         )
       )
@@ -4401,7 +4948,7 @@
   )
   (symbol (lib_id "Jumper:SolderJumper_2_Open") (at 100.00 80.00 0) (unit 1)
     (in_bom no) (on_board yes) (dnp no)
-    (uuid 5e23c97b-9162-4422-89d1-ed064c971bdd)
+    (uuid 125ab8a7-e537-4a64-8473-93663917d80c)
     (property "Reference" "JP4" (at 100.00 67.30 0)
       (effects (font (size 1.27 1.27)))
     )
@@ -4422,7 +4969,7 @@
     )
     (instances
       (project "PiCoCo"
-        (path "/88b0342d-54f3-4dbb-a5db-939bca88afbb"
+        (path "/d041c4bc-74a9-4dc3-835e-4e59f8c971a7"
           (reference "JP4") (unit 1)
         )
       )
@@ -4430,7 +4977,7 @@
   )
   (symbol (lib_id "Device:R") (at 30.00 280.00 0) (unit 1)
     (in_bom yes) (on_board yes) (dnp no)
-    (uuid 70b107e3-2714-40ff-bd8c-16138d194afb)
+    (uuid d2e6fc13-0c97-4288-8f87-30ee30a6b864)
     (property "Reference" "R1" (at 30.00 267.30 0)
       (effects (font (size 1.27 1.27)))
     )
@@ -4451,7 +4998,7 @@
     )
     (instances
       (project "PiCoCo"
-        (path "/88b0342d-54f3-4dbb-a5db-939bca88afbb"
+        (path "/d041c4bc-74a9-4dc3-835e-4e59f8c971a7"
           (reference "R1") (unit 1)
         )
       )
@@ -4459,7 +5006,7 @@
   )
   (symbol (lib_id "Device:R") (at 40.00 280.00 0) (unit 1)
     (in_bom yes) (on_board yes) (dnp yes)
-    (uuid f70cb158-c569-455f-9dce-ab2305c2f018)
+    (uuid a7c13d36-d50d-4037-ac6e-9f81a32796b7)
     (property "Reference" "R2" (at 40.00 267.30 0)
       (effects (font (size 1.27 1.27)))
     )
@@ -4480,7 +5027,7 @@
     )
     (instances
       (project "PiCoCo"
-        (path "/88b0342d-54f3-4dbb-a5db-939bca88afbb"
+        (path "/d041c4bc-74a9-4dc3-835e-4e59f8c971a7"
           (reference "R2") (unit 1)
         )
       )
@@ -4488,7 +5035,7 @@
   )
   (symbol (lib_id "Device:R") (at 50.00 280.00 0) (unit 1)
     (in_bom yes) (on_board yes) (dnp no)
-    (uuid 32ac72ca-75fa-4cdd-9579-e48807ce0115)
+    (uuid 59cc92b7-52a3-4fc2-b6f8-540831df8ca6)
     (property "Reference" "R3" (at 50.00 267.30 0)
       (effects (font (size 1.27 1.27)))
     )
@@ -4509,7 +5056,7 @@
     )
     (instances
       (project "PiCoCo"
-        (path "/88b0342d-54f3-4dbb-a5db-939bca88afbb"
+        (path "/d041c4bc-74a9-4dc3-835e-4e59f8c971a7"
           (reference "R3") (unit 1)
         )
       )
@@ -4517,7 +5064,7 @@
   )
   (symbol (lib_id "Device:R") (at 40.00 160.00 0) (unit 1)
     (in_bom yes) (on_board yes) (dnp no)
-    (uuid 2f22f5fa-fb98-47cd-a1f4-86e85217f124)
+    (uuid 3fa4ef34-7ed2-4779-aaff-ce509571a3f5)
     (property "Reference" "R7" (at 40.00 147.30 0)
       (effects (font (size 1.27 1.27)))
     )
@@ -4538,7 +5085,7 @@
     )
     (instances
       (project "PiCoCo"
-        (path "/88b0342d-54f3-4dbb-a5db-939bca88afbb"
+        (path "/d041c4bc-74a9-4dc3-835e-4e59f8c971a7"
           (reference "R7") (unit 1)
         )
       )
@@ -4546,7 +5093,7 @@
   )
   (symbol (lib_id "Device:R") (at 50.00 160.00 0) (unit 1)
     (in_bom yes) (on_board yes) (dnp no)
-    (uuid 4b4ba518-4f45-4a05-8bfb-e3f9e2751a18)
+    (uuid 57c78a61-b62d-4479-bfb3-4d462420ce99)
     (property "Reference" "R8" (at 50.00 147.30 0)
       (effects (font (size 1.27 1.27)))
     )
@@ -4567,7 +5114,7 @@
     )
     (instances
       (project "PiCoCo"
-        (path "/88b0342d-54f3-4dbb-a5db-939bca88afbb"
+        (path "/d041c4bc-74a9-4dc3-835e-4e59f8c971a7"
           (reference "R8") (unit 1)
         )
       )
@@ -4575,7 +5122,7 @@
   )
   (symbol (lib_id "Transistor_FET:Q_NMOS_GSD") (at 60.00 170.00 0) (unit 1)
     (in_bom yes) (on_board yes) (dnp no)
-    (uuid eac2beca-7f07-4de0-8e9f-ced5171cc582)
+    (uuid f4166db1-b627-4ba7-bdb8-6629ad6c78c5)
     (property "Reference" "Q2" (at 60.00 157.30 0)
       (effects (font (size 1.27 1.27)))
     )
@@ -4596,15 +5143,44 @@
     )
     (instances
       (project "PiCoCo"
-        (path "/88b0342d-54f3-4dbb-a5db-939bca88afbb"
+        (path "/d041c4bc-74a9-4dc3-835e-4e59f8c971a7"
           (reference "Q2") (unit 1)
+        )
+      )
+    )
+  )
+  (symbol (lib_id "Jumper:SolderJumper_3_Open") (at 250.00 40.00 0) (unit 1)
+    (in_bom no) (on_board yes) (dnp no)
+    (uuid 5a19d8b7-6a57-47eb-9242-1dc9a2558b6d)
+    (property "Reference" "JP5" (at 250.00 27.30 0)
+      (effects (font (size 1.27 1.27)))
+    )
+    (property "Value" "P34_DRV" (at 250.00 52.70 0)
+      (effects (font (size 1.27 1.27)))
+    )
+    (property "Footprint" "Jumper:SolderJumper-3_P1.3mm_Open_RoundedPad1.0x1.5mm" (at 250.00 40.00 0)
+      (effects (font (size 1.27 1.27)) hide)
+    )
+    (property "Datasheet" "~" (at 250.00 40.00 0)
+      (effects (font (size 1.27 1.27)) hide)
+    )
+    (property "LCSC" "" (at 250.00 40.00 0)
+      (effects (font (size 1.27 1.27)) hide)
+    )
+    (property "MPN" "" (at 250.00 40.00 0)
+      (effects (font (size 1.27 1.27)) hide)
+    )
+    (instances
+      (project "PiCoCo"
+        (path "/d041c4bc-74a9-4dc3-835e-4e59f8c971a7"
+          (reference "JP5") (unit 1)
         )
       )
     )
   )
   (symbol (lib_id "Device:R") (at 40.00 190.00 0) (unit 1)
     (in_bom yes) (on_board yes) (dnp yes)
-    (uuid 99c06c2d-aba3-4f09-b052-0701a2d3969f)
+    (uuid eb9a49b1-3b01-45e1-8df9-172e46693154)
     (property "Reference" "R15" (at 40.00 177.30 0)
       (effects (font (size 1.27 1.27)))
     )
@@ -4625,7 +5201,7 @@
     )
     (instances
       (project "PiCoCo"
-        (path "/88b0342d-54f3-4dbb-a5db-939bca88afbb"
+        (path "/d041c4bc-74a9-4dc3-835e-4e59f8c971a7"
           (reference "R15") (unit 1)
         )
       )
@@ -4633,7 +5209,7 @@
   )
   (symbol (lib_id "Device:R") (at 50.00 190.00 0) (unit 1)
     (in_bom yes) (on_board yes) (dnp yes)
-    (uuid c4b75465-fde0-43db-ac70-190e90407e69)
+    (uuid e6e5b461-7010-4345-8f1a-6923739e385d)
     (property "Reference" "R17" (at 50.00 177.30 0)
       (effects (font (size 1.27 1.27)))
     )
@@ -4654,7 +5230,7 @@
     )
     (instances
       (project "PiCoCo"
-        (path "/88b0342d-54f3-4dbb-a5db-939bca88afbb"
+        (path "/d041c4bc-74a9-4dc3-835e-4e59f8c971a7"
           (reference "R17") (unit 1)
         )
       )
@@ -4662,7 +5238,7 @@
   )
   (symbol (lib_id "Transistor_FET:Q_NMOS_GSD") (at 60.00 200.00 0) (unit 1)
     (in_bom yes) (on_board yes) (dnp yes)
-    (uuid 2016c491-1339-4419-9c56-faae82909289)
+    (uuid ee85f1a8-d375-49e0-81fc-abcd0134544b)
     (property "Reference" "Q3" (at 60.00 187.30 0)
       (effects (font (size 1.27 1.27)))
     )
@@ -4683,15 +5259,15 @@
     )
     (instances
       (project "PiCoCo"
-        (path "/88b0342d-54f3-4dbb-a5db-939bca88afbb"
+        (path "/d041c4bc-74a9-4dc3-835e-4e59f8c971a7"
           (reference "Q3") (unit 1)
         )
       )
     )
   )
   (symbol (lib_id "Device:R") (at 70.00 190.00 0) (unit 1)
-    (in_bom yes) (on_board yes) (dnp yes)
-    (uuid 0538e1df-6339-45cb-a262-9b82e5f5acb3)
+    (in_bom yes) (on_board yes) (dnp no)
+    (uuid 8fb85fcc-12ed-45c4-b2d7-77dff6f44db1)
     (property "Reference" "R16" (at 70.00 177.30 0)
       (effects (font (size 1.27 1.27)))
     )
@@ -4712,15 +5288,15 @@
     )
     (instances
       (project "PiCoCo"
-        (path "/88b0342d-54f3-4dbb-a5db-939bca88afbb"
+        (path "/d041c4bc-74a9-4dc3-835e-4e59f8c971a7"
           (reference "R16") (unit 1)
         )
       )
     )
   )
   (symbol (lib_id "Device:R") (at 80.00 190.00 0) (unit 1)
-    (in_bom yes) (on_board yes) (dnp yes)
-    (uuid e0bebd28-314c-434c-891a-5f4c72542d22)
+    (in_bom yes) (on_board yes) (dnp no)
+    (uuid 3037d7b5-97fd-416d-b19c-eb3989714a05)
     (property "Reference" "R18" (at 80.00 177.30 0)
       (effects (font (size 1.27 1.27)))
     )
@@ -4741,15 +5317,15 @@
     )
     (instances
       (project "PiCoCo"
-        (path "/88b0342d-54f3-4dbb-a5db-939bca88afbb"
+        (path "/d041c4bc-74a9-4dc3-835e-4e59f8c971a7"
           (reference "R18") (unit 1)
         )
       )
     )
   )
   (symbol (lib_id "Transistor_FET:Q_NMOS_GSD") (at 90.00 200.00 0) (unit 1)
-    (in_bom yes) (on_board yes) (dnp yes)
-    (uuid 7c365b86-db97-4534-8e88-a7183de00ecf)
+    (in_bom yes) (on_board yes) (dnp no)
+    (uuid 9e46e32b-5f28-405d-bd5d-eb9e4d284a7a)
     (property "Reference" "Q4" (at 90.00 187.30 0)
       (effects (font (size 1.27 1.27)))
     )
@@ -4770,7 +5346,7 @@
     )
     (instances
       (project "PiCoCo"
-        (path "/88b0342d-54f3-4dbb-a5db-939bca88afbb"
+        (path "/d041c4bc-74a9-4dc3-835e-4e59f8c971a7"
           (reference "Q4") (unit 1)
         )
       )
@@ -4778,7 +5354,7 @@
   )
   (symbol (lib_id "Device:R") (at 80.00 280.00 0) (unit 1)
     (in_bom yes) (on_board yes) (dnp no)
-    (uuid 8abf8966-9db6-46b3-8eee-13fb46b1ef90)
+    (uuid 09c9fa7a-4f13-429d-a464-ebd59024ef41)
     (property "Reference" "R4" (at 80.00 267.30 0)
       (effects (font (size 1.27 1.27)))
     )
@@ -4799,7 +5375,7 @@
     )
     (instances
       (project "PiCoCo"
-        (path "/88b0342d-54f3-4dbb-a5db-939bca88afbb"
+        (path "/d041c4bc-74a9-4dc3-835e-4e59f8c971a7"
           (reference "R4") (unit 1)
         )
       )
@@ -4807,7 +5383,7 @@
   )
   (symbol (lib_id "Device:R") (at 200.00 260.00 0) (unit 1)
     (in_bom yes) (on_board yes) (dnp no)
-    (uuid aa044975-f823-4fda-a9fc-465418736190)
+    (uuid 4783a2f4-b052-4810-a3eb-808a12cc587d)
     (property "Reference" "R9" (at 200.00 247.30 0)
       (effects (font (size 1.27 1.27)))
     )
@@ -4828,7 +5404,7 @@
     )
     (instances
       (project "PiCoCo"
-        (path "/88b0342d-54f3-4dbb-a5db-939bca88afbb"
+        (path "/d041c4bc-74a9-4dc3-835e-4e59f8c971a7"
           (reference "R9") (unit 1)
         )
       )
@@ -4836,7 +5412,7 @@
   )
   (symbol (lib_id "Device:R") (at 210.00 260.00 0) (unit 1)
     (in_bom yes) (on_board yes) (dnp yes)
-    (uuid 0706c4fd-7502-4453-bb21-f26db7afd404)
+    (uuid 3645fa92-43ca-4be0-81d6-6e6941201612)
     (property "Reference" "R10" (at 210.00 247.30 0)
       (effects (font (size 1.27 1.27)))
     )
@@ -4857,7 +5433,7 @@
     )
     (instances
       (project "PiCoCo"
-        (path "/88b0342d-54f3-4dbb-a5db-939bca88afbb"
+        (path "/d041c4bc-74a9-4dc3-835e-4e59f8c971a7"
           (reference "R10") (unit 1)
         )
       )
@@ -4865,7 +5441,7 @@
   )
   (symbol (lib_id "Device:R") (at 220.00 260.00 0) (unit 1)
     (in_bom yes) (on_board yes) (dnp no)
-    (uuid 5982ee0d-7654-438e-ba00-6e65bafc2934)
+    (uuid eaa062ce-9e9d-4502-8fcc-51dd2da49a9c)
     (property "Reference" "R23" (at 220.00 247.30 0)
       (effects (font (size 1.27 1.27)))
     )
@@ -4886,7 +5462,7 @@
     )
     (instances
       (project "PiCoCo"
-        (path "/88b0342d-54f3-4dbb-a5db-939bca88afbb"
+        (path "/d041c4bc-74a9-4dc3-835e-4e59f8c971a7"
           (reference "R23") (unit 1)
         )
       )
@@ -4894,7 +5470,7 @@
   )
   (symbol (lib_id "Device:R") (at 230.00 260.00 0) (unit 1)
     (in_bom yes) (on_board yes) (dnp no)
-    (uuid b41597d9-23d3-4f80-b0a7-5760abbdd492)
+    (uuid b949274d-cb8a-42b9-b845-37b3283af3f2)
     (property "Reference" "R25" (at 230.00 247.30 0)
       (effects (font (size 1.27 1.27)))
     )
@@ -4915,7 +5491,7 @@
     )
     (instances
       (project "PiCoCo"
-        (path "/88b0342d-54f3-4dbb-a5db-939bca88afbb"
+        (path "/d041c4bc-74a9-4dc3-835e-4e59f8c971a7"
           (reference "R25") (unit 1)
         )
       )
@@ -4923,7 +5499,7 @@
   )
   (symbol (lib_id "Device:R") (at 210.00 90.00 0) (unit 1)
     (in_bom yes) (on_board yes) (dnp no)
-    (uuid 15c5ec15-4ab0-4f3a-8ddb-8e4535e2114b)
+    (uuid dcec570b-4636-4e34-9c7d-799181b53636)
     (property "Reference" "R11" (at 210.00 77.30 0)
       (effects (font (size 1.27 1.27)))
     )
@@ -4944,7 +5520,7 @@
     )
     (instances
       (project "PiCoCo"
-        (path "/88b0342d-54f3-4dbb-a5db-939bca88afbb"
+        (path "/d041c4bc-74a9-4dc3-835e-4e59f8c971a7"
           (reference "R11") (unit 1)
         )
       )
@@ -4952,7 +5528,7 @@
   )
   (symbol (lib_id "Device:R") (at 140.00 230.00 0) (unit 1)
     (in_bom yes) (on_board yes) (dnp no)
-    (uuid a4c3dd5d-7ba2-4714-acb4-449875ab57c1)
+    (uuid 39e96fec-216c-4691-826f-dc64cb139c4a)
     (property "Reference" "R12" (at 140.00 217.30 0)
       (effects (font (size 1.27 1.27)))
     )
@@ -4973,7 +5549,7 @@
     )
     (instances
       (project "PiCoCo"
-        (path "/88b0342d-54f3-4dbb-a5db-939bca88afbb"
+        (path "/d041c4bc-74a9-4dc3-835e-4e59f8c971a7"
           (reference "R12") (unit 1)
         )
       )
@@ -4981,11 +5557,11 @@
   )
   (symbol (lib_id "Device:R") (at 120.00 300.00 0) (unit 1)
     (in_bom yes) (on_board yes) (dnp no)
-    (uuid b5c4c3b5-23bc-41ad-bd56-54e367d9340a)
+    (uuid b53ba1c4-7ea9-441b-b103-1fa194e4de73)
     (property "Reference" "R19" (at 120.00 287.30 0)
       (effects (font (size 1.27 1.27)))
     )
-    (property "Value" "1k" (at 120.00 312.70 0)
+    (property "Value" "470" (at 120.00 312.70 0)
       (effects (font (size 1.27 1.27)))
     )
     (property "Footprint" "Resistor_SMD:R_0805_2012Metric" (at 120.00 300.00 0)
@@ -4994,15 +5570,15 @@
     (property "Datasheet" "~" (at 120.00 300.00 0)
       (effects (font (size 1.27 1.27)) hide)
     )
-    (property "LCSC" "C17513" (at 120.00 300.00 0)
+    (property "LCSC" "C17710" (at 120.00 300.00 0)
       (effects (font (size 1.27 1.27)) hide)
     )
-    (property "MPN" "0805 1k 1%" (at 120.00 300.00 0)
+    (property "MPN" "0805 470 1%" (at 120.00 300.00 0)
       (effects (font (size 1.27 1.27)) hide)
     )
     (instances
       (project "PiCoCo"
-        (path "/88b0342d-54f3-4dbb-a5db-939bca88afbb"
+        (path "/d041c4bc-74a9-4dc3-835e-4e59f8c971a7"
           (reference "R19") (unit 1)
         )
       )
@@ -5010,7 +5586,7 @@
   )
   (symbol (lib_id "Device:C") (at 125.00 310.00 0) (unit 1)
     (in_bom yes) (on_board yes) (dnp no)
-    (uuid 538f66d4-27e8-448f-9977-19c0b544f7c1)
+    (uuid b80a4b12-7ee5-4b99-9c5c-290c3f6469a0)
     (property "Reference" "C13" (at 125.00 297.30 0)
       (effects (font (size 1.27 1.27)))
     )
@@ -5031,7 +5607,7 @@
     )
     (instances
       (project "PiCoCo"
-        (path "/88b0342d-54f3-4dbb-a5db-939bca88afbb"
+        (path "/d041c4bc-74a9-4dc3-835e-4e59f8c971a7"
           (reference "C13") (unit 1)
         )
       )
@@ -5039,11 +5615,11 @@
   )
   (symbol (lib_id "Device:R") (at 130.00 300.00 0) (unit 1)
     (in_bom yes) (on_board yes) (dnp no)
-    (uuid 4c4e94be-5af2-4f2f-a0ed-dda64a74eff0)
+    (uuid 67f75c51-31fa-4853-98cf-7907b0dcf2b2)
     (property "Reference" "R20" (at 130.00 287.30 0)
       (effects (font (size 1.27 1.27)))
     )
-    (property "Value" "1k" (at 130.00 312.70 0)
+    (property "Value" "470" (at 130.00 312.70 0)
       (effects (font (size 1.27 1.27)))
     )
     (property "Footprint" "Resistor_SMD:R_0805_2012Metric" (at 130.00 300.00 0)
@@ -5052,15 +5628,15 @@
     (property "Datasheet" "~" (at 130.00 300.00 0)
       (effects (font (size 1.27 1.27)) hide)
     )
-    (property "LCSC" "C17513" (at 130.00 300.00 0)
+    (property "LCSC" "C17710" (at 130.00 300.00 0)
       (effects (font (size 1.27 1.27)) hide)
     )
-    (property "MPN" "0805 1k 1%" (at 130.00 300.00 0)
+    (property "MPN" "0805 470 1%" (at 130.00 300.00 0)
       (effects (font (size 1.27 1.27)) hide)
     )
     (instances
       (project "PiCoCo"
-        (path "/88b0342d-54f3-4dbb-a5db-939bca88afbb"
+        (path "/d041c4bc-74a9-4dc3-835e-4e59f8c971a7"
           (reference "R20") (unit 1)
         )
       )
@@ -5068,7 +5644,7 @@
   )
   (symbol (lib_id "Device:C") (at 135.00 310.00 0) (unit 1)
     (in_bom yes) (on_board yes) (dnp no)
-    (uuid fda8d13d-01da-4093-b1fc-4c29b27bb386)
+    (uuid 492f4dce-8560-44be-83a4-f7d2c5f1e2b3)
     (property "Reference" "C14" (at 135.00 297.30 0)
       (effects (font (size 1.27 1.27)))
     )
@@ -5089,7 +5665,7 @@
     )
     (instances
       (project "PiCoCo"
-        (path "/88b0342d-54f3-4dbb-a5db-939bca88afbb"
+        (path "/d041c4bc-74a9-4dc3-835e-4e59f8c971a7"
           (reference "C14") (unit 1)
         )
       )
@@ -5097,11 +5673,11 @@
   )
   (symbol (lib_id "Device:R") (at 140.00 300.00 0) (unit 1)
     (in_bom yes) (on_board yes) (dnp no)
-    (uuid bea40ba7-c83b-4ff9-83b8-34462486aefd)
+    (uuid d2c24755-ba18-4e6e-ab9a-eacbe2c63b03)
     (property "Reference" "R21" (at 140.00 287.30 0)
       (effects (font (size 1.27 1.27)))
     )
-    (property "Value" "2.2k" (at 140.00 312.70 0)
+    (property "Value" "1k" (at 140.00 312.70 0)
       (effects (font (size 1.27 1.27)))
     )
     (property "Footprint" "Resistor_SMD:R_0805_2012Metric" (at 140.00 300.00 0)
@@ -5110,15 +5686,15 @@
     (property "Datasheet" "~" (at 140.00 300.00 0)
       (effects (font (size 1.27 1.27)) hide)
     )
-    (property "LCSC" "C17520" (at 140.00 300.00 0)
+    (property "LCSC" "C17513" (at 140.00 300.00 0)
       (effects (font (size 1.27 1.27)) hide)
     )
-    (property "MPN" "0805 2.2k 1%" (at 140.00 300.00 0)
+    (property "MPN" "0805 1k 1%" (at 140.00 300.00 0)
       (effects (font (size 1.27 1.27)) hide)
     )
     (instances
       (project "PiCoCo"
-        (path "/88b0342d-54f3-4dbb-a5db-939bca88afbb"
+        (path "/d041c4bc-74a9-4dc3-835e-4e59f8c971a7"
           (reference "R21") (unit 1)
         )
       )
@@ -5126,7 +5702,7 @@
   )
   (symbol (lib_id "Device:R") (at 150.00 310.00 0) (unit 1)
     (in_bom yes) (on_board yes) (dnp no)
-    (uuid 368c7015-daee-41f7-bd3d-f7244a78c346)
+    (uuid eac4878e-2b34-4d41-9274-7ae9cf96b0be)
     (property "Reference" "R22" (at 150.00 297.30 0)
       (effects (font (size 1.27 1.27)))
     )
@@ -5147,7 +5723,7 @@
     )
     (instances
       (project "PiCoCo"
-        (path "/88b0342d-54f3-4dbb-a5db-939bca88afbb"
+        (path "/d041c4bc-74a9-4dc3-835e-4e59f8c971a7"
           (reference "R22") (unit 1)
         )
       )
@@ -5155,7 +5731,7 @@
   )
   (symbol (lib_id "Device:C") (at 145.00 290.00 0) (unit 1)
     (in_bom yes) (on_board yes) (dnp yes)
-    (uuid 24b243d4-d911-4458-b38b-85bc347a3862)
+    (uuid 145e13ec-0c53-40c5-af25-f841dd0c4534)
     (property "Reference" "C15" (at 145.00 277.30 0)
       (effects (font (size 1.27 1.27)))
     )
@@ -5176,7 +5752,7 @@
     )
     (instances
       (project "PiCoCo"
-        (path "/88b0342d-54f3-4dbb-a5db-939bca88afbb"
+        (path "/d041c4bc-74a9-4dc3-835e-4e59f8c971a7"
           (reference "C15") (unit 1)
         )
       )
@@ -5184,7 +5760,7 @@
   )
   (symbol (lib_id "Device:R") (at 145.00 300.00 0) (unit 1)
     (in_bom yes) (on_board yes) (dnp no)
-    (uuid 28a124ba-2a36-486d-a60b-c91a19a2b265)
+    (uuid e6cfce4c-5395-4fd9-a879-9c3861ffe972)
     (property "Reference" "R24" (at 145.00 287.30 0)
       (effects (font (size 1.27 1.27)))
     )
@@ -5205,7 +5781,7 @@
     )
     (instances
       (project "PiCoCo"
-        (path "/88b0342d-54f3-4dbb-a5db-939bca88afbb"
+        (path "/d041c4bc-74a9-4dc3-835e-4e59f8c971a7"
           (reference "R24") (unit 1)
         )
       )
@@ -5213,7 +5789,7 @@
   )
   (symbol (lib_id "Device:D_Schottky") (at 250.00 70.00 0) (unit 1)
     (in_bom yes) (on_board yes) (dnp no)
-    (uuid 830af7f1-4efb-4296-8484-4533f51122b3)
+    (uuid 271de1ec-a3be-47e6-b254-e0709f14c262)
     (property "Reference" "D2" (at 250.00 57.30 0)
       (effects (font (size 1.27 1.27)))
     )
@@ -5234,7 +5810,7 @@
     )
     (instances
       (project "PiCoCo"
-        (path "/88b0342d-54f3-4dbb-a5db-939bca88afbb"
+        (path "/d041c4bc-74a9-4dc3-835e-4e59f8c971a7"
           (reference "D2") (unit 1)
         )
       )
@@ -5242,7 +5818,7 @@
   )
   (symbol (lib_id "Device:C") (at 300.00 200.00 0) (unit 1)
     (in_bom yes) (on_board yes) (dnp no)
-    (uuid bab679e1-cc7f-44ea-81ef-46dbd055d938)
+    (uuid 48b72e1e-5cfa-4964-a914-9ae0b6bfcfc9)
     (property "Reference" "C1" (at 300.00 187.30 0)
       (effects (font (size 1.27 1.27)))
     )
@@ -5263,7 +5839,7 @@
     )
     (instances
       (project "PiCoCo"
-        (path "/88b0342d-54f3-4dbb-a5db-939bca88afbb"
+        (path "/d041c4bc-74a9-4dc3-835e-4e59f8c971a7"
           (reference "C1") (unit 1)
         )
       )
@@ -5271,7 +5847,7 @@
   )
   (symbol (lib_id "Device:C") (at 240.00 30.00 0) (unit 1)
     (in_bom yes) (on_board yes) (dnp no)
-    (uuid 465dbc5c-6030-4126-97d8-f04a3bc1ac61)
+    (uuid c166da27-da2e-4fa9-9aad-807b145925fd)
     (property "Reference" "C2" (at 240.00 17.30 0)
       (effects (font (size 1.27 1.27)))
     )
@@ -5292,7 +5868,7 @@
     )
     (instances
       (project "PiCoCo"
-        (path "/88b0342d-54f3-4dbb-a5db-939bca88afbb"
+        (path "/d041c4bc-74a9-4dc3-835e-4e59f8c971a7"
           (reference "C2") (unit 1)
         )
       )
@@ -5300,7 +5876,7 @@
   )
   (symbol (lib_id "Device:C") (at 280.00 30.00 0) (unit 1)
     (in_bom yes) (on_board yes) (dnp no)
-    (uuid a764c3b1-8c2a-4f65-aa8e-f50cbe8cf894)
+    (uuid 0cb7e738-2954-4919-85a5-81abdc8504bb)
     (property "Reference" "C3" (at 280.00 17.30 0)
       (effects (font (size 1.27 1.27)))
     )
@@ -5321,7 +5897,7 @@
     )
     (instances
       (project "PiCoCo"
-        (path "/88b0342d-54f3-4dbb-a5db-939bca88afbb"
+        (path "/d041c4bc-74a9-4dc3-835e-4e59f8c971a7"
           (reference "C3") (unit 1)
         )
       )
@@ -5329,7 +5905,7 @@
   )
   (symbol (lib_id "Device:C") (at 160.00 100.00 0) (unit 1)
     (in_bom yes) (on_board yes) (dnp no)
-    (uuid 23d328aa-444a-4a7f-ba9d-81b10e551739)
+    (uuid ab0dd91b-8ad7-4853-9906-c10293244b45)
     (property "Reference" "C4" (at 160.00 87.30 0)
       (effects (font (size 1.27 1.27)))
     )
@@ -5350,7 +5926,7 @@
     )
     (instances
       (project "PiCoCo"
-        (path "/88b0342d-54f3-4dbb-a5db-939bca88afbb"
+        (path "/d041c4bc-74a9-4dc3-835e-4e59f8c971a7"
           (reference "C4") (unit 1)
         )
       )
@@ -5358,7 +5934,7 @@
   )
   (symbol (lib_id "Device:C") (at 90.00 260.00 0) (unit 1)
     (in_bom yes) (on_board yes) (dnp no)
-    (uuid 8e4c47ee-2644-4ddf-a874-a63d9341293c)
+    (uuid 3deb05d8-fdb9-4455-a9eb-dee579731264)
     (property "Reference" "C6" (at 90.00 247.30 0)
       (effects (font (size 1.27 1.27)))
     )
@@ -5379,7 +5955,7 @@
     )
     (instances
       (project "PiCoCo"
-        (path "/88b0342d-54f3-4dbb-a5db-939bca88afbb"
+        (path "/d041c4bc-74a9-4dc3-835e-4e59f8c971a7"
           (reference "C6") (unit 1)
         )
       )
@@ -5387,7 +5963,7 @@
   )
   (symbol (lib_id "Device:C") (at 140.00 260.00 0) (unit 1)
     (in_bom yes) (on_board yes) (dnp no)
-    (uuid 3143c67c-b34e-4eb1-aa08-b42e81513bce)
+    (uuid ffdc7a07-6cd9-443b-9773-dc5ffe3b9436)
     (property "Reference" "C7" (at 140.00 247.30 0)
       (effects (font (size 1.27 1.27)))
     )
@@ -5408,7 +5984,7 @@
     )
     (instances
       (project "PiCoCo"
-        (path "/88b0342d-54f3-4dbb-a5db-939bca88afbb"
+        (path "/d041c4bc-74a9-4dc3-835e-4e59f8c971a7"
           (reference "C7") (unit 1)
         )
       )
@@ -5416,7 +5992,7 @@
   )
   (symbol (lib_id "Device:C") (at 190.00 260.00 0) (unit 1)
     (in_bom yes) (on_board yes) (dnp no)
-    (uuid 9e62ccdd-f427-4f16-9766-05be9b27b690)
+    (uuid 7206dacb-a2e9-470e-bbbc-f8290d09dbab)
     (property "Reference" "C8" (at 190.00 247.30 0)
       (effects (font (size 1.27 1.27)))
     )
@@ -5437,7 +6013,7 @@
     )
     (instances
       (project "PiCoCo"
-        (path "/88b0342d-54f3-4dbb-a5db-939bca88afbb"
+        (path "/d041c4bc-74a9-4dc3-835e-4e59f8c971a7"
           (reference "C8") (unit 1)
         )
       )
@@ -5445,7 +6021,7 @@
   )
   (symbol (lib_id "Device:C") (at 230.00 70.00 0) (unit 1)
     (in_bom yes) (on_board yes) (dnp no)
-    (uuid 0c9be45f-ac51-44da-b6a9-bc648d4158ef)
+    (uuid 35936241-bf1e-413b-b7e5-20110c666e2c)
     (property "Reference" "C9" (at 230.00 57.30 0)
       (effects (font (size 1.27 1.27)))
     )
@@ -5466,7 +6042,7 @@
     )
     (instances
       (project "PiCoCo"
-        (path "/88b0342d-54f3-4dbb-a5db-939bca88afbb"
+        (path "/d041c4bc-74a9-4dc3-835e-4e59f8c971a7"
           (reference "C9") (unit 1)
         )
       )
@@ -5474,7 +6050,7 @@
   )
   (symbol (lib_id "Device:C") (at 100.00 100.00 0) (unit 1)
     (in_bom yes) (on_board yes) (dnp no)
-    (uuid 198b8758-8883-4b63-af32-3975a78e757a)
+    (uuid e903b2b9-63af-477d-a62a-099244133efe)
     (property "Reference" "C10" (at 100.00 87.30 0)
       (effects (font (size 1.27 1.27)))
     )
@@ -5495,7 +6071,7 @@
     )
     (instances
       (project "PiCoCo"
-        (path "/88b0342d-54f3-4dbb-a5db-939bca88afbb"
+        (path "/d041c4bc-74a9-4dc3-835e-4e59f8c971a7"
           (reference "C10") (unit 1)
         )
       )
@@ -5503,7 +6079,7 @@
   )
   (symbol (lib_id "Device:C_Polarized") (at 270.00 80.00 0) (unit 1)
     (in_bom yes) (on_board yes) (dnp yes)
-    (uuid 608a1900-a58e-438f-8690-cd1d654a6b55)
+    (uuid d0c604fe-f4b7-42e4-8398-23193c378bbc)
     (property "Reference" "C12" (at 270.00 67.30 0)
       (effects (font (size 1.27 1.27)))
     )
@@ -5524,15 +6100,73 @@
     )
     (instances
       (project "PiCoCo"
-        (path "/88b0342d-54f3-4dbb-a5db-939bca88afbb"
+        (path "/d041c4bc-74a9-4dc3-835e-4e59f8c971a7"
           (reference "C12") (unit 1)
+        )
+      )
+    )
+  )
+  (symbol (lib_id "Device:C") (at 200.00 90.00 0) (unit 1)
+    (in_bom yes) (on_board yes) (dnp no)
+    (uuid 0c947f1e-6714-4553-bf58-a5877b1ef42c)
+    (property "Reference" "C16" (at 200.00 77.30 0)
+      (effects (font (size 1.27 1.27)))
+    )
+    (property "Value" "10uF" (at 200.00 102.70 0)
+      (effects (font (size 1.27 1.27)))
+    )
+    (property "Footprint" "Capacitor_SMD:C_0805_2012Metric" (at 200.00 90.00 0)
+      (effects (font (size 1.27 1.27)) hide)
+    )
+    (property "Datasheet" "~" (at 200.00 90.00 0)
+      (effects (font (size 1.27 1.27)) hide)
+    )
+    (property "LCSC" "C15850" (at 200.00 90.00 0)
+      (effects (font (size 1.27 1.27)) hide)
+    )
+    (property "MPN" "0805 10uF" (at 200.00 90.00 0)
+      (effects (font (size 1.27 1.27)) hide)
+    )
+    (instances
+      (project "PiCoCo"
+        (path "/d041c4bc-74a9-4dc3-835e-4e59f8c971a7"
+          (reference "C16") (unit 1)
+        )
+      )
+    )
+  )
+  (symbol (lib_id "Connector_Generic:Conn_01x05") (at 320.00 110.00 0) (unit 1)
+    (in_bom no) (on_board yes) (dnp yes)
+    (uuid 995e6532-28d4-4d75-99e4-31a51dbec082)
+    (property "Reference" "J1" (at 320.00 97.30 0)
+      (effects (font (size 1.27 1.27)))
+    )
+    (property "Value" "EXP (Plus-W)" (at 320.00 122.70 0)
+      (effects (font (size 1.27 1.27)))
+    )
+    (property "Footprint" "Connector_PinHeader_2.54mm:PinHeader_1x05_P2.54mm_Vertical" (at 320.00 110.00 0)
+      (effects (font (size 1.27 1.27)) hide)
+    )
+    (property "Datasheet" "~" (at 320.00 110.00 0)
+      (effects (font (size 1.27 1.27)) hide)
+    )
+    (property "LCSC" "" (at 320.00 110.00 0)
+      (effects (font (size 1.27 1.27)) hide)
+    )
+    (property "MPN" "" (at 320.00 110.00 0)
+      (effects (font (size 1.27 1.27)) hide)
+    )
+    (instances
+      (project "PiCoCo"
+        (path "/d041c4bc-74a9-4dc3-835e-4e59f8c971a7"
+          (reference "J1") (unit 1)
         )
       )
     )
   )
   (symbol (lib_id "Connector:TestPoint") (at 320.00 60.00 0) (unit 1)
     (in_bom no) (on_board yes) (dnp no)
-    (uuid 931734c8-29a8-4cd5-b6b6-a32c1852ebb2)
+    (uuid 0d43f6b3-d763-471d-a831-d8f76ef72924)
     (property "Reference" "TP1" (at 320.00 47.30 0)
       (effects (font (size 1.27 1.27)))
     )
@@ -5553,7 +6187,7 @@
     )
     (instances
       (project "PiCoCo"
-        (path "/88b0342d-54f3-4dbb-a5db-939bca88afbb"
+        (path "/d041c4bc-74a9-4dc3-835e-4e59f8c971a7"
           (reference "TP1") (unit 1)
         )
       )
@@ -5561,7 +6195,7 @@
   )
   (symbol (lib_id "Connector:TestPoint") (at 320.00 70.00 0) (unit 1)
     (in_bom no) (on_board yes) (dnp no)
-    (uuid c8acb640-039e-408c-aea6-a0660a86ad4c)
+    (uuid 4832f5ef-e068-482b-9296-f65a9d5a9e9a)
     (property "Reference" "TP2" (at 320.00 57.30 0)
       (effects (font (size 1.27 1.27)))
     )
@@ -5582,7 +6216,7 @@
     )
     (instances
       (project "PiCoCo"
-        (path "/88b0342d-54f3-4dbb-a5db-939bca88afbb"
+        (path "/d041c4bc-74a9-4dc3-835e-4e59f8c971a7"
           (reference "TP2") (unit 1)
         )
       )
@@ -5590,7 +6224,7 @@
   )
   (symbol (lib_id "Connector:TestPoint") (at 320.00 80.00 0) (unit 1)
     (in_bom no) (on_board yes) (dnp no)
-    (uuid 6f1aedd5-58cc-485d-8020-0b6a0027ab3a)
+    (uuid 13076432-0f57-4e76-bd90-d3893508ce89)
     (property "Reference" "TP3" (at 320.00 67.30 0)
       (effects (font (size 1.27 1.27)))
     )
@@ -5611,7 +6245,7 @@
     )
     (instances
       (project "PiCoCo"
-        (path "/88b0342d-54f3-4dbb-a5db-939bca88afbb"
+        (path "/d041c4bc-74a9-4dc3-835e-4e59f8c971a7"
           (reference "TP3") (unit 1)
         )
       )
@@ -5619,7 +6253,7 @@
   )
   (symbol (lib_id "Connector:TestPoint") (at 320.00 90.00 0) (unit 1)
     (in_bom no) (on_board yes) (dnp no)
-    (uuid 56480266-2545-4650-827d-c19e9587223f)
+    (uuid 03ae225d-f669-44a3-a778-a77b3565f23e)
     (property "Reference" "TP4" (at 320.00 77.30 0)
       (effects (font (size 1.27 1.27)))
     )
@@ -5640,7 +6274,7 @@
     )
     (instances
       (project "PiCoCo"
-        (path "/88b0342d-54f3-4dbb-a5db-939bca88afbb"
+        (path "/d041c4bc-74a9-4dc3-835e-4e59f8c971a7"
           (reference "TP4") (unit 1)
         )
       )
@@ -5648,7 +6282,7 @@
   )
   (symbol (lib_id "Connector:TestPoint") (at 310.00 60.00 0) (unit 1)
     (in_bom no) (on_board yes) (dnp no)
-    (uuid fac7c854-c26b-42ea-85b8-6e7578946ba8)
+    (uuid 93d5a3ed-7233-4973-90af-67dc59cf15d9)
     (property "Reference" "TP5" (at 310.00 47.30 0)
       (effects (font (size 1.27 1.27)))
     )
@@ -5669,7 +6303,7 @@
     )
     (instances
       (project "PiCoCo"
-        (path "/88b0342d-54f3-4dbb-a5db-939bca88afbb"
+        (path "/d041c4bc-74a9-4dc3-835e-4e59f8c971a7"
           (reference "TP5") (unit 1)
         )
       )
@@ -5677,7 +6311,7 @@
   )
   (symbol (lib_id "Connector:TestPoint") (at 310.00 70.00 0) (unit 1)
     (in_bom no) (on_board yes) (dnp no)
-    (uuid 252a469d-0909-4d87-9e18-ee76a2c9f68b)
+    (uuid 51a862b6-bef4-4f71-bc03-eb19649525c6)
     (property "Reference" "TP6" (at 310.00 57.30 0)
       (effects (font (size 1.27 1.27)))
     )
@@ -5698,7 +6332,7 @@
     )
     (instances
       (project "PiCoCo"
-        (path "/88b0342d-54f3-4dbb-a5db-939bca88afbb"
+        (path "/d041c4bc-74a9-4dc3-835e-4e59f8c971a7"
           (reference "TP6") (unit 1)
         )
       )
@@ -5706,7 +6340,7 @@
   )
   (symbol (lib_id "Connector:TestPoint") (at 310.00 80.00 0) (unit 1)
     (in_bom no) (on_board yes) (dnp no)
-    (uuid cd6ed792-585a-49e6-bcf7-6a3d9ccfb982)
+    (uuid ab4a13b9-a088-4a50-bb17-04a9f65b4121)
     (property "Reference" "TP7" (at 310.00 67.30 0)
       (effects (font (size 1.27 1.27)))
     )
@@ -5727,7 +6361,7 @@
     )
     (instances
       (project "PiCoCo"
-        (path "/88b0342d-54f3-4dbb-a5db-939bca88afbb"
+        (path "/d041c4bc-74a9-4dc3-835e-4e59f8c971a7"
           (reference "TP7") (unit 1)
         )
       )
@@ -5735,7 +6369,7 @@
   )
   (symbol (lib_id "Connector:TestPoint") (at 310.00 90.00 0) (unit 1)
     (in_bom no) (on_board yes) (dnp no)
-    (uuid 6d37b25a-750c-4d32-8082-a14928539a6a)
+    (uuid 4525624e-d036-4a4a-939e-06cb513aa7a3)
     (property "Reference" "TP8" (at 310.00 77.30 0)
       (effects (font (size 1.27 1.27)))
     )
@@ -5756,7 +6390,7 @@
     )
     (instances
       (project "PiCoCo"
-        (path "/88b0342d-54f3-4dbb-a5db-939bca88afbb"
+        (path "/d041c4bc-74a9-4dc3-835e-4e59f8c971a7"
           (reference "TP8") (unit 1)
         )
       )
@@ -5764,7 +6398,7 @@
   )
   (symbol (lib_id "Mechanical:Fiducial") (at 330.00 30.00 0) (unit 1)
     (in_bom no) (on_board yes) (dnp no)
-    (uuid 013da59f-a7e8-4218-abea-5a064071ae67)
+    (uuid efdb8abc-1952-42b1-ad0c-377f9f4f08f7)
     (property "Reference" "FID1" (at 330.00 17.30 0)
       (effects (font (size 1.27 1.27)))
     )
@@ -5785,7 +6419,7 @@
     )
     (instances
       (project "PiCoCo"
-        (path "/88b0342d-54f3-4dbb-a5db-939bca88afbb"
+        (path "/d041c4bc-74a9-4dc3-835e-4e59f8c971a7"
           (reference "FID1") (unit 1)
         )
       )
@@ -5793,7 +6427,7 @@
   )
   (symbol (lib_id "Mechanical:Fiducial") (at 340.00 30.00 0) (unit 1)
     (in_bom no) (on_board yes) (dnp no)
-    (uuid b6c689fa-93d7-49c5-a83e-110d0e6ee654)
+    (uuid 985d9ecc-cee1-40b0-a37e-66a4aadc6316)
     (property "Reference" "FID2" (at 340.00 17.30 0)
       (effects (font (size 1.27 1.27)))
     )
@@ -5814,7 +6448,7 @@
     )
     (instances
       (project "PiCoCo"
-        (path "/88b0342d-54f3-4dbb-a5db-939bca88afbb"
+        (path "/d041c4bc-74a9-4dc3-835e-4e59f8c971a7"
           (reference "FID2") (unit 1)
         )
       )
@@ -5822,7 +6456,7 @@
   )
   (symbol (lib_id "Mechanical:Fiducial") (at 350.00 30.00 0) (unit 1)
     (in_bom no) (on_board yes) (dnp no)
-    (uuid 8b4c62f2-dec0-46e1-b612-73f9fdd91c0e)
+    (uuid a6b26064-0157-424f-8217-9cdffd14c02e)
     (property "Reference" "FID3" (at 350.00 17.30 0)
       (effects (font (size 1.27 1.27)))
     )
@@ -5843,7 +6477,7 @@
     )
     (instances
       (project "PiCoCo"
-        (path "/88b0342d-54f3-4dbb-a5db-939bca88afbb"
+        (path "/d041c4bc-74a9-4dc3-835e-4e59f8c971a7"
           (reference "FID3") (unit 1)
         )
       )
@@ -5851,7 +6485,7 @@
   )
   (symbol (lib_id "power:GND") (at 58.41 126.35 0) (unit 1)
     (in_bom no) (on_board yes) (dnp no)
-    (uuid 87307901-a13a-4be7-abf3-272e1ac55579)
+    (uuid 73090d40-745f-4417-855f-e3793100d4c5)
     (property "Reference" "#PWR0001" (at 58.41 122.54 0)
       (effects (font (size 1.27 1.27)) hide)
     )
@@ -5866,7 +6500,7 @@
     )
     (instances
       (project "PiCoCo"
-        (path "/88b0342d-54f3-4dbb-a5db-939bca88afbb"
+        (path "/d041c4bc-74a9-4dc3-835e-4e59f8c971a7"
           (reference "#PWR0001") (unit 1)
         )
       )
@@ -5874,7 +6508,7 @@
   )
   (symbol (lib_id "power:GND") (at 58.41 139.05 0) (unit 1)
     (in_bom no) (on_board yes) (dnp no)
-    (uuid 8fed1bd8-884d-4279-b7c0-ced7148d06be)
+    (uuid 479b5652-6959-4b71-8c29-78a866728b6f)
     (property "Reference" "#PWR0002" (at 58.41 135.24 0)
       (effects (font (size 1.27 1.27)) hide)
     )
@@ -5889,7 +6523,7 @@
     )
     (instances
       (project "PiCoCo"
-        (path "/88b0342d-54f3-4dbb-a5db-939bca88afbb"
+        (path "/d041c4bc-74a9-4dc3-835e-4e59f8c971a7"
           (reference "#PWR0002") (unit 1)
         )
       )
@@ -5897,7 +6531,7 @@
   )
   (symbol (lib_id "power:GND") (at 101.59 139.05 180) (unit 1)
     (in_bom no) (on_board yes) (dnp no)
-    (uuid d5973a4e-3436-42ea-b59e-cb6478ddcac2)
+    (uuid 45c245fb-2723-4173-b015-9e230cd74e69)
     (property "Reference" "#PWR0003" (at 101.59 135.24 0)
       (effects (font (size 1.27 1.27)) hide)
     )
@@ -5912,7 +6546,7 @@
     )
     (instances
       (project "PiCoCo"
-        (path "/88b0342d-54f3-4dbb-a5db-939bca88afbb"
+        (path "/d041c4bc-74a9-4dc3-835e-4e59f8c971a7"
           (reference "#PWR0003") (unit 1)
         )
       )
@@ -5920,7 +6554,7 @@
   )
   (symbol (lib_id "power:GND") (at 101.59 126.35 180) (unit 1)
     (in_bom no) (on_board yes) (dnp no)
-    (uuid 3c336d32-901b-4c46-8ff9-fd56e20f7b78)
+    (uuid f86693a7-cecb-473e-9dac-aee5bca1848b)
     (property "Reference" "#PWR0004" (at 101.59 122.54 0)
       (effects (font (size 1.27 1.27)) hide)
     )
@@ -5935,7 +6569,7 @@
     )
     (instances
       (project "PiCoCo"
-        (path "/88b0342d-54f3-4dbb-a5db-939bca88afbb"
+        (path "/d041c4bc-74a9-4dc3-835e-4e59f8c971a7"
           (reference "#PWR0004") (unit 1)
         )
       )
@@ -5943,7 +6577,7 @@
   )
   (symbol (lib_id "power:GND") (at 58.41 100.95 0) (unit 1)
     (in_bom no) (on_board yes) (dnp no)
-    (uuid 1d7381f1-b1e4-4a3b-9787-0b78c09b5909)
+    (uuid 324d9170-b750-4316-862a-31688111f7c5)
     (property "Reference" "#PWR0005" (at 58.41 97.14 0)
       (effects (font (size 1.27 1.27)) hide)
     )
@@ -5958,7 +6592,7 @@
     )
     (instances
       (project "PiCoCo"
-        (path "/88b0342d-54f3-4dbb-a5db-939bca88afbb"
+        (path "/d041c4bc-74a9-4dc3-835e-4e59f8c971a7"
           (reference "#PWR0005") (unit 1)
         )
       )
@@ -5966,7 +6600,7 @@
   )
   (symbol (lib_id "power:GND") (at 101.59 113.65 180) (unit 1)
     (in_bom no) (on_board yes) (dnp no)
-    (uuid 9673f2f2-e41a-41f9-8a8b-65492554f0cd)
+    (uuid 25608f31-09e6-4162-a1a8-8f1098f5283c)
     (property "Reference" "#PWR0006" (at 101.59 109.84 0)
       (effects (font (size 1.27 1.27)) hide)
     )
@@ -5981,7 +6615,7 @@
     )
     (instances
       (project "PiCoCo"
-        (path "/88b0342d-54f3-4dbb-a5db-939bca88afbb"
+        (path "/d041c4bc-74a9-4dc3-835e-4e59f8c971a7"
           (reference "#PWR0006") (unit 1)
         )
       )
@@ -5989,7 +6623,7 @@
   )
   (symbol (lib_id "power:GND") (at 101.59 100.95 180) (unit 1)
     (in_bom no) (on_board yes) (dnp no)
-    (uuid 0636331b-2ee7-4270-bef0-c3e733e40949)
+    (uuid 7b9f627b-e389-42ef-9c0b-ff399b6d2f85)
     (property "Reference" "#PWR0007" (at 101.59 97.14 0)
       (effects (font (size 1.27 1.27)) hide)
     )
@@ -6004,7 +6638,7 @@
     )
     (instances
       (project "PiCoCo"
-        (path "/88b0342d-54f3-4dbb-a5db-939bca88afbb"
+        (path "/d041c4bc-74a9-4dc3-835e-4e59f8c971a7"
           (reference "#PWR0007") (unit 1)
         )
       )
@@ -6012,7 +6646,7 @@
   )
   (symbol (lib_id "power:GND") (at 58.41 113.65 0) (unit 1)
     (in_bom no) (on_board yes) (dnp no)
-    (uuid cfd2078b-751d-457e-abae-93fbcce0b912)
+    (uuid db620d33-d1b9-47a1-a5a1-7770b5c9dd75)
     (property "Reference" "#PWR0008" (at 58.41 109.84 0)
       (effects (font (size 1.27 1.27)) hide)
     )
@@ -6027,7 +6661,7 @@
     )
     (instances
       (project "PiCoCo"
-        (path "/88b0342d-54f3-4dbb-a5db-939bca88afbb"
+        (path "/d041c4bc-74a9-4dc3-835e-4e59f8c971a7"
           (reference "#PWR0008") (unit 1)
         )
       )
@@ -6035,7 +6669,7 @@
   )
   (symbol (lib_id "power:GND") (at 262.54 190.80 90) (unit 1)
     (in_bom no) (on_board yes) (dnp no)
-    (uuid 346aeab3-1df7-4dc1-a19e-6331d92639fe)
+    (uuid 397c53c3-3991-4437-8ad3-4d2d5cd7a65c)
     (property "Reference" "#PWR0009" (at 262.54 186.99 0)
       (effects (font (size 1.27 1.27)) hide)
     )
@@ -6050,7 +6684,7 @@
     )
     (instances
       (project "PiCoCo"
-        (path "/88b0342d-54f3-4dbb-a5db-939bca88afbb"
+        (path "/d041c4bc-74a9-4dc3-835e-4e59f8c971a7"
           (reference "#PWR0009") (unit 1)
         )
       )
@@ -6058,7 +6692,7 @@
   )
   (symbol (lib_id "power:GND") (at 265.08 190.80 90) (unit 1)
     (in_bom no) (on_board yes) (dnp no)
-    (uuid c237ae51-9424-4555-a400-8deb0347932b)
+    (uuid 88466be0-fde1-4618-8aa8-2fda2bc89b04)
     (property "Reference" "#PWR0010" (at 265.08 186.99 0)
       (effects (font (size 1.27 1.27)) hide)
     )
@@ -6073,7 +6707,7 @@
     )
     (instances
       (project "PiCoCo"
-        (path "/88b0342d-54f3-4dbb-a5db-939bca88afbb"
+        (path "/d041c4bc-74a9-4dc3-835e-4e59f8c971a7"
           (reference "#PWR0010") (unit 1)
         )
       )
@@ -6081,7 +6715,7 @@
   )
   (symbol (lib_id "power:+5V") (at 254.92 94.28 270) (unit 1)
     (in_bom no) (on_board yes) (dnp no)
-    (uuid 9ee71150-304a-4f23-b5a4-5101c1f1f2e8)
+    (uuid 1cd8c6fd-9461-4f0f-bd22-21c27b3f3f3c)
     (property "Reference" "#PWR0011" (at 254.92 90.47 0)
       (effects (font (size 1.27 1.27)) hide)
     )
@@ -6096,7 +6730,7 @@
     )
     (instances
       (project "PiCoCo"
-        (path "/88b0342d-54f3-4dbb-a5db-939bca88afbb"
+        (path "/d041c4bc-74a9-4dc3-835e-4e59f8c971a7"
           (reference "#PWR0011") (unit 1)
         )
       )
@@ -6104,7 +6738,7 @@
   )
   (symbol (lib_id "power:GND") (at 170.00 150.32 90) (unit 1)
     (in_bom no) (on_board yes) (dnp no)
-    (uuid b348dba5-1e4f-48c5-b4b6-5d70de391cfd)
+    (uuid 094fb634-b91e-4846-9d9a-eac487d10a0b)
     (property "Reference" "#PWR0012" (at 170.00 146.51 0)
       (effects (font (size 1.27 1.27)) hide)
     )
@@ -6119,7 +6753,7 @@
     )
     (instances
       (project "PiCoCo"
-        (path "/88b0342d-54f3-4dbb-a5db-939bca88afbb"
+        (path "/d041c4bc-74a9-4dc3-835e-4e59f8c971a7"
           (reference "#PWR0012") (unit 1)
         )
       )
@@ -6127,7 +6761,7 @@
   )
   (symbol (lib_id "power:+3V3") (at 170.00 109.68 270) (unit 1)
     (in_bom no) (on_board yes) (dnp no)
-    (uuid e70cae53-ff36-479a-904c-9e111e419836)
+    (uuid d6f0e879-7451-431f-a428-18d4ecdd2539)
     (property "Reference" "#PWR0013" (at 170.00 105.87 0)
       (effects (font (size 1.27 1.27)) hide)
     )
@@ -6142,7 +6776,7 @@
     )
     (instances
       (project "PiCoCo"
-        (path "/88b0342d-54f3-4dbb-a5db-939bca88afbb"
+        (path "/d041c4bc-74a9-4dc3-835e-4e59f8c971a7"
           (reference "#PWR0013") (unit 1)
         )
       )
@@ -6150,7 +6784,7 @@
   )
   (symbol (lib_id "power:+3V3") (at 67.30 230.16 0) (unit 1)
     (in_bom no) (on_board yes) (dnp no)
-    (uuid 870b7465-e37e-4fbf-ba68-2111c5be1743)
+    (uuid 97c6586d-6084-46de-8294-4f5a3ac08a14)
     (property "Reference" "#PWR0014" (at 67.30 226.35 0)
       (effects (font (size 1.27 1.27)) hide)
     )
@@ -6165,7 +6799,7 @@
     )
     (instances
       (project "PiCoCo"
-        (path "/88b0342d-54f3-4dbb-a5db-939bca88afbb"
+        (path "/d041c4bc-74a9-4dc3-835e-4e59f8c971a7"
           (reference "#PWR0014") (unit 1)
         )
       )
@@ -6173,7 +6807,7 @@
   )
   (symbol (lib_id "power:GND") (at 80.00 240.32 90) (unit 1)
     (in_bom no) (on_board yes) (dnp no)
-    (uuid be3bf8b7-bf04-4e7d-8ba5-37abd3d27825)
+    (uuid fb3bb865-0645-428b-8e81-78e623527b73)
     (property "Reference" "#PWR0015" (at 80.00 236.51 0)
       (effects (font (size 1.27 1.27)) hide)
     )
@@ -6188,7 +6822,7 @@
     )
     (instances
       (project "PiCoCo"
-        (path "/88b0342d-54f3-4dbb-a5db-939bca88afbb"
+        (path "/d041c4bc-74a9-4dc3-835e-4e59f8c971a7"
           (reference "#PWR0015") (unit 1)
         )
       )
@@ -6196,7 +6830,7 @@
   )
   (symbol (lib_id "power:GND") (at 67.30 232.70 0) (unit 1)
     (in_bom no) (on_board yes) (dnp no)
-    (uuid 8ec46eb9-dab4-4c81-9780-e8b1e66f1653)
+    (uuid f0d67fe1-90a6-4f5c-94ba-f448f9e2b423)
     (property "Reference" "#PWR0016" (at 67.30 228.89 0)
       (effects (font (size 1.27 1.27)) hide)
     )
@@ -6211,7 +6845,7 @@
     )
     (instances
       (project "PiCoCo"
-        (path "/88b0342d-54f3-4dbb-a5db-939bca88afbb"
+        (path "/d041c4bc-74a9-4dc3-835e-4e59f8c971a7"
           (reference "#PWR0016") (unit 1)
         )
       )
@@ -6219,7 +6853,7 @@
   )
   (symbol (lib_id "power:+3V3") (at 80.00 199.68 270) (unit 1)
     (in_bom no) (on_board yes) (dnp no)
-    (uuid 9f0f3448-45d6-4295-870e-e88cb315b6e9)
+    (uuid b13b8a0e-00dc-4fa5-ba06-5117644a3be6)
     (property "Reference" "#PWR0017" (at 80.00 195.87 0)
       (effects (font (size 1.27 1.27)) hide)
     )
@@ -6234,7 +6868,7 @@
     )
     (instances
       (project "PiCoCo"
-        (path "/88b0342d-54f3-4dbb-a5db-939bca88afbb"
+        (path "/d041c4bc-74a9-4dc3-835e-4e59f8c971a7"
           (reference "#PWR0017") (unit 1)
         )
       )
@@ -6242,7 +6876,7 @@
   )
   (symbol (lib_id "power:+3V3") (at 117.30 230.16 0) (unit 1)
     (in_bom no) (on_board yes) (dnp no)
-    (uuid ae04455b-4633-43b9-9f3d-1b9e7b2c61a0)
+    (uuid 1ff1b35c-251d-4eb7-9d74-10d8dfb37116)
     (property "Reference" "#PWR0018" (at 117.30 226.35 0)
       (effects (font (size 1.27 1.27)) hide)
     )
@@ -6257,7 +6891,7 @@
     )
     (instances
       (project "PiCoCo"
-        (path "/88b0342d-54f3-4dbb-a5db-939bca88afbb"
+        (path "/d041c4bc-74a9-4dc3-835e-4e59f8c971a7"
           (reference "#PWR0018") (unit 1)
         )
       )
@@ -6265,7 +6899,7 @@
   )
   (symbol (lib_id "power:GND") (at 130.00 240.32 90) (unit 1)
     (in_bom no) (on_board yes) (dnp no)
-    (uuid 5ecb73a7-8092-48e0-b683-e73e26f128cb)
+    (uuid 9622b241-5827-4c52-b8a1-9a9bf53b412e)
     (property "Reference" "#PWR0019" (at 130.00 236.51 0)
       (effects (font (size 1.27 1.27)) hide)
     )
@@ -6280,7 +6914,7 @@
     )
     (instances
       (project "PiCoCo"
-        (path "/88b0342d-54f3-4dbb-a5db-939bca88afbb"
+        (path "/d041c4bc-74a9-4dc3-835e-4e59f8c971a7"
           (reference "#PWR0019") (unit 1)
         )
       )
@@ -6288,7 +6922,7 @@
   )
   (symbol (lib_id "power:GND") (at 117.30 232.70 0) (unit 1)
     (in_bom no) (on_board yes) (dnp no)
-    (uuid dc201955-2f85-4762-af4b-b3bcc513fe3c)
+    (uuid 2ee6aade-825f-4cb8-9c30-dffdabd041da)
     (property "Reference" "#PWR0020" (at 117.30 228.89 0)
       (effects (font (size 1.27 1.27)) hide)
     )
@@ -6303,7 +6937,7 @@
     )
     (instances
       (project "PiCoCo"
-        (path "/88b0342d-54f3-4dbb-a5db-939bca88afbb"
+        (path "/d041c4bc-74a9-4dc3-835e-4e59f8c971a7"
           (reference "#PWR0020") (unit 1)
         )
       )
@@ -6311,7 +6945,7 @@
   )
   (symbol (lib_id "power:+3V3") (at 130.00 199.68 270) (unit 1)
     (in_bom no) (on_board yes) (dnp no)
-    (uuid ea378713-7823-49a4-85b1-a9a712d4aa7d)
+    (uuid 996a2351-c109-473b-ac98-c2c3766cf0a8)
     (property "Reference" "#PWR0021" (at 130.00 195.87 0)
       (effects (font (size 1.27 1.27)) hide)
     )
@@ -6326,7 +6960,7 @@
     )
     (instances
       (project "PiCoCo"
-        (path "/88b0342d-54f3-4dbb-a5db-939bca88afbb"
+        (path "/d041c4bc-74a9-4dc3-835e-4e59f8c971a7"
           (reference "#PWR0021") (unit 1)
         )
       )
@@ -6334,7 +6968,7 @@
   )
   (symbol (lib_id "power:+3V3") (at 167.30 230.16 0) (unit 1)
     (in_bom no) (on_board yes) (dnp no)
-    (uuid 0d8e6a6a-3f69-4cf4-9dac-8b14e1f6fd70)
+    (uuid 77eefa33-e2d3-49d6-9dbb-440f303d5eaa)
     (property "Reference" "#PWR0022" (at 167.30 226.35 0)
       (effects (font (size 1.27 1.27)) hide)
     )
@@ -6349,7 +6983,7 @@
     )
     (instances
       (project "PiCoCo"
-        (path "/88b0342d-54f3-4dbb-a5db-939bca88afbb"
+        (path "/d041c4bc-74a9-4dc3-835e-4e59f8c971a7"
           (reference "#PWR0022") (unit 1)
         )
       )
@@ -6357,7 +6991,7 @@
   )
   (symbol (lib_id "power:GND") (at 167.30 225.08 0) (unit 1)
     (in_bom no) (on_board yes) (dnp no)
-    (uuid 318bc9b5-30a0-4050-88d8-49c7c7e74066)
+    (uuid 85c1b40c-ae98-4338-85b5-b9062708bfa7)
     (property "Reference" "#PWR0023" (at 167.30 221.27 0)
       (effects (font (size 1.27 1.27)) hide)
     )
@@ -6372,7 +7006,7 @@
     )
     (instances
       (project "PiCoCo"
-        (path "/88b0342d-54f3-4dbb-a5db-939bca88afbb"
+        (path "/d041c4bc-74a9-4dc3-835e-4e59f8c971a7"
           (reference "#PWR0023") (unit 1)
         )
       )
@@ -6380,7 +7014,7 @@
   )
   (symbol (lib_id "power:GND") (at 180.00 240.32 90) (unit 1)
     (in_bom no) (on_board yes) (dnp no)
-    (uuid 5609ef27-f5da-4d91-8fc7-f981efc669eb)
+    (uuid d7c08fbd-93da-4a3a-ac47-6190e851d44d)
     (property "Reference" "#PWR0024" (at 180.00 236.51 0)
       (effects (font (size 1.27 1.27)) hide)
     )
@@ -6395,7 +7029,7 @@
     )
     (instances
       (project "PiCoCo"
-        (path "/88b0342d-54f3-4dbb-a5db-939bca88afbb"
+        (path "/d041c4bc-74a9-4dc3-835e-4e59f8c971a7"
           (reference "#PWR0024") (unit 1)
         )
       )
@@ -6403,7 +7037,7 @@
   )
   (symbol (lib_id "power:GND") (at 167.30 232.70 0) (unit 1)
     (in_bom no) (on_board yes) (dnp no)
-    (uuid 0528b9e2-36db-4d17-9f5f-77ae83d58d20)
+    (uuid 5eb35652-6d0e-44fa-9c93-941310f38973)
     (property "Reference" "#PWR0025" (at 167.30 228.89 0)
       (effects (font (size 1.27 1.27)) hide)
     )
@@ -6418,7 +7052,7 @@
     )
     (instances
       (project "PiCoCo"
-        (path "/88b0342d-54f3-4dbb-a5db-939bca88afbb"
+        (path "/d041c4bc-74a9-4dc3-835e-4e59f8c971a7"
           (reference "#PWR0025") (unit 1)
         )
       )
@@ -6426,7 +7060,7 @@
   )
   (symbol (lib_id "power:+3V3") (at 180.00 199.68 270) (unit 1)
     (in_bom no) (on_board yes) (dnp no)
-    (uuid 504049f8-e9ef-4111-9334-4e8051e706e8)
+    (uuid 26521618-ca22-4e27-ba58-dcc8a81bf9c3)
     (property "Reference" "#PWR0026" (at 180.00 195.87 0)
       (effects (font (size 1.27 1.27)) hide)
     )
@@ -6441,7 +7075,7 @@
     )
     (instances
       (project "PiCoCo"
-        (path "/88b0342d-54f3-4dbb-a5db-939bca88afbb"
+        (path "/d041c4bc-74a9-4dc3-835e-4e59f8c971a7"
           (reference "#PWR0026") (unit 1)
         )
       )
@@ -6449,7 +7083,7 @@
   )
   (symbol (lib_id "power:GND") (at 260.00 57.62 90) (unit 1)
     (in_bom no) (on_board yes) (dnp no)
-    (uuid ef89692a-aae9-4f26-b288-b4b1b348ecc6)
+    (uuid 6050b5fe-057f-44e5-ace2-cc44e42a1e02)
     (property "Reference" "#PWR0027" (at 260.00 53.81 0)
       (effects (font (size 1.27 1.27)) hide)
     )
@@ -6464,7 +7098,7 @@
     )
     (instances
       (project "PiCoCo"
-        (path "/88b0342d-54f3-4dbb-a5db-939bca88afbb"
+        (path "/d041c4bc-74a9-4dc3-835e-4e59f8c971a7"
           (reference "#PWR0027") (unit 1)
         )
       )
@@ -6472,7 +7106,7 @@
   )
   (symbol (lib_id "power:+3V3") (at 267.62 50.00 180) (unit 1)
     (in_bom no) (on_board yes) (dnp no)
-    (uuid 12c45958-9327-479e-a477-b5a768cb9938)
+    (uuid 88ff6477-d7b0-4d13-9815-3adb70d2b571)
     (property "Reference" "#PWR0028" (at 267.62 46.19 0)
       (effects (font (size 1.27 1.27)) hide)
     )
@@ -6487,7 +7121,7 @@
     )
     (instances
       (project "PiCoCo"
-        (path "/88b0342d-54f3-4dbb-a5db-939bca88afbb"
+        (path "/d041c4bc-74a9-4dc3-835e-4e59f8c971a7"
           (reference "#PWR0028") (unit 1)
         )
       )
@@ -6495,7 +7129,7 @@
   )
   (symbol (lib_id "power:+5V") (at 252.38 50.00 0) (unit 1)
     (in_bom no) (on_board yes) (dnp no)
-    (uuid 4c26ea1c-1679-4611-9b9b-968d43707955)
+    (uuid cf4e5447-ea86-4cd5-a3d2-528a2d458c7a)
     (property "Reference" "#PWR0029" (at 252.38 46.19 0)
       (effects (font (size 1.27 1.27)) hide)
     )
@@ -6510,7 +7144,7 @@
     )
     (instances
       (project "PiCoCo"
-        (path "/88b0342d-54f3-4dbb-a5db-939bca88afbb"
+        (path "/d041c4bc-74a9-4dc3-835e-4e59f8c971a7"
           (reference "#PWR0029") (unit 1)
         )
       )
@@ -6518,7 +7152,7 @@
   )
   (symbol (lib_id "power:GND") (at 207.30 82.54 0) (unit 1)
     (in_bom no) (on_board yes) (dnp no)
-    (uuid 0e20d8b6-dc21-4042-beae-f0a9325cb061)
+    (uuid c75b1147-b671-46be-9269-d1d2645fdaed)
     (property "Reference" "#PWR0030" (at 207.30 78.73 0)
       (effects (font (size 1.27 1.27)) hide)
     )
@@ -6533,7 +7167,7 @@
     )
     (instances
       (project "PiCoCo"
-        (path "/88b0342d-54f3-4dbb-a5db-939bca88afbb"
+        (path "/d041c4bc-74a9-4dc3-835e-4e59f8c971a7"
           (reference "#PWR0030") (unit 1)
         )
       )
@@ -6541,7 +7175,7 @@
   )
   (symbol (lib_id "power:GND") (at 207.30 85.08 0) (unit 1)
     (in_bom no) (on_board yes) (dnp no)
-    (uuid c97a764c-9825-4074-a978-1323a768edef)
+    (uuid 66c97587-a9ac-412c-a2f6-44bf8545b6fb)
     (property "Reference" "#PWR0031" (at 207.30 81.27 0)
       (effects (font (size 1.27 1.27)) hide)
     )
@@ -6556,7 +7190,7 @@
     )
     (instances
       (project "PiCoCo"
-        (path "/88b0342d-54f3-4dbb-a5db-939bca88afbb"
+        (path "/d041c4bc-74a9-4dc3-835e-4e59f8c971a7"
           (reference "#PWR0031") (unit 1)
         )
       )
@@ -6564,7 +7198,7 @@
   )
   (symbol (lib_id "power:GND") (at 207.30 87.62 0) (unit 1)
     (in_bom no) (on_board yes) (dnp no)
-    (uuid db7a17a3-c41a-4d0f-8bbd-7e0752eff20b)
+    (uuid 14c48984-27ea-4e18-a479-869f7c2abf96)
     (property "Reference" "#PWR0032" (at 207.30 83.81 0)
       (effects (font (size 1.27 1.27)) hide)
     )
@@ -6579,7 +7213,7 @@
     )
     (instances
       (project "PiCoCo"
-        (path "/88b0342d-54f3-4dbb-a5db-939bca88afbb"
+        (path "/d041c4bc-74a9-4dc3-835e-4e59f8c971a7"
           (reference "#PWR0032") (unit 1)
         )
       )
@@ -6587,7 +7221,7 @@
   )
   (symbol (lib_id "power:GND") (at 207.30 90.16 0) (unit 1)
     (in_bom no) (on_board yes) (dnp no)
-    (uuid 69110015-6cfa-4b69-af98-12b52bf03413)
+    (uuid c5089178-3ef9-4108-9b16-ed2eda19e1d9)
     (property "Reference" "#PWR0033" (at 207.30 86.35 0)
       (effects (font (size 1.27 1.27)) hide)
     )
@@ -6602,7 +7236,7 @@
     )
     (instances
       (project "PiCoCo"
-        (path "/88b0342d-54f3-4dbb-a5db-939bca88afbb"
+        (path "/d041c4bc-74a9-4dc3-835e-4e59f8c971a7"
           (reference "#PWR0033") (unit 1)
         )
       )
@@ -6610,7 +7244,7 @@
   )
   (symbol (lib_id "power:+3V3") (at 220.00 67.30 270) (unit 1)
     (in_bom no) (on_board yes) (dnp no)
-    (uuid 2c5c23f7-f2da-404c-b20d-2522ab5db29b)
+    (uuid 82c5fa13-89d7-4d69-856b-2cb1295fdfbf)
     (property "Reference" "#PWR0034" (at 220.00 63.49 0)
       (effects (font (size 1.27 1.27)) hide)
     )
@@ -6625,7 +7259,7 @@
     )
     (instances
       (project "PiCoCo"
-        (path "/88b0342d-54f3-4dbb-a5db-939bca88afbb"
+        (path "/d041c4bc-74a9-4dc3-835e-4e59f8c971a7"
           (reference "#PWR0034") (unit 1)
         )
       )
@@ -6633,7 +7267,7 @@
   )
   (symbol (lib_id "power:GND") (at 220.00 95.24 90) (unit 1)
     (in_bom no) (on_board yes) (dnp no)
-    (uuid 7ee1c49f-9f8a-4723-9f85-2caa54957b5e)
+    (uuid 18c30b87-f1fd-49a0-bafd-eac45cbcbe85)
     (property "Reference" "#PWR0035" (at 220.00 91.43 0)
       (effects (font (size 1.27 1.27)) hide)
     )
@@ -6648,7 +7282,7 @@
     )
     (instances
       (project "PiCoCo"
-        (path "/88b0342d-54f3-4dbb-a5db-939bca88afbb"
+        (path "/d041c4bc-74a9-4dc3-835e-4e59f8c971a7"
           (reference "#PWR0035") (unit 1)
         )
       )
@@ -6656,7 +7290,7 @@
   )
   (symbol (lib_id "power:+5V") (at 30.00 276.19 270) (unit 1)
     (in_bom no) (on_board yes) (dnp no)
-    (uuid 66ce8b96-9fb0-4587-b516-cf22bb0483a4)
+    (uuid a655e550-b76b-4c96-bff0-49b4b6628538)
     (property "Reference" "#PWR0036" (at 30.00 272.38 0)
       (effects (font (size 1.27 1.27)) hide)
     )
@@ -6671,7 +7305,7 @@
     )
     (instances
       (project "PiCoCo"
-        (path "/88b0342d-54f3-4dbb-a5db-939bca88afbb"
+        (path "/d041c4bc-74a9-4dc3-835e-4e59f8c971a7"
           (reference "#PWR0036") (unit 1)
         )
       )
@@ -6679,7 +7313,7 @@
   )
   (symbol (lib_id "power:+5V") (at 40.00 276.19 270) (unit 1)
     (in_bom no) (on_board yes) (dnp no)
-    (uuid 6c32d2b6-90fa-455f-996e-2cde54a4d9b8)
+    (uuid 106def1b-4fbe-4aa3-8304-e04085a8cf61)
     (property "Reference" "#PWR0037" (at 40.00 272.38 0)
       (effects (font (size 1.27 1.27)) hide)
     )
@@ -6694,7 +7328,7 @@
     )
     (instances
       (project "PiCoCo"
-        (path "/88b0342d-54f3-4dbb-a5db-939bca88afbb"
+        (path "/d041c4bc-74a9-4dc3-835e-4e59f8c971a7"
           (reference "#PWR0037") (unit 1)
         )
       )
@@ -6702,7 +7336,7 @@
   )
   (symbol (lib_id "power:+5V") (at 50.00 276.19 270) (unit 1)
     (in_bom no) (on_board yes) (dnp no)
-    (uuid bd67a529-9918-4239-ae29-77aff2fb6252)
+    (uuid f0908d69-a532-4541-811b-b2bb2151fa85)
     (property "Reference" "#PWR0038" (at 50.00 272.38 0)
       (effects (font (size 1.27 1.27)) hide)
     )
@@ -6717,7 +7351,7 @@
     )
     (instances
       (project "PiCoCo"
-        (path "/88b0342d-54f3-4dbb-a5db-939bca88afbb"
+        (path "/d041c4bc-74a9-4dc3-835e-4e59f8c971a7"
           (reference "#PWR0038") (unit 1)
         )
       )
@@ -6725,7 +7359,7 @@
   )
   (symbol (lib_id "power:+3V3") (at 40.00 156.19 270) (unit 1)
     (in_bom no) (on_board yes) (dnp no)
-    (uuid ffb6d19f-2a18-4891-bb3e-6bc2ab241d7f)
+    (uuid 6d63f3f6-43e4-43fc-9464-3740b76b3b9b)
     (property "Reference" "#PWR0039" (at 40.00 152.38 0)
       (effects (font (size 1.27 1.27)) hide)
     )
@@ -6740,7 +7374,7 @@
     )
     (instances
       (project "PiCoCo"
-        (path "/88b0342d-54f3-4dbb-a5db-939bca88afbb"
+        (path "/d041c4bc-74a9-4dc3-835e-4e59f8c971a7"
           (reference "#PWR0039") (unit 1)
         )
       )
@@ -6748,7 +7382,7 @@
   )
   (symbol (lib_id "power:GND") (at 62.54 175.08 90) (unit 1)
     (in_bom no) (on_board yes) (dnp no)
-    (uuid 8be6e690-b108-49cc-8d61-c7c8c9f76fd5)
+    (uuid 242a95e6-6b61-437a-b366-3227bdc7f2fd)
     (property "Reference" "#PWR0040" (at 62.54 171.27 0)
       (effects (font (size 1.27 1.27)) hide)
     )
@@ -6763,7 +7397,7 @@
     )
     (instances
       (project "PiCoCo"
-        (path "/88b0342d-54f3-4dbb-a5db-939bca88afbb"
+        (path "/d041c4bc-74a9-4dc3-835e-4e59f8c971a7"
           (reference "#PWR0040") (unit 1)
         )
       )
@@ -6771,7 +7405,7 @@
   )
   (symbol (lib_id "power:GND") (at 50.00 193.81 90) (unit 1)
     (in_bom no) (on_board yes) (dnp no)
-    (uuid 0759aaf2-7fac-436a-8f8b-476078471e16)
+    (uuid d12439cc-1e5d-498b-953d-b01f58dfd365)
     (property "Reference" "#PWR0041" (at 50.00 190.00 0)
       (effects (font (size 1.27 1.27)) hide)
     )
@@ -6786,7 +7420,7 @@
     )
     (instances
       (project "PiCoCo"
-        (path "/88b0342d-54f3-4dbb-a5db-939bca88afbb"
+        (path "/d041c4bc-74a9-4dc3-835e-4e59f8c971a7"
           (reference "#PWR0041") (unit 1)
         )
       )
@@ -6794,7 +7428,7 @@
   )
   (symbol (lib_id "power:GND") (at 62.54 205.08 90) (unit 1)
     (in_bom no) (on_board yes) (dnp no)
-    (uuid 10d352cc-add5-4a50-9c26-75043683d3b4)
+    (uuid ecd70a57-b81e-4bca-bd12-27ca988e5960)
     (property "Reference" "#PWR0042" (at 62.54 201.27 0)
       (effects (font (size 1.27 1.27)) hide)
     )
@@ -6809,7 +7443,7 @@
     )
     (instances
       (project "PiCoCo"
-        (path "/88b0342d-54f3-4dbb-a5db-939bca88afbb"
+        (path "/d041c4bc-74a9-4dc3-835e-4e59f8c971a7"
           (reference "#PWR0042") (unit 1)
         )
       )
@@ -6817,7 +7451,7 @@
   )
   (symbol (lib_id "power:GND") (at 80.00 193.81 90) (unit 1)
     (in_bom no) (on_board yes) (dnp no)
-    (uuid d279d82f-2e5d-4f09-b982-654c3f1feaae)
+    (uuid de43f5a6-31b6-4846-9bd0-16db44709c4b)
     (property "Reference" "#PWR0043" (at 80.00 190.00 0)
       (effects (font (size 1.27 1.27)) hide)
     )
@@ -6832,7 +7466,7 @@
     )
     (instances
       (project "PiCoCo"
-        (path "/88b0342d-54f3-4dbb-a5db-939bca88afbb"
+        (path "/d041c4bc-74a9-4dc3-835e-4e59f8c971a7"
           (reference "#PWR0043") (unit 1)
         )
       )
@@ -6840,7 +7474,7 @@
   )
   (symbol (lib_id "power:GND") (at 92.54 205.08 90) (unit 1)
     (in_bom no) (on_board yes) (dnp no)
-    (uuid e4d680e5-a87f-4541-91f7-8b5aedc4f78f)
+    (uuid 1c2153ea-9422-4d5f-b026-e92692afcae7)
     (property "Reference" "#PWR0044" (at 92.54 201.27 0)
       (effects (font (size 1.27 1.27)) hide)
     )
@@ -6855,7 +7489,7 @@
     )
     (instances
       (project "PiCoCo"
-        (path "/88b0342d-54f3-4dbb-a5db-939bca88afbb"
+        (path "/d041c4bc-74a9-4dc3-835e-4e59f8c971a7"
           (reference "#PWR0044") (unit 1)
         )
       )
@@ -6863,7 +7497,7 @@
   )
   (symbol (lib_id "power:+3V3") (at 210.00 256.19 270) (unit 1)
     (in_bom no) (on_board yes) (dnp no)
-    (uuid 259345c8-2658-4848-a81c-84196f3d9eff)
+    (uuid c4711c3a-db74-4948-b8d4-335cbbea1332)
     (property "Reference" "#PWR0045" (at 210.00 252.38 0)
       (effects (font (size 1.27 1.27)) hide)
     )
@@ -6878,7 +7512,7 @@
     )
     (instances
       (project "PiCoCo"
-        (path "/88b0342d-54f3-4dbb-a5db-939bca88afbb"
+        (path "/d041c4bc-74a9-4dc3-835e-4e59f8c971a7"
           (reference "#PWR0045") (unit 1)
         )
       )
@@ -6886,7 +7520,7 @@
   )
   (symbol (lib_id "power:+5V") (at 220.00 256.19 270) (unit 1)
     (in_bom no) (on_board yes) (dnp no)
-    (uuid ba00c64c-2f58-4119-8176-40e706fcce06)
+    (uuid 941ecb4c-101d-453d-a7c2-1143348dac5a)
     (property "Reference" "#PWR0046" (at 220.00 252.38 0)
       (effects (font (size 1.27 1.27)) hide)
     )
@@ -6901,7 +7535,7 @@
     )
     (instances
       (project "PiCoCo"
-        (path "/88b0342d-54f3-4dbb-a5db-939bca88afbb"
+        (path "/d041c4bc-74a9-4dc3-835e-4e59f8c971a7"
           (reference "#PWR0046") (unit 1)
         )
       )
@@ -6909,7 +7543,7 @@
   )
   (symbol (lib_id "power:+3V3") (at 230.00 256.19 270) (unit 1)
     (in_bom no) (on_board yes) (dnp no)
-    (uuid b38579b1-f332-45a1-8365-b50ca4df17c2)
+    (uuid ab5ffe48-796f-40b4-ae0b-d4fc603cb0f9)
     (property "Reference" "#PWR0047" (at 230.00 252.38 0)
       (effects (font (size 1.27 1.27)) hide)
     )
@@ -6924,7 +7558,7 @@
     )
     (instances
       (project "PiCoCo"
-        (path "/88b0342d-54f3-4dbb-a5db-939bca88afbb"
+        (path "/d041c4bc-74a9-4dc3-835e-4e59f8c971a7"
           (reference "#PWR0047") (unit 1)
         )
       )
@@ -6932,7 +7566,7 @@
   )
   (symbol (lib_id "power:GND") (at 125.00 313.81 90) (unit 1)
     (in_bom no) (on_board yes) (dnp no)
-    (uuid 6c40e73e-b1db-43e5-8e13-ddfbd4157365)
+    (uuid 78af4c1b-c4f3-4e50-ab30-caf7d1c21e5c)
     (property "Reference" "#PWR0048" (at 125.00 310.00 0)
       (effects (font (size 1.27 1.27)) hide)
     )
@@ -6947,7 +7581,7 @@
     )
     (instances
       (project "PiCoCo"
-        (path "/88b0342d-54f3-4dbb-a5db-939bca88afbb"
+        (path "/d041c4bc-74a9-4dc3-835e-4e59f8c971a7"
           (reference "#PWR0048") (unit 1)
         )
       )
@@ -6955,7 +7589,7 @@
   )
   (symbol (lib_id "power:GND") (at 135.00 313.81 90) (unit 1)
     (in_bom no) (on_board yes) (dnp no)
-    (uuid a50160e3-8a20-4114-9e98-20fdec7c3e29)
+    (uuid 1ff94fb9-c798-4f94-83c7-38d7b547875a)
     (property "Reference" "#PWR0049" (at 135.00 310.00 0)
       (effects (font (size 1.27 1.27)) hide)
     )
@@ -6970,7 +7604,7 @@
     )
     (instances
       (project "PiCoCo"
-        (path "/88b0342d-54f3-4dbb-a5db-939bca88afbb"
+        (path "/d041c4bc-74a9-4dc3-835e-4e59f8c971a7"
           (reference "#PWR0049") (unit 1)
         )
       )
@@ -6978,7 +7612,7 @@
   )
   (symbol (lib_id "power:GND") (at 150.00 313.81 90) (unit 1)
     (in_bom no) (on_board yes) (dnp no)
-    (uuid 63f123db-e3e0-45df-adf4-1b5cc330eb3e)
+    (uuid 665a1749-c7d3-4398-8920-95ad452d9a97)
     (property "Reference" "#PWR0050" (at 150.00 310.00 0)
       (effects (font (size 1.27 1.27)) hide)
     )
@@ -6993,7 +7627,7 @@
     )
     (instances
       (project "PiCoCo"
-        (path "/88b0342d-54f3-4dbb-a5db-939bca88afbb"
+        (path "/d041c4bc-74a9-4dc3-835e-4e59f8c971a7"
           (reference "#PWR0050") (unit 1)
         )
       )
@@ -7001,7 +7635,7 @@
   )
   (symbol (lib_id "power:+5V") (at 253.81 70.00 180) (unit 1)
     (in_bom no) (on_board yes) (dnp no)
-    (uuid cbb28a26-98da-4ad0-8bd7-bebec670f056)
+    (uuid 1f2f0929-dbf8-48c4-85ae-2b4a5afabea0)
     (property "Reference" "#PWR0051" (at 253.81 66.19 0)
       (effects (font (size 1.27 1.27)) hide)
     )
@@ -7016,7 +7650,7 @@
     )
     (instances
       (project "PiCoCo"
-        (path "/88b0342d-54f3-4dbb-a5db-939bca88afbb"
+        (path "/d041c4bc-74a9-4dc3-835e-4e59f8c971a7"
           (reference "#PWR0051") (unit 1)
         )
       )
@@ -7024,7 +7658,7 @@
   )
   (symbol (lib_id "power:+5V") (at 300.00 196.19 270) (unit 1)
     (in_bom no) (on_board yes) (dnp no)
-    (uuid 38f43f5c-8e16-4390-8416-d8ce1722c9e3)
+    (uuid 7b5a0b1d-9ec4-4bfe-ada4-308dba863503)
     (property "Reference" "#PWR0052" (at 300.00 192.38 0)
       (effects (font (size 1.27 1.27)) hide)
     )
@@ -7039,7 +7673,7 @@
     )
     (instances
       (project "PiCoCo"
-        (path "/88b0342d-54f3-4dbb-a5db-939bca88afbb"
+        (path "/d041c4bc-74a9-4dc3-835e-4e59f8c971a7"
           (reference "#PWR0052") (unit 1)
         )
       )
@@ -7047,7 +7681,7 @@
   )
   (symbol (lib_id "power:GND") (at 300.00 203.81 90) (unit 1)
     (in_bom no) (on_board yes) (dnp no)
-    (uuid b50834eb-d98e-4f2f-8d67-c40d36c0b215)
+    (uuid 6a6dbc76-82e7-4071-8890-9ee1899a9093)
     (property "Reference" "#PWR0053" (at 300.00 200.00 0)
       (effects (font (size 1.27 1.27)) hide)
     )
@@ -7062,7 +7696,7 @@
     )
     (instances
       (project "PiCoCo"
-        (path "/88b0342d-54f3-4dbb-a5db-939bca88afbb"
+        (path "/d041c4bc-74a9-4dc3-835e-4e59f8c971a7"
           (reference "#PWR0053") (unit 1)
         )
       )
@@ -7070,7 +7704,7 @@
   )
   (symbol (lib_id "power:+5V") (at 240.00 26.19 270) (unit 1)
     (in_bom no) (on_board yes) (dnp no)
-    (uuid 59d89e22-eb5b-451b-bf4a-9f78333deeca)
+    (uuid 413727c2-0431-49ab-9d45-f42085ff4566)
     (property "Reference" "#PWR0054" (at 240.00 22.38 0)
       (effects (font (size 1.27 1.27)) hide)
     )
@@ -7085,7 +7719,7 @@
     )
     (instances
       (project "PiCoCo"
-        (path "/88b0342d-54f3-4dbb-a5db-939bca88afbb"
+        (path "/d041c4bc-74a9-4dc3-835e-4e59f8c971a7"
           (reference "#PWR0054") (unit 1)
         )
       )
@@ -7093,7 +7727,7 @@
   )
   (symbol (lib_id "power:GND") (at 240.00 33.81 90) (unit 1)
     (in_bom no) (on_board yes) (dnp no)
-    (uuid 72c295b0-7d74-4930-b210-182d85a03764)
+    (uuid fd6bdfdc-fae8-4609-9833-49fce47cf9ed)
     (property "Reference" "#PWR0055" (at 240.00 30.00 0)
       (effects (font (size 1.27 1.27)) hide)
     )
@@ -7108,7 +7742,7 @@
     )
     (instances
       (project "PiCoCo"
-        (path "/88b0342d-54f3-4dbb-a5db-939bca88afbb"
+        (path "/d041c4bc-74a9-4dc3-835e-4e59f8c971a7"
           (reference "#PWR0055") (unit 1)
         )
       )
@@ -7116,7 +7750,7 @@
   )
   (symbol (lib_id "power:+3V3") (at 280.00 26.19 270) (unit 1)
     (in_bom no) (on_board yes) (dnp no)
-    (uuid ee234d6c-dd1b-492f-82ac-b08c01dbe99b)
+    (uuid df69a639-d306-421d-827e-ecb4f8b384cc)
     (property "Reference" "#PWR0056" (at 280.00 22.38 0)
       (effects (font (size 1.27 1.27)) hide)
     )
@@ -7131,7 +7765,7 @@
     )
     (instances
       (project "PiCoCo"
-        (path "/88b0342d-54f3-4dbb-a5db-939bca88afbb"
+        (path "/d041c4bc-74a9-4dc3-835e-4e59f8c971a7"
           (reference "#PWR0056") (unit 1)
         )
       )
@@ -7139,7 +7773,7 @@
   )
   (symbol (lib_id "power:GND") (at 280.00 33.81 90) (unit 1)
     (in_bom no) (on_board yes) (dnp no)
-    (uuid 68472b84-d9ba-4cb5-99a9-adb163f063a1)
+    (uuid 88a343af-6dfc-499f-b1da-4c5df1facb4b)
     (property "Reference" "#PWR0057" (at 280.00 30.00 0)
       (effects (font (size 1.27 1.27)) hide)
     )
@@ -7154,7 +7788,7 @@
     )
     (instances
       (project "PiCoCo"
-        (path "/88b0342d-54f3-4dbb-a5db-939bca88afbb"
+        (path "/d041c4bc-74a9-4dc3-835e-4e59f8c971a7"
           (reference "#PWR0057") (unit 1)
         )
       )
@@ -7162,7 +7796,7 @@
   )
   (symbol (lib_id "power:+3V3") (at 160.00 96.19 270) (unit 1)
     (in_bom no) (on_board yes) (dnp no)
-    (uuid 6a7924a8-8243-4d43-a4cb-8582a7b9ab4e)
+    (uuid 085f9659-8303-479a-95d1-606983927496)
     (property "Reference" "#PWR0058" (at 160.00 92.38 0)
       (effects (font (size 1.27 1.27)) hide)
     )
@@ -7177,7 +7811,7 @@
     )
     (instances
       (project "PiCoCo"
-        (path "/88b0342d-54f3-4dbb-a5db-939bca88afbb"
+        (path "/d041c4bc-74a9-4dc3-835e-4e59f8c971a7"
           (reference "#PWR0058") (unit 1)
         )
       )
@@ -7185,7 +7819,7 @@
   )
   (symbol (lib_id "power:GND") (at 160.00 103.81 90) (unit 1)
     (in_bom no) (on_board yes) (dnp no)
-    (uuid 8cf00642-1604-4cef-9911-b228217fc6c1)
+    (uuid 1a1012ab-6184-490f-b7d9-d22f3d167070)
     (property "Reference" "#PWR0059" (at 160.00 100.00 0)
       (effects (font (size 1.27 1.27)) hide)
     )
@@ -7200,7 +7834,7 @@
     )
     (instances
       (project "PiCoCo"
-        (path "/88b0342d-54f3-4dbb-a5db-939bca88afbb"
+        (path "/d041c4bc-74a9-4dc3-835e-4e59f8c971a7"
           (reference "#PWR0059") (unit 1)
         )
       )
@@ -7208,7 +7842,7 @@
   )
   (symbol (lib_id "power:+3V3") (at 90.00 256.19 270) (unit 1)
     (in_bom no) (on_board yes) (dnp no)
-    (uuid 0a1a72de-4b4f-4d77-a600-e0619d88ea2c)
+    (uuid c37b7be7-f90a-4a61-a892-ad329ad9a14c)
     (property "Reference" "#PWR0060" (at 90.00 252.38 0)
       (effects (font (size 1.27 1.27)) hide)
     )
@@ -7223,7 +7857,7 @@
     )
     (instances
       (project "PiCoCo"
-        (path "/88b0342d-54f3-4dbb-a5db-939bca88afbb"
+        (path "/d041c4bc-74a9-4dc3-835e-4e59f8c971a7"
           (reference "#PWR0060") (unit 1)
         )
       )
@@ -7231,7 +7865,7 @@
   )
   (symbol (lib_id "power:GND") (at 90.00 263.81 90) (unit 1)
     (in_bom no) (on_board yes) (dnp no)
-    (uuid ade5bd06-3e85-4a29-b59a-7dd5a55adbab)
+    (uuid 7a12c6df-97de-453c-9840-d50a6ae2f8d8)
     (property "Reference" "#PWR0061" (at 90.00 260.00 0)
       (effects (font (size 1.27 1.27)) hide)
     )
@@ -7246,7 +7880,7 @@
     )
     (instances
       (project "PiCoCo"
-        (path "/88b0342d-54f3-4dbb-a5db-939bca88afbb"
+        (path "/d041c4bc-74a9-4dc3-835e-4e59f8c971a7"
           (reference "#PWR0061") (unit 1)
         )
       )
@@ -7254,7 +7888,7 @@
   )
   (symbol (lib_id "power:+3V3") (at 140.00 256.19 270) (unit 1)
     (in_bom no) (on_board yes) (dnp no)
-    (uuid 1d579812-cb52-4019-acbd-db51ba0ffe3b)
+    (uuid f9aa08e1-bb07-416e-a37e-6a97da353410)
     (property "Reference" "#PWR0062" (at 140.00 252.38 0)
       (effects (font (size 1.27 1.27)) hide)
     )
@@ -7269,7 +7903,7 @@
     )
     (instances
       (project "PiCoCo"
-        (path "/88b0342d-54f3-4dbb-a5db-939bca88afbb"
+        (path "/d041c4bc-74a9-4dc3-835e-4e59f8c971a7"
           (reference "#PWR0062") (unit 1)
         )
       )
@@ -7277,7 +7911,7 @@
   )
   (symbol (lib_id "power:GND") (at 140.00 263.81 90) (unit 1)
     (in_bom no) (on_board yes) (dnp no)
-    (uuid e8bc528d-ceff-4ce6-baa9-eca5b1ae81bb)
+    (uuid 5453ecf9-82bd-4565-8ee0-f0013a4f7f44)
     (property "Reference" "#PWR0063" (at 140.00 260.00 0)
       (effects (font (size 1.27 1.27)) hide)
     )
@@ -7292,7 +7926,7 @@
     )
     (instances
       (project "PiCoCo"
-        (path "/88b0342d-54f3-4dbb-a5db-939bca88afbb"
+        (path "/d041c4bc-74a9-4dc3-835e-4e59f8c971a7"
           (reference "#PWR0063") (unit 1)
         )
       )
@@ -7300,7 +7934,7 @@
   )
   (symbol (lib_id "power:+3V3") (at 190.00 256.19 270) (unit 1)
     (in_bom no) (on_board yes) (dnp no)
-    (uuid b47d2393-bd77-4700-af3c-aef105f3caff)
+    (uuid 5bf9b80a-b8f7-444b-b392-655b0ccb9146)
     (property "Reference" "#PWR0064" (at 190.00 252.38 0)
       (effects (font (size 1.27 1.27)) hide)
     )
@@ -7315,7 +7949,7 @@
     )
     (instances
       (project "PiCoCo"
-        (path "/88b0342d-54f3-4dbb-a5db-939bca88afbb"
+        (path "/d041c4bc-74a9-4dc3-835e-4e59f8c971a7"
           (reference "#PWR0064") (unit 1)
         )
       )
@@ -7323,7 +7957,7 @@
   )
   (symbol (lib_id "power:GND") (at 190.00 263.81 90) (unit 1)
     (in_bom no) (on_board yes) (dnp no)
-    (uuid 9ca4f1a4-1b7c-4898-aebb-2270ee5872ed)
+    (uuid 01585126-b6b9-4e0a-aa02-886324f0a308)
     (property "Reference" "#PWR0065" (at 190.00 260.00 0)
       (effects (font (size 1.27 1.27)) hide)
     )
@@ -7338,7 +7972,7 @@
     )
     (instances
       (project "PiCoCo"
-        (path "/88b0342d-54f3-4dbb-a5db-939bca88afbb"
+        (path "/d041c4bc-74a9-4dc3-835e-4e59f8c971a7"
           (reference "#PWR0065") (unit 1)
         )
       )
@@ -7346,7 +7980,7 @@
   )
   (symbol (lib_id "power:+3V3") (at 230.00 66.19 270) (unit 1)
     (in_bom no) (on_board yes) (dnp no)
-    (uuid b0bc26ea-3403-426a-92de-cfda7c14bf48)
+    (uuid 94ebaf17-e25e-470e-9837-9860cd9c5237)
     (property "Reference" "#PWR0066" (at 230.00 62.38 0)
       (effects (font (size 1.27 1.27)) hide)
     )
@@ -7361,7 +7995,7 @@
     )
     (instances
       (project "PiCoCo"
-        (path "/88b0342d-54f3-4dbb-a5db-939bca88afbb"
+        (path "/d041c4bc-74a9-4dc3-835e-4e59f8c971a7"
           (reference "#PWR0066") (unit 1)
         )
       )
@@ -7369,7 +8003,7 @@
   )
   (symbol (lib_id "power:GND") (at 230.00 73.81 90) (unit 1)
     (in_bom no) (on_board yes) (dnp no)
-    (uuid 1c92e0c6-35dc-4b9f-8b93-23b01d4ec058)
+    (uuid 9c2f9720-e424-4dfa-a222-1f74201d29e4)
     (property "Reference" "#PWR0067" (at 230.00 70.00 0)
       (effects (font (size 1.27 1.27)) hide)
     )
@@ -7384,7 +8018,7 @@
     )
     (instances
       (project "PiCoCo"
-        (path "/88b0342d-54f3-4dbb-a5db-939bca88afbb"
+        (path "/d041c4bc-74a9-4dc3-835e-4e59f8c971a7"
           (reference "#PWR0067") (unit 1)
         )
       )
@@ -7392,7 +8026,7 @@
   )
   (symbol (lib_id "power:+3V3") (at 100.00 96.19 270) (unit 1)
     (in_bom no) (on_board yes) (dnp no)
-    (uuid 605b8e1f-8de8-4c32-828b-8cb76a2a8fb7)
+    (uuid 4f8e6c3f-5fcd-4718-b5ae-6005ebbfeb4b)
     (property "Reference" "#PWR0068" (at 100.00 92.38 0)
       (effects (font (size 1.27 1.27)) hide)
     )
@@ -7407,7 +8041,7 @@
     )
     (instances
       (project "PiCoCo"
-        (path "/88b0342d-54f3-4dbb-a5db-939bca88afbb"
+        (path "/d041c4bc-74a9-4dc3-835e-4e59f8c971a7"
           (reference "#PWR0068") (unit 1)
         )
       )
@@ -7415,7 +8049,7 @@
   )
   (symbol (lib_id "power:GND") (at 100.00 103.81 90) (unit 1)
     (in_bom no) (on_board yes) (dnp no)
-    (uuid 1a236bfd-20fa-4b17-b9bb-a8bd6e563827)
+    (uuid 2f505a1d-df46-4995-98e1-ce1c5366e470)
     (property "Reference" "#PWR0069" (at 100.00 100.00 0)
       (effects (font (size 1.27 1.27)) hide)
     )
@@ -7430,7 +8064,7 @@
     )
     (instances
       (project "PiCoCo"
-        (path "/88b0342d-54f3-4dbb-a5db-939bca88afbb"
+        (path "/d041c4bc-74a9-4dc3-835e-4e59f8c971a7"
           (reference "#PWR0069") (unit 1)
         )
       )
@@ -7438,7 +8072,7 @@
   )
   (symbol (lib_id "power:GND") (at 270.00 83.81 90) (unit 1)
     (in_bom no) (on_board yes) (dnp no)
-    (uuid 75ac07c4-7053-4fcc-8215-2a8f3fd15b0f)
+    (uuid 80b41f60-dbdc-48ef-a56e-80f4ec929863)
     (property "Reference" "#PWR0070" (at 270.00 80.00 0)
       (effects (font (size 1.27 1.27)) hide)
     )
@@ -7453,16 +8087,85 @@
     )
     (instances
       (project "PiCoCo"
-        (path "/88b0342d-54f3-4dbb-a5db-939bca88afbb"
+        (path "/d041c4bc-74a9-4dc3-835e-4e59f8c971a7"
           (reference "#PWR0070") (unit 1)
+        )
+      )
+    )
+  )
+  (symbol (lib_id "power:+3V3") (at 200.00 86.19 270) (unit 1)
+    (in_bom no) (on_board yes) (dnp no)
+    (uuid ae3e2a1e-0980-4e65-9e60-4c87e01f742f)
+    (property "Reference" "#PWR0071" (at 200.00 82.38 0)
+      (effects (font (size 1.27 1.27)) hide)
+    )
+    (property "Value" "+3V3" (at 200.00 83.65 0)
+      (effects (font (size 1.27 1.27)))
+    )
+    (property "Footprint" "" (at 200.00 86.19 0)
+      (effects (font (size 1.27 1.27)) hide)
+    )
+    (property "Datasheet" "" (at 200.00 86.19 0)
+      (effects (font (size 1.27 1.27)) hide)
+    )
+    (instances
+      (project "PiCoCo"
+        (path "/d041c4bc-74a9-4dc3-835e-4e59f8c971a7"
+          (reference "#PWR0071") (unit 1)
+        )
+      )
+    )
+  )
+  (symbol (lib_id "power:GND") (at 200.00 93.81 90) (unit 1)
+    (in_bom no) (on_board yes) (dnp no)
+    (uuid c7c09948-c1ae-44db-9c2d-7588a882623b)
+    (property "Reference" "#PWR0072" (at 200.00 90.00 0)
+      (effects (font (size 1.27 1.27)) hide)
+    )
+    (property "Value" "GND" (at 200.00 91.27 0)
+      (effects (font (size 1.27 1.27)))
+    )
+    (property "Footprint" "" (at 200.00 93.81 0)
+      (effects (font (size 1.27 1.27)) hide)
+    )
+    (property "Datasheet" "" (at 200.00 93.81 0)
+      (effects (font (size 1.27 1.27)) hide)
+    )
+    (instances
+      (project "PiCoCo"
+        (path "/d041c4bc-74a9-4dc3-835e-4e59f8c971a7"
+          (reference "#PWR0072") (unit 1)
+        )
+      )
+    )
+  )
+  (symbol (lib_id "power:GND") (at 314.92 115.08 0) (unit 1)
+    (in_bom no) (on_board yes) (dnp no)
+    (uuid 09cf0648-aafc-4cfd-96fe-61419745c977)
+    (property "Reference" "#PWR0073" (at 314.92 111.27 0)
+      (effects (font (size 1.27 1.27)) hide)
+    )
+    (property "Value" "GND" (at 314.92 112.54 0)
+      (effects (font (size 1.27 1.27)))
+    )
+    (property "Footprint" "" (at 314.92 115.08 0)
+      (effects (font (size 1.27 1.27)) hide)
+    )
+    (property "Datasheet" "" (at 314.92 115.08 0)
+      (effects (font (size 1.27 1.27)) hide)
+    )
+    (instances
+      (project "PiCoCo"
+        (path "/d041c4bc-74a9-4dc3-835e-4e59f8c971a7"
+          (reference "#PWR0073") (unit 1)
         )
       )
     )
   )
   (symbol (lib_id "power:+3V3") (at 310.00 70.00 90) (unit 1)
     (in_bom no) (on_board yes) (dnp no)
-    (uuid 88dd0afc-cb98-4e2a-8a48-090f4ce40b59)
-    (property "Reference" "#PWR0071" (at 310.00 66.19 0)
+    (uuid bfcd57d8-ae7a-4664-92f6-869b24de829b)
+    (property "Reference" "#PWR0074" (at 310.00 66.19 0)
       (effects (font (size 1.27 1.27)) hide)
     )
     (property "Value" "+3V3" (at 310.00 67.46 0)
@@ -7476,16 +8179,16 @@
     )
     (instances
       (project "PiCoCo"
-        (path "/88b0342d-54f3-4dbb-a5db-939bca88afbb"
-          (reference "#PWR0071") (unit 1)
+        (path "/d041c4bc-74a9-4dc3-835e-4e59f8c971a7"
+          (reference "#PWR0074") (unit 1)
         )
       )
     )
   )
   (symbol (lib_id "power:GND") (at 310.00 90.00 90) (unit 1)
     (in_bom no) (on_board yes) (dnp no)
-    (uuid 621e1aba-554f-432b-addd-33a3225a9f8f)
-    (property "Reference" "#PWR0072" (at 310.00 86.19 0)
+    (uuid 10b7e427-45a2-4911-a2ef-b79654cc1bc6)
+    (property "Reference" "#PWR0075" (at 310.00 86.19 0)
       (effects (font (size 1.27 1.27)) hide)
     )
     (property "Value" "GND" (at 310.00 87.46 0)
@@ -7499,16 +8202,16 @@
     )
     (instances
       (project "PiCoCo"
-        (path "/88b0342d-54f3-4dbb-a5db-939bca88afbb"
-          (reference "#PWR0072") (unit 1)
+        (path "/d041c4bc-74a9-4dc3-835e-4e59f8c971a7"
+          (reference "#PWR0075") (unit 1)
         )
       )
     )
   )
   (symbol (lib_id "power:PWR_FLAG") (at 250.00 60.00 0) (unit 1)
     (in_bom no) (on_board yes) (dnp no)
-    (uuid d3e0faae-4613-43f3-ade3-6fb883efbd9a)
-    (property "Reference" "#PWR0073" (at 250.00 56.19 0)
+    (uuid 21fbd45f-5859-4349-9c22-4e177e9d291b)
+    (property "Reference" "#PWR0076" (at 250.00 56.19 0)
       (effects (font (size 1.27 1.27)) hide)
     )
     (property "Value" "PWR_FLAG" (at 250.00 57.46 0)
@@ -7522,8 +8225,8 @@
     )
     (instances
       (project "PiCoCo"
-        (path "/88b0342d-54f3-4dbb-a5db-939bca88afbb"
-          (reference "#PWR0073") (unit 1)
+        (path "/d041c4bc-74a9-4dc3-835e-4e59f8c971a7"
+          (reference "#PWR0076") (unit 1)
         )
       )
     )

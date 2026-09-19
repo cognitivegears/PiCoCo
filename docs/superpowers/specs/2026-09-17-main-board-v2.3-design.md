@@ -417,3 +417,62 @@ it. Decision: grow the body 12 mm away from the fingers.
 - Known and accepted: no mounting holes unless the new strip has room; silk
   lines at 0.12 mm (KiCad library default) and JP legends at 0.8 mm; C12 is a
   10 mm can if populated; a Program Pak shell needs the roadmap board.
+
+### 11.1 Addendum 2026-09-19: pre-order quality-review fixes (v2.3.1)
+
+From `.superpowers/sdd/2026-09-17-main-board-v2.3/quality-ee.md`,
+`quality-coco.md` and `quality-fw.md`'s CHANGE-NOW items, folded in before the
+first order.
+
+- **JP5**, a 3-pad open solder jumper: pad 1 `CART_DRV`, pad 2 `PICO_P34`
+  (header pin 34), pad 3 `NMI_DRV`. Open by default and mutually exclusive
+  with JP3 (both bridge onto header pin 34 — never bridge both). On a Pico 2,
+  JP5 1-2 gives a firmware-pulsed `/CART` (autostart, releasable for DOS
+  ROMs), 2-3 a firmware `/NMI` (needs Q3/R15/R17 fitted). Q4/R16/R18 (the
+  `/CART` stage) are now populated; Q3/R15/R17 stay DNP. JP4 (the static Q ->
+  `/CART` tie) is unchanged, open by default, with the README now stating
+  plainly that bridging it breaks HDB-DOS.
+- **J1** ("EXP (Plus-W)"), a 1x5 2.54 mm header, DNP: pins `EXP_GP35`,
+  `EXP_GP43`, `EXP_GP44`, `EXP_GP45` and GND — only meaningful on a Plus-W,
+  since those pads exist only on its grid; a flat-mounted Pico 2 lands its
+  SWDIO pad on GP35 instead, so J1 pin 1 then carries SWDIO. Hardware SPI
+  does not reach all four (SCK would be GP42, header pin 34/`AUDIO_PWM`), so
+  an SD card on J1 is a PIO-SPI job, not a peripheral-SPI one.
+- **C16**, 10 µF on `+3V3` at the buffer row, next to U11/U12 — local bulk
+  the design previously lacked (the only prior +3V3 bulk was C3 at the LDO,
+  63-134 mm of 0.2 mm track away).
+- **Sound stage recomputed for the loaded network**: R19/R20 1 k -> 470 R,
+  R21 2.2 k -> 1 k (R22 stays 1 k, C13/C14 stay 10 nF). The old values gave
+  0.63 V pk-pk from a 3.3 V PWM with a -3 dB point at 9.1 kHz, not the
+  documented ~1 V / ~16 kHz, because the two filter resistors sit inside the
+  divider and load each other rather than acting as independent poles. The
+  new network gives about 1.1 V pk-pk, -3 dB near 18 kHz.
+- **Power netclass added**: `+5V`, `+3V3`, `VSYS_PICO` move to a 0.5 mm-track
+  Power netclass (`PiCoCo.kicad_pro`); everything else stays on the 0.2 mm
+  Default netclass.
+- **Ground stitching**: a GND via at every decoupling cap's GND pad and every
+  IC's GND pin, plus an 8 mm-pitch stitching grid across the buffer-row
+  corridor (`tools/gnd_stitch.py`, run after `finish_route`), closing the
+  gap between the documented decoupling-loop policy (hardware-design §5.4)
+  and what the routed board actually had.
+- **Antenna keepout widened** to x 151.3..158.0, y 32.7..55.7 — about 1 mm
+  beyond the module's antenna-end rows and 2.4 mm past its end, still short
+  of a real 5 mm 2.4 GHz clearance (deferred to v2.4, hardware-design §9.1).
+- **DNP list is now**: R2 R10 R15 R17 Q3 C12 C15 J1. Parts not placed by JLC
+  assembly: the U1 module plus that DNP list. Unverified LCSC numbers before
+  ordering: C17710 (470 R, R19/R20), C17477 (0 R, R24), C28323 (1 µF, C15),
+  C1710 (10 nF), C17513 (1 kΩ).
+- **Doc corrections** (no hardware change): hardware-design §3.1 no longer
+  lists `/HALT`/`/NMI`/`/CART` as U13 inputs — they go to the Q2/Q3/Q4 stages
+  and their own R1/R2 pull-ups; §1 states the HDMI corner is not wirable on
+  v2.3 (HSTX = GP12-19 = A4-A11 on both modules) and is reserved for a
+  variant that moves the address bus; §4.6 notes JP3 1-2 ties Plus-W GP34 to
+  GP42, so one must stay an input; §9 gains a v2.4-deferrals list (8x 33 R
+  series termination on D0-D7_CART, `/SLENB` drive for MPI writes, C3 as a
+  10 V 1206, real 5 mm antenna clearance). firmware-architecture corrects the
+  macro name to `PICO_FLASH_ASSUME_CORE1_SAFE` (not `PICOCO_...`), the ROM
+  window to $C000-$FEFF (`rom.c` covers idx 0x0000-0x3EFF, not $C000-$DFFF),
+  replaces the "~70 ns" OE-to-data claim with "~180-200 ns measured on the
+  breadboard loop" (roadmap §6), and documents the Plus-W `GP25`/`SCS_BUF`
+  board-header trap. `CLAUDE.md`, `README.md` and `docs/BOM.md` get the same
+  macro-name, DNP-list and jumper-default corrections.

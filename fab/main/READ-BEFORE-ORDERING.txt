@@ -21,18 +21,21 @@ JLCPCB ORDER SETTINGS (v2.3.1, 2026-09)
   Castellated holes: No / Impedance: No
   SMT assembly: Top side, Economic. Files: fab/main/PiCoCo-BOM-jlc.csv, fab/main/PiCoCo-CPL-jlc.csv
   Extended parts on this board: SN74LVC245A x4 (one part number), SN74LVC00A x1. Confirm stock.
-  Parts NOT placed (by design): U1 module (yours), R2 R10 C12 C15 Q3 Q4 R15 R16 R17 R18 (DNP).
+  Parts NOT placed (by design): U1 module (yours), R2 R10 R15 R17 Q3 C12 C15 J1 (DNP). Q4/R16/R18
+  (the JP5-reachable /CART drive stage) ARE placed regardless of module.
   JP2 ships bridged 1-2 (hardware /OE default); JP3 ships bridged 1-2, which now routes
   AUDIO_PWM to header pin 34 by default (Pico 2 sound out of the box) — cut 1-2/bridge 2-3 to
-  put E on header pin 34 instead; JP4 (Q_CART<->CART_CART autostart tie) ships open by default.
+  put E on header pin 34 instead; JP4 (Q_CART<->CART_CART autostart tie) ships open by default;
+  JP5 (header-pin-34 /CART or /NMI drive select) ships open by default and shares that header
+  pin with JP3 — never bridge both JP3 and JP5. J1 ("EXP (Plus-W)" header) is DNP.
   Check the placement preview: every SOIC/SOT pin-1 dot matches the silkscreen. If any part is
   rotated, fix the ROT table in tools/jlc_post.py, rerun tools/gen_fab.sh, re-upload.
   Look hardest at D2 (SMA diode: cathode band must face U1/VSYS, reversed = board never powers)
   and U14 (SOT-223 AMS1117: tab/pin 2 is +3V3 output; reversed = +5V on the 3.3V rail and every
   logic IC dies). JLCPCB's SMA and SOT-223 zero angles often differ from KiCad's by 180 deg.
-  Unverified LCSC numbers, confirm value/voltage in the parts step: C1710 (10nF), C17513 (1k),
-  C17520 (2.2k), C17477 (0R, R24), C28323 (1uF, C15). C45783 (C3, 22uF 25V) was verified
-  2026-09-17 and is no longer on this list. The rest were checked 2026-09-17.
+  Unverified LCSC numbers, confirm value/voltage in the parts step: C17710 (470R, R19/R20),
+  C1710 (10nF), C17513 (1k), C17477 (0R, R24), C28323 (1uF, C15). C45783 (C3, 22uF 25V) was
+  verified 2026-09-17 and is no longer on this list. The rest were checked 2026-09-17.
 BUDGET VARIANT (bare boards, hobbyist): same Gerbers, ENIG, gold fingers NO, bevel NO.
   ENIG fingers wear after tens of insertions; fine for a lightly used cart.
 PLUS-W INSTALL: fab/main/stencil-module/*F_Paste.gbr is a paste stencil for the 15 grid pads

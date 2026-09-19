@@ -91,7 +91,7 @@ PLACEMENT: dict[str, tuple[float, float, float]] = {
     "TP4": (166.0, 50.0, 0), "TP5": (166.0, 54.0, 0), "TP6": (170.0, 38.0, 0), "TP8": (170.0, 42.0, 0),
     # v2.3.1 additions: R23 SLENB pull-up by U13's inputs, R25 U10_OE pull-up by JP2,
     # JP4 Q->/CART tie by the Q4 stage, FID3 on the left edge below the module.
-    "R23": (188.0, 72.0, 0), "R25": (146.0, 77.5, 0), "JP4": (122.5, 75.0, 0), "FID3": (102.6, 63.0, 0),
+    "R23": (188.0, 72.0, 0), "R25": (146.0, 77.5, 0), "JP5": (122.5, 66.0, 0), "C16": (160.0, 83.5, 90), "J1": (176.0, 50.0, 0), "JP4": (122.5, 75.0, 0), "FID3": (102.6, 63.0, 0),
     # Fiducials 3 mm in from two diagonal corners. FID1 at (102.6, 80.0) per
     # review (measured clear with 1.5mm margin there); earlier fallbacks
     # (102.6, 47.2) sat inside U1's pad clearance/courtyard, (102.6, 70.0)
@@ -116,7 +116,7 @@ EXTRAS = [
     # courtyard by design) legitimately overlaps this zone; the rule's actual intent
     # is keeping OTHER components' copper out, which tracks/vias/pads/copperpour cover.
     _zone_keepout("antenna_keepout", '"F.Cu" "B.Cu"',
-                  [(151.3, 33.7), (155.6, 33.7), (155.6, 54.7), (151.3, 54.7)],
+                  [(151.3, 32.7), (158.0, 32.7), (158.0, 55.7), (151.3, 55.7)],
                   "(tracks not_allowed) (vias not_allowed) (pads not_allowed) (copperpour not_allowed)"),
     # Reserved HDMI corner: no footprints, routing allowed.
     _zone_keepout("hdmi_reserved", '"F.Cu"',
@@ -164,6 +164,9 @@ TEXTS = [  # (text, x, y, layer, size)
     # line always bled into either U1 or R11 (which sits just past x=172.6).
     # Two lines fit that corridor comfortably and the y=68.5..71.5 band is
     # clear (below C10, above R12/U12's row at y>=82).
+    ("JP5: hdr34-> 1-2 /CART  2-3 /NMI", 133.5, 63.5, "F.SilkS", 0.8),
+    ("(JP3 or JP5, never both)", 133.5, 65.5, "F.SilkS", 0.8),
+    ("EXP Plus-W", 176.0, 46.0, "F.SilkS", 0.8),
     ("JP3 1-2=AUDIO", 164.5, 58.5, "F.SilkS", 0.8),
     ("2-3=E on hdr34", 164.5, 60.5, "F.SilkS", 0.8),
     ("no parts under module", 125.0, 62.0, "F.Fab", 1.0),

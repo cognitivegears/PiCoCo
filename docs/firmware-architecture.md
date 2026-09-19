@@ -11,9 +11,9 @@ hardware it runs on, see [`hardware-design.md`](hardware-design.md).
 
 ## 1. Goals
 
-1. Respond to every `/CTS` read cycle ($C000–$DFFF, the HDB‑DOS
-   16 KB slot) in ≤ 1 bus cycle — data on D0–D7 before E falls —
-   using a stored 16 KB ROM image.
+1. Respond to every `/CTS` read cycle (the $C000–$FEFF window; `rom.c`
+   currently serves a 16 KB HDB‑DOS image out of idx `0x0000-0x3EFF` of
+   it) in ≤ 1 bus cycle — data on D0–D7 before E falls.
 2. Respond to Becker‑port reads on $FF41 (status) and $FF42 (data),
    and accept Becker‑port writes to $FF42 (data), implementing the
    DriveWire protocol.
@@ -98,7 +98,9 @@ on it.
 - **core1** — the bus loop only (`src/bus/bus_core1.c`, Plan B).
   Flash-free: never executes from or reads flash, runs with interrupts
   disabled from SRAM (`BUS_HOT` section attribute), so the build sets
-  `PICOCO_FLASH_ASSUME_CORE1_SAFE`. It serves `bus_table[]` on reads,
+  `PICO_FLASH_ASSUME_CORE1_SAFE` (`firmware/CMakeLists.txt`; not
+  `PICOCO_FLASH_ASSUME_CORE1_SAFE` — that name never existed in the
+  build). It serves `bus_table[]` on reads,
   pushes write events into the write ring, and runs read hooks
   in-place (see section 5).
 - **core0** — everything else: USB (2x CDC + MSC), the console, the
@@ -127,7 +129,9 @@ in the original proposal.
 `/CTS` OR `/SCS` is low AND the E clock is high (E qualifies the
 address‑valid window). Firmware disambiguates by **A13**:
 
-- `OE_BUS` low with `A13=0` ⇒ ROM read in $C000–$DFFF window.
+- `OE_BUS` low with `A13=0` ⇒ ROM read in the full $C000–$FEFF `/CTS`
+  window (`rom.c` covers idx `0x0000-0x3EFF`) — not $C000–$DFFF, a
+  stale range this section used to claim.
 - `OE_BUS` low with `A13=1` ⇒ Becker access in $FF40–$FF5F window.
 
 ### 3.2.1 Plus-W pin plan (board v2.3, not implemented)
@@ -156,21 +160,46 @@ on a Plus-W the same physical header pins are `GP40`/`GP41`/`GP42`.
 | GP29 | A14_BUF | capture |
 | GP30 | A15_BUF | capture |
 | GP31 | OE_FW | JP2 alternate (2-3): firmware-driven U10 /OE |
-| GP32 | NMI_DRV | Q3 gate (DNP stage) |
-| GP33 | CART_DRV | Q4 gate (DNP stage) |
+| GP32 | NMI_DRV | Q3 gate (DNP stage — R15/R17 also DNP); also reachable from a Pico 2 via JP5 2-3 (shares header pin 34, see below) |
+| GP33 | CART_DRV | Q4 gate (populated, v2.3.1); also reachable from a Pico 2 via JP5 1-2 |
 | GP34 | AUDIO_PWM | sound output stage |
-| GP35, GP43, GP44, GP45 | no-connect | spare |
+| GP35 | EXP_GP35 → J1 pin 1 | Plus-W only; on a Pico 2 this is where the module's own SWDIO pad lands instead (see the debug-pad note in `hardware-design.md` §7) |
+| GP43, GP44, GP45 | EXP_GP43/44/45 → J1 pins 2-4 | Plus-W only |
 
 GP24..GP30 are contiguous so one `gpio_in` read on a Plus-W captures
 all seven at once, same trick as the header's A0..A13+/R/W word.
+
+**JP5** (`docs/hardware-design.md` §4.4a) is the header-pin-34 solder
+jumper for the Q3/Q4 drive stages above: pad 1 = `CART_DRV`, pad 2 =
+`PICO_P34` (module header pin 34), pad 3 = `NMI_DRV`. Open by default,
+and mutually exclusive with JP3 (both bridge onto header pin 34) — a
+Pico 2 build picks at most one of audio (JP3), a firmware `/CART` pulse
+(JP5 1-2), or a firmware `/NMI` drive (JP5 2-3, needs R15/R17 fitted).
+No firmware for either JP5 position exists yet (item 12 in the roadmap
+backlog, `docs/ADDITIONAL_ROADMAP.md` §6).
+
+**Plus-W board header trap:** `PICO_DEFAULT_LED_PIN` is `GP25`. On a
+Plus-W, pad-grid `GP25` is `SCS_BUF` — a U13 **output**, not an LED. A
+future Plus-W `boards/` header that inherits the Pico 2 LED pin
+unmodified would have firmware driving a buffer output as if it were an
+LED; give the Plus-W header its own `PICO_DEFAULT_LED_PIN` (the Pico's
+own onboard LED, used on a Pico 2 build) before writing that header.
 
 ### 3.3 PIO block usage (v2 bus engine)
 
 The bus engine actually being built (Plan B) is a plain C loop on
 core1 polling GPIO in a tight `for(;;)` (spec section 4.3), not PIO+DMA.
-It is simpler to debug and was judged fast enough: about 70 ns from
-`OE_BUS` low to data driven at 150 MHz against a 280 ns CoCo 3 window.
-The PIO/DMA design below is kept as the v2 engine, to be adopted only
+It is simpler to debug. `bus_core1.c` inserts ten `nop`s (67 ns at the
+default 150 MHz — nothing in `firmware/src` calls
+`set_sys_clock_khz`) between detecting `OE_BUS` low and reading the
+address, then drives data; measured on the breadboard loop, total
+OE-to-data is roughly **180-200 ns**, not the "about 70 ns" this
+section used to claim, once the poll granularity, index computation
+and GPIO writes are counted (see `docs/ADDITIONAL_ROADMAP.md` §6 items
+5-6 for the follow-up: read `bus addr_resample` on the first real PCB
+and drop the nops if it's zero, then raise the clock). Margin against
+a 280 ns CoCo 3 window is real but thinner than the number below
+suggests. The PIO/DMA design below is kept as the v2 engine, to be adopted only
 if the hardware logic analyzer shows jitter in the C loop once it's
 running on real hardware. Everything in 3.3, 3.4 and section 4 (PIO
 programs) describes that fallback, not the current implementation. It

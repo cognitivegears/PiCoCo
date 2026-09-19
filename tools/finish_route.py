@@ -152,7 +152,12 @@ def main():
         print(f"round {r}: {len(p) // 6} nets to route")
         if not p:
             break
-        out = subprocess.run([PY, os.path.join(HERE, "grid_route.py"), bp] + p, capture_output=True, text=True).stdout
+        try:
+            out = subprocess.run([PY, os.path.join(HERE, "grid_route.py"), bp] + p, capture_output=True,
+                                 text=True, timeout=1800).stdout
+        except subprocess.TimeoutExpired as e:
+            out = (e.stdout or b"").decode() if isinstance(e.stdout, bytes) else (e.stdout or "")
+            print("  grid_route timed out; continuing with what it saved")
         print("\n".join(l for l in out.splitlines() if l.startswith(("routed ", "FAILED"))))
     if not a.skip_route:
         # Loading two boards after the routing subprocesses crashes inside SWIG (KiCad 10):

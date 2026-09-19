@@ -12,6 +12,10 @@ Design docs: `docs/hardware-design.md`, `docs/firmware-architecture.md`,
 
 ## If you have a bare board
 
+This is a **bare 98 x 77 mm board with no shell**. It fits no Program Pak
+case — the 53.34 x 44.45 mm outline mentioned in the roadmap docs is the
+cased, future-variant footprint, not this board.
+
 1. **Orientation.** The board has no shell and no key. The component side is
    the top; the front silkscreen says `THIS SIDE UP` near the finger tongue
    and the back says `OTHER SIDE UP`. Inserted upside down, +5 V lands on the
@@ -30,11 +34,23 @@ Design docs: `docs/hardware-design.md`, `docs/firmware-architecture.md`,
      2-3: E clock to header pin 34 instead. Never bridge 2-3 and drive GP34 on
      a Plus-W at the same time.
    - `JP4` open (default): bridge to tie Q to /CART for cartridge autostart of
-     ROM images (the classic Program Pak trick). HDB-DOS does not need it.
-5. **DNP parts** (not fitted by default): R2 R10 R15 R16 R17 R18 Q3 Q4 C12
-   C15. Removing R7 disables the /HALT boot hold: a blank module then no
-   longer halts the CoCo, at the cost of the boot-time race the hold exists to
-   prevent. Fitting C15 (1 uF) and removing R24 gives AC-coupled sound.
+     ROM images (the classic Program Pak trick). **Bridging JP4 breaks
+     HDB-DOS and any DK-signature DOS ROM** — it pulses /CART on every cycle,
+     so the CPU jumps to $C000 as code continuously, and a DOS ROM's first
+     bytes ("DK") are not a valid instruction. Only bridge it for a
+     cartridge-style ROM that expects the classic autostart hookup.
+   - `JP5` open (default): shares header pin 34 with JP3, so bridge at most
+     one of them. 1-2 gives a Pico 2 a firmware-pulsed /CART (the Q4 stage,
+     populated); 2-3 gives a firmware-pulsed /NMI instead (the Q3 stage —
+     fit R15/R17 too). No firmware drives either position yet.
+5. **DNP parts** (not fitted by default): R2 R10 R15 R17 Q3 C12 C15 J1. These
+   are all Plus-W provisions or optional stages, by design, not leftover
+   indecision — a Pico 2 build works correctly without them. Removing R7
+   disables the /HALT boot hold: a blank or dead module then no longer
+   halts the CoCo, so a dead Pico presents to the user as a dead CoCo — that
+   is the intended failure mode of the hold, not a fault to debug around.
+   Fitting C15 (1 uF) and removing R24 gives AC-coupled sound. `J1` ("EXP
+   (Plus-W)") breaks out four pad-grid pins that only exist on a Plus-W.
 6. **Test points.** TP1 OE_BUS, TP2 RW_BUF, TP3 CTS_BUF, TP4 SCS_BUF, TP5 E_BUF,
    TP6 +3V3, TP7 SND_CART (sound output to the cart), TP8 GND.
 7. **Flashing.** Hold BOOTSEL on the module and plug USB in; copy the UF2
@@ -46,8 +62,16 @@ Design docs: `docs/hardware-design.md`, `docs/firmware-architecture.md`,
    §6 for the milestone commands). Wi-Fi DriveWire needs the Plus-W and later
    firmware.
 9. **Multi-Pak Interface.** Select the PiCoCo slot for both /CTS and /SCS
-   (`POKE &HFF7F` slot value); a CoCo 3 needs the upgraded MPI PAL. The 98 mm
-   body may not fit some MPI slot openings; measure first.
+   (`POKE &HFF7F` slot value) — the slot register ghosts at `$FF9F` as well
+   as `$FF7F`; a CoCo 3 needs the upgraded MPI PAL. The 98 mm body may not
+   fit some MPI slot openings; measure first.
+10. **Is it alive?** On a CoCo 3, BASIC `PEEK(&HC000)` never reaches the
+    cart — check `$FF41`/`$FF42` (the Becker status/data registers) instead.
+11. **HDB-DOS.** Not shipped with this board — build it yourself with a
+    single `make` from ToolShed's `hdbdos/` tree, or get a prebuilt image
+    from Cloud-9 (see `docs/ADDITIONAL_ROADMAP.md` §3 for why binaries
+    aren't checked in here). Credit to the DriveWire and HDB-DOS authors and
+    maintainers, whose protocol and ROM this board depends on entirely.
 
 ## Repository map
 

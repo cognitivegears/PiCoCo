@@ -175,6 +175,8 @@ SYMBOLS = [
     ("Device:D_Schottky", KICAD_STOCK / "Device.kicad_sym", "D_Schottky"),
     ("Jumper:SolderJumper_3_Bridged12", KICAD_STOCK / "Jumper.kicad_sym", "SolderJumper_3_Bridged12"),
     ("Jumper:SolderJumper_2_Open", KICAD_STOCK / "Jumper.kicad_sym", "SolderJumper_2_Open"),
+    ("Jumper:SolderJumper_3_Open", KICAD_STOCK / "Jumper.kicad_sym", "SolderJumper_3_Open"),
+    ("Connector_Generic:Conn_01x05", KICAD_STOCK / "Connector_Generic.kicad_sym", "Conn_01x05"),
     ("Mechanical:Fiducial", KICAD_STOCK / "Mechanical.kicad_sym", "Fiducial"),
     ("Connector:TestPoint", KICAD_STOCK / "Connector.kicad_sym", "TestPoint"),
     ("power:+5V", KICAD_STOCK / "power.kicad_sym", "+5V"),
@@ -715,7 +717,7 @@ def build() -> tuple[str, "Sheet"]:
     LVC245 = ("74xx:74LS245", "SN74LVC245A", "Package_SO:SOIC-20W_7.5x12.8mm_P1.27mm", "C571201", "SN74LVC245ADWR")
     R0805 = "Resistor_SMD:R_0805_2012Metric"
     C0805 = "Capacitor_SMD:C_0805_2012Metric"
-    RLC = {"33": "C17634", "100": "C17408", "1k": "C17513", "2.2k": "C17520", "4.7k": "C17673", "10k": "C17414", "100k": "C149504", "0": "C17477"}  # C17407 discontinued 2026-09; C17477 (0805 0R) to confirm at order
+    RLC = {"33": "C17634", "100": "C17408", "470": "C17710", "1k": "C17513", "2.2k": "C17520", "4.7k": "C17673", "10k": "C17414", "100k": "C149504", "0": "C17477"}  # C17407 discontinued 2026-09; C17477 (0805 0R) to confirm at order
     CLC = {"10nF": "C1710", "100nF": "C49678", "1uF": "C28323", "10uF": "C15850", "22uF": "C45783"}  # C28323 (0805 1uF) to confirm at order
 
     def res(ref, value, x, y, a, b, dnp=False):
@@ -742,6 +744,8 @@ def build() -> tuple[str, "Sheet"]:
         "GP24": "CTS_BUF", "GP25": "SCS_BUF", "GP26": "E_BUF", "GP27": "Q_BUF", "GP28": "SLENB_BUF",
         "GP29": "A14_BUF", "GP30": "A15_BUF", "GP31": "OE_FW", "GP32": "NMI_DRV", "GP33": "CART_DRV",
         "GP34": "AUDIO_PWM",
+        # spare pads brought out to J_EXP (Plus-W only; a flat Pico 2 lands SWDIO on GP35)
+        "GP35": "EXP_GP35", "GP43": "EXP_GP43", "GP44": "EXP_GP44", "GP45": "EXP_GP45",
     }
     s.place("PiCoCo:Pico-Carrier", "U1", "Pico 2 / RP2350B-Plus-W", 80.0, 120.0,
             pin_nets=pico_nets, footprint="PiCoCo:Pico-Carrier", in_bom="no")
@@ -825,14 +829,19 @@ def build() -> tuple[str, "Sheet"]:
     s.place("Transistor_FET:Q_NMOS_GSD", "Q2", "2N7002", 60.0, 170.0,
             pin_nets={"1": "GATE_Q2", "2": "GND", "3": "HALT_CART"},
             footprint="Package_TO_SOT_SMD:SOT-23", lcsc="C8545", mpn="2N7002")
-    for q, r_s, r_pd, drv, drain in (("Q3", "R15", "R17", "NMI_DRV", "NMI_CART"),
-                                     ("Q4", "R16", "R18", "CART_DRV", "CART_CART")):
+    # JP5: header pin 34 -> /CART drive (1-2) or /NMI drive (2-3) on a Pico 2 build; open by
+    # default and mutually exclusive with JP3 (which puts audio on the same header pin).
+    s.place("Jumper:SolderJumper_3_Open", "JP5", "P34_DRV", 250.0, 40.0,
+            pin_nets={"1": "CART_DRV", "2": "PICO_P34", "3": "NMI_DRV"},
+            footprint="Jumper:SolderJumper-3_P1.3mm_Open_RoundedPad1.0x1.5mm", in_bom="no")
+    for q, r_s, r_pd, drv, drain, dnp in (("Q3", "R15", "R17", "NMI_DRV", "NMI_CART", True),
+                                          ("Q4", "R16", "R18", "CART_DRV", "CART_CART", False)):
         gate = f"GATE_{q}"
-        res(r_s, "100", 40.0 + 30 * (q == "Q4"), 190.0, drv, gate, dnp=True)
-        res(r_pd, "100k", 50.0 + 30 * (q == "Q4"), 190.0, gate, "GND", dnp=True)
+        res(r_s, "100", 40.0 + 30 * (q == "Q4"), 190.0, drv, gate, dnp=dnp)
+        res(r_pd, "100k", 50.0 + 30 * (q == "Q4"), 190.0, gate, "GND", dnp=dnp)
         s.place("Transistor_FET:Q_NMOS_GSD", q, "2N7002", 60.0 + 30 * (q == "Q4"), 200.0,
                 pin_nets={"1": gate, "2": "GND", "3": drain},
-                footprint="Package_TO_SOT_SMD:SOT-23", dnp=True, lcsc="C8545", mpn="2N7002")
+                footprint="Package_TO_SOT_SMD:SOT-23", dnp=dnp, lcsc="C8545", mpn="2N7002")
 
     # ---------- Reset, 3V3_EN, series R ----------
     res("R4", "10k", 80.0, 280.0, "VSYS_PICO", "PICO_3V3_EN")
@@ -844,11 +853,11 @@ def build() -> tuple[str, "Sheet"]:
     res("R12", "33", 140.0, 230.0, "RW_BUF_RAW", "RW_BUF")
 
     # ---------- Sound stage: AUDIO_PWM -> 2-pole RC -> divider -> SND_CART ----------
-    res("R19", "1k", 120.0, 300.0, "AUDIO_PWM", "AUDIO_F1")
+    res("R19", "470", 120.0, 300.0, "AUDIO_PWM", "AUDIO_F1")
     cap("C13", "10nF", 125.0, 310.0, "AUDIO_F1", "GND")
-    res("R20", "1k", 130.0, 300.0, "AUDIO_F1", "AUDIO_F2")
+    res("R20", "470", 130.0, 300.0, "AUDIO_F1", "AUDIO_F2")
     cap("C14", "10nF", 135.0, 310.0, "AUDIO_F2", "GND")
-    res("R21", "2.2k", 140.0, 300.0, "AUDIO_AC", "SND_CART")
+    res("R21", "1k", 140.0, 300.0, "AUDIO_AC", "SND_CART")  # 470/470/1k/1k: 1.1 V pk-pk, -3 dB 18 kHz (loaded network)
     res("R22", "1k", 150.0, 310.0, "SND_CART", "GND")
     cap("C15", "1uF", 145.0, 290.0, "AUDIO_F2", "AUDIO_AC", dnp=True)   # AC-coupling option: fit C15, remove R24
     res("R24", "0", 145.0, 300.0, "AUDIO_F2", "AUDIO_AC")            # DC-coupled default (bypasses C15)
@@ -866,6 +875,10 @@ def build() -> tuple[str, "Sheet"]:
             pin_nets={"1": "VSYS_PICO", "2": "GND"},
             footprint="Capacitor_SMD:CP_Elec_8x10", dnp=True, lcsc="", mpn="1000uF 6.3V SMD electrolytic D8x10")
 
+    cap("C16", "10uF", 200.0, 90.0, "+3V3", "GND")   # local bulk at the buffer row
+    s.place("Connector_Generic:Conn_01x05", "J1", "EXP (Plus-W)", 320.0, 110.0,
+            pin_nets={"1": "EXP_GP35", "2": "EXP_GP43", "3": "EXP_GP44", "4": "EXP_GP45", "5": "GND"},
+            footprint="Connector_PinHeader_2.54mm:PinHeader_1x05_P2.54mm_Vertical", in_bom="no", dnp=True)
     # ---------- Test points, fiducials ----------
     for ref, net, tx, ty in (("TP1", "OE_BUS", 320.0, 60.0), ("TP2", "RW_BUF", 320.0, 70.0),
                              ("TP3", "CTS_BUF", 320.0, 80.0), ("TP4", "SCS_BUF", 320.0, 90.0),

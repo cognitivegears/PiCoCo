@@ -228,6 +228,7 @@ class Router:
         self.edge_cache = {}
         self.in_bounds_cache = {}
         self.max_expansions = 400_000
+        self.time_budget_s = 90.0  # per attempt; a hopeless net must not stall the chain
 
     def in_bounds(self, x, y, domain=None):
         b = self.region_bbox
@@ -282,6 +283,7 @@ class Router:
                   grid_mm=0.2):
         """src/dst: (VECTOR2I pos, allowed_layers set). Returns list of
         (kind, ...) drawing ops, or None if no path found."""
+        t_start = time.time()
         src_pos, src_layers = src
         dst_pos, dst_layers = dst
 
@@ -344,7 +346,7 @@ class Router:
             if expansions % 20000 == 0:
                 print(f"  ...{net_name}: {expansions} expansions, open={len(open_heap)}, "
                       f"best_f={f}", file=sys.stderr)
-            if expansions > self.max_expansions:
+            if expansions > self.max_expansions or time.time() - t_start > self.time_budget_s:
                 print(f"  {net_name}: giving up after {expansions} expansions", file=sys.stderr)
                 return None
             gx, gy, layer = node
