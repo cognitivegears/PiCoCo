@@ -176,3 +176,68 @@ pyDriveWire (`--port /dev/tty.usbmodemXXXX1 --speed 115200 <image>`),
 then the step 10 checks (`DIR`, `LOADM`). Tag `fw-0.8-bridge` when it
 passes. Watch for the host-side latency: the CoCo's Becker read loop has
 no timeout, so a slow reply hangs the CoCo until the server answers.
+
+
+## 6. Backlog from the 2026-09-19 quality reviews (firmware + docs, no hardware impact)
+
+Sources: `.superpowers/sdd/2026-09-17-main-board-v2.3/quality-ee.md`, `quality-coco.md`,
+`quality-fw.md`. Hardware items from those reviews were folded into v2.3.1 before the
+first order (ground stitching, 0.5 mm power trunks, C16, sound values, JP5, J_EXP,
+wider antenna keepout) or deferred to v2.4 (see hardware-design §9).
+
+### Firmware, ordered by value
+1. **FAT safety across CoCo resets.** R9 reboots the Pico on every CoCo reset, at any
+   instant. `fs_flash.c` formats with `n_fat = 1` and `dw_disk_write` never syncs; a reset
+   during a 4 KB erase/program can take the FAT with it. Do `n_fat = 2` and `ops->sync`
+   after a write (or on the first idle pump after one).
+2. **Auto-save mounts.** `dw mount` reaches flash only on `save`; the community workflow is
+   mount-then-reset-to-boot, so the mount is lost. Write `picoco.cfg` on mount/eject.
+3. **DriveWire virtual-channel command shell.** `dw_server.c` stubs OP_SERWRITE/OP_SERREAD.
+   DW4's server shell rides that channel and is how NitrOS-9's `dw` utility inserts disks.
+   A minimal `dw disk show|insert|eject` gives disk selection from the CoCo with client
+   software that already exists. Worth more than PiCoCo-DOS (§1).
+4. **NitrOS-9 over Becker as a passed milestone** (EOU `dwio_becker.sb`, boot `/dd` from
+   HDB-DOS `DOS`). DWINIT already clears `hdbdos` for drive numbers < 0x80.
+5. **Write-cycle sampling.** `bus_core1.c` takes the first word with OE_BUS high, when U10
+   has begun tri-stating; it works because the floating pins decay slowly. Keep the previous
+   sample and use its data bits (same instruction count).
+6. **Read-path margin.** Ten nops (67 ns at 150 MHz) before the address read; real
+   OE-to-data ~180-200 ns, not the documented 70 ns. On the first PCB read `bus
+   addr_resample`; if zero, drop the nops. Then `set_sys_clock_khz(200000)`.
+7. **/HALT flow-control holds** longer than a GIME tick (16.7 ms) cost NitrOS-9 clock ticks;
+   bound runtime holds to a few hundred us (the 1.2 s boot hold is fine).
+8. **Flash-free core1 build check**: a post-build `nm` step asserting everything reachable
+   from `bus_core1_main` is in RAM (`PICO_FLASH_ASSUME_CORE1_SAFE=1` turns a violation into a
+   hang, not a build error). `bus_core1.c` also has no test coverage; say so in TEST_PLAN.
+9. `fs_flash.h` hardcodes 2.5 MB of a 4 MB Pico 2 (~15 images); move to the board header
+   before the 16 MB Plus-W build. Plus-W board header trap: `PICO_DEFAULT_LED_PIN` = GP25,
+   which is `SCS_BUF` (a U13 output) on the pad grid.
+10. SPDX headers on every firmware source; `console_exec` should reject >6 tokens / >135
+    chars instead of truncating silently; note that `bus_stats` counters are non-atomic.
+11. Sound firmware (PWM on GP34/header 34) does not exist yet; the analog stage is populated.
+12. A firmware-pulsed /CART (JP5 1-2 on a Pico 2, GP33 on a Plus-W): assert for the first
+    cycles after reset for autostart ROM images, release for DK-signature DOS ROMs.
+
+### Docs
+- README: on a CoCo 3 a BASIC `PEEK(&HC000)` never reaches the cart, use $FF41/$FF42; the
+  MPI slot register ghosts at $FF9F as well as $FF7F; JP4 bridged breaks HDB-DOS (it jumps
+  to $C000 as code); a dead or blank module holds /HALT and looks like a dead CoCo; the
+  DNP stages are Plus-W provisions, not indecision; one-line ToolShed build for HDB-DOS;
+  credit the DriveWire and HDB-DOS authors; the bare 98 x 77 board fits no Program Pak
+  shell (the 53.34 x 44.45 mm roadmap outline is the cased version).
+- firmware-architecture: the macro is `PICO_FLASH_ASSUME_CORE1_SAFE` (not `PICOCO_`); the
+  ROM window is $C000-$FEFF (rom.c covers idx 0x0000-0x3EFF), not $C000-$DFFF; the "70 ns"
+  latency claim is stale; the GP25 trap above.
+- hardware-design: §3.1 must not list /HALT, /NMI, /CART as U13 inputs; §4.6 sound numbers
+  recomputed for the loaded network; JP3 1-2 ties Plus-W GP34 to GP42 (keep one an input);
+  §1: the HDMI corner is not wirable on v2.3 (HSTX = GP12-19 = A4-A11), it is reserved for a
+  variant that moves the address bus.
+
+### Hardware deferred to v2.4
+- 8 x 33 R series termination on D0-D7_CART (R11/R12 terminate the two quietest nets while
+  the data bus has none); no room without a re-place.
+- /SLENB drive for Multi-Pak writes (CocoFLASH asserts SLENB on cart-space writes because
+  the MPI data buffer blocks them): U15 spare gate as an inverter on OE_BUS into a 2N7002,
+  behind a jumper. Unverified; needs a bench MPI first.
+- C3 as a 10 V 1206 (a 22 uF 6.3 V X5R 0805 at 3.3 V bias delivers about half its value).
+- Real 2.4 GHz clearance (5 mm) around the Plus-W antenna, not a 1-2 mm rule area.
