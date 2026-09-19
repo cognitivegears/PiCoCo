@@ -121,17 +121,14 @@ def restore_gnd(orig, new):
 
 
 def drop_dangling(board, d):
-    pts = [(v["items"][0]["pos"]["x"], v["items"][0]["pos"]["y"]) for v in d["violations"]
-           if v["type"] in ("track_dangling", "via_dangling") and "[GND]" in v["items"][0]["description"]]
-    n = 0
-    for t in list(board.GetTracks()):
-        if t.GetNetname() != "GND":
-            continue
-        ends = [t.GetPosition()] if isinstance(t, pcbnew.PCB_VIA) else [t.GetStart(), t.GetEnd()]
-        if any(abs(mm(p.x) - x) < 0.01 and abs(mm(p.y) - y) < 0.01 for p in ends for x, y in pts):
-            board.Remove(t)
-            n += 1
-    return n
+    """Remove the exact items DRC flagged as dangling (matched by UUID, not position:
+    grid tracks share lengths and endpoints, so anything looser removes live copper)."""
+    ids = {v["items"][0]["uuid"] for v in d["violations"]
+           if v["type"] in ("track_dangling", "via_dangling") and "[GND]" in v["items"][0]["description"]}
+    rm = [t for t in board.GetTracks() if t.m_Uuid.AsString() in ids]
+    for t in rm:
+        board.Remove(t)
+    return len(rm)
 
 
 def main():
@@ -149,6 +146,7 @@ def main():
         b = pcbnew.LoadBoard(bp)
         print("stripped GND + ripped items:", strip(b, a.rip))
         b.Save(bp)
+        del b  # a second LoadBoard in this process crashes while the first board is alive (KiCad 10 SWIG)
     for r in range(0 if a.skip_route else a.rounds):
         p = pairs(drc(bp, tmp))
         print(f"round {r}: {len(p) // 6} nets to route")
@@ -156,6 +154,11 @@ def main():
             break
         out = subprocess.run([PY, os.path.join(HERE, "grid_route.py"), bp] + p, capture_output=True, text=True).stdout
         print("\n".join(l for l in out.splitlines() if l.startswith(("routed ", "FAILED"))))
+    if not a.skip_route:
+        # Loading two boards after the routing subprocesses crashes inside SWIG (KiCad 10):
+        # re-exec for the post-route phase in a fresh interpreter.
+        sys.stdout.flush()
+        os.execv(PY, [PY, os.path.abspath(__file__), bp, "--skip-route"])
     orig = pcbnew.LoadBoard(pre)
     b = pcbnew.LoadBoard(bp)
     print("GND restored/dropped:", restore_gnd(orig, b))

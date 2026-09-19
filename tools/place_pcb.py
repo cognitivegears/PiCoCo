@@ -59,25 +59,30 @@ PLACEMENT: dict[str, tuple[float, float, float]] = {
     "U14":  (105.0, 92.0, 0), "D2": (115.0, 96.0, 0), "C1": (124.0, 97.5, 0), "C2": (105.0, 84.0, 90),
     "C3":   (113.0, 84.0, 90), "C12": (106.0, 74.0, 0), "R4": (118.0, 70.0, 0),
     # /HALT, /NMI, /CART stages near fingers 3/4/8 (x 127..132)
-    "R1": (124.0, 86.0, 0), "Q2": (128.0, 85.0, 0), "R7": (124.0, 80.0, 0), "R8": (128.0, 80.0, 0),
-    "R2": (132.0, 86.0, 0), "Q3": (132.0, 80.0, 0), "R15": (136.0, 80.0, 0), "R17": (136.0, 76.0, 0),
-    "Q4": (128.0, 74.0, 0), "R16": (132.0, 74.0, 0), "R18": (132.0, 70.0, 0),
-    "R3": (140.0, 70.0, 0),
+    "R1": (122.5, 86.0, 0), "Q2": (127.5, 85.5, 0), "R7": (122.5, 80.0, 0), "R8": (127.5, 80.0, 0),
+    "R2": (132.5, 80.0, 0), "Q3": (127.5, 75.0, 0), "R15": (132.5, 75.0, 0), "R17": (137.5, 75.0, 0),
+    "Q4": (127.5, 70.0, 0), "R16": (132.5, 70.0, 0), "R18": (137.5, 70.0, 0),
+    "R3": (137.5, 78.5, 0),
     # Buffer row nearest the fingers, in finger order: data, A0-7, A8-13/RW/CTS, controls
     "U10": (140.0, 92.0, 0), "U11": (154.0, 92.0, 0), "U12": (168.0, 92.0, 0), "U13": (182.0, 92.0, 0),
     # Decoupling caps nudged from y=84.0 to 83.0 (brief's y=84 clipped the buffer
     # ICs' courtyard, which starts at y=85.35, by ~0.35mm; measured after placement).
     "C4": (140.0, 83.0, 90), "C6": (154.0, 83.0, 90), "C7": (168.0, 83.0, 90), "C8": (182.0, 83.0, 90),
     "U15": (175.0, 77.0, 0), "C9": (181.0, 77.0, 90),
-    "R11": (175.0, 71.0, 0), "R12": (163.0, 84.0, 0), "JP2": (146.0, 84.0, 0),
-    "R9": (189.5, 84.0, 0), "R10": (192.2, 84.0, 90), "R24": (194.4, 84.0, 90),
+    "R11": (175.0, 69.5, 0), "R12": (160.0, 78.0, 0), "JP2": (146.0, 82.5, 0),
+    "R9": (190.3, 75.0, 0), "R10": (194.9, 75.0, 0),
     # Sound stage: regridded 2 rows x 4 cols (rot 90 on the 0805s) right of U13
     # (courtyard ends x=187.93) and clear of FID2's reserved corner (measured
     # courtyard: FID2 circle spans x 193.35..195.85, y 94.95..97.45). The brief's
     # single-row layout put R19/C13/R20 inside both U13's courtyard and FID2's.
     # v2.3.1: columns shifted -0.3 mm so C14 sits >1 mm from the board edge (JLC DFM).
-    "R21": (189.2, 87.5, 90), "R22": (191.4, 87.5, 90), "C15": (193.6, 87.5, 90), "TP7": (195.8, 87.5, 0),
-    "R19": (189.2, 91.5, 90), "C13": (191.4, 91.5, 90), "R20": (193.6, 91.5, 90), "C14": (195.8, 91.5, 90),
+    # v2.3.1b: audio chain + RUN pull-ups regridded in two columns (x 190.0 / 194.9) at a
+    # 3.6 mm row pitch so hand soldering gets >=1.6 mm between courtyards and room for the labels; flow top-down.
+    "R19": (190.3, 78.6, 0), "C13": (194.9, 78.6, 0),
+    "R20": (190.3, 82.2, 0), "C14": (194.9, 82.2, 0),
+    "R24": (190.3, 85.8, 0), "C15": (194.9, 85.8, 0),
+    "R21": (190.3, 89.4, 0), "R22": (194.9, 89.4, 0),
+    "TP7": (190.3, 93.0, 0),
     # Between module and the reserved HDMI corner: JP3 by module pin 34, test points, C10.
     # JP3/C10 nudged +8mm in x from the brief: at x=152 both sat inside U1's
     # courtyard (ends x=155.52) and the antenna keepout (x 150.6..155.6).
@@ -86,7 +91,7 @@ PLACEMENT: dict[str, tuple[float, float, float]] = {
     "TP4": (166.0, 50.0, 0), "TP5": (166.0, 54.0, 0), "TP6": (170.0, 38.0, 0), "TP8": (170.0, 42.0, 0),
     # v2.3.1 additions: R23 SLENB pull-up by U13's inputs, R25 U10_OE pull-up by JP2,
     # JP4 Q->/CART tie by the Q4 stage, FID3 on the left edge below the module.
-    "R23": (188.0, 72.0, 0), "R25": (150.0, 84.0, 0), "JP4": (124.0, 74.0, 0), "FID3": (102.6, 63.0, 0),
+    "R23": (188.0, 72.0, 0), "R25": (146.0, 77.5, 0), "JP4": (122.5, 75.0, 0), "FID3": (102.6, 63.0, 0),
     # Fiducials 3 mm in from two diagonal corners. FID1 at (102.6, 80.0) per
     # review (measured clear with 1.5mm margin there); earlier fallbacks
     # (102.6, 47.2) sat inside U1's pad clearance/courtyard, (102.6, 70.0)
@@ -151,7 +156,7 @@ TEXTS = [  # (text, x, y, layer, size)
     ("PiCoCo v2.3.1  CERN-OHL-S-2.0", 150.0, 75.0, "B.SilkS", 1.0),
     ("github.com/cognitivegears/PiCoCo", 150.0, 78.0, "B.SilkS", 0.8),
     # Shifted right from x=146 (review F5): the left end touched R15 (at x=136).
-    ("JP2 1-2=HW /OE  2-3=FW", 152.0, 80.5, "F.SilkS", 0.8),
+    ("JP2 1-2=HW /OE  2-3=FW", 152.0, 79.3, "F.SilkS", 0.8),
     # Moved off the module (review F2): (152, 59) sat inside U1's courtyard/pad
     # grid. Split across two lines: at 0.8mm the full legend measures 20.5mm
     # wide (measured via pcbnew), wider than the 16.6mm corridor between U1's
@@ -159,8 +164,8 @@ TEXTS = [  # (text, x, y, layer, size)
     # line always bled into either U1 or R11 (which sits just past x=172.6).
     # Two lines fit that corridor comfortably and the y=68.5..71.5 band is
     # clear (below C10, above R12/U12's row at y>=82).
-    ("JP3 1-2=AUDIO", 164.0, 57.0, "F.SilkS", 0.8),
-    ("2-3=E on hdr34", 164.0, 59.0, "F.SilkS", 0.8),
+    ("JP3 1-2=AUDIO", 164.5, 58.5, "F.SilkS", 0.8),
+    ("2-3=E on hdr34", 164.5, 60.5, "F.SilkS", 0.8),
     ("no parts under module", 125.0, 62.0, "F.Fab", 1.0),
 ]
 
