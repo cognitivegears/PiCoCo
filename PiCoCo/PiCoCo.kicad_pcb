@@ -5802,7 +5802,7 @@
 		(descr "SOIC, 20 Pin (JEDEC MS-013AC, https://www.analog.com/media/en/package-pcb-resources/package/233848rw_20.pdf)")
 		(tags "SOIC SO")
 		(property "Reference" "U13"
-			(at 0 7.495 0)
+			(at 4.475 -7.495 0)
 			(layer "F.SilkS")
 			(uuid "db911be4-f977-41bd-8003-bfcc92e9d29d")
 			(effects
@@ -11192,7 +11192,7 @@
 		(descr "SOIC, 20 Pin (JEDEC MS-013AC, https://www.analog.com/media/en/package-pcb-resources/package/233848rw_20.pdf)")
 		(tags "SOIC SO")
 		(property "Reference" "U10"
-			(at 0 7.495 0)
+			(at 4.475 -7.495 0)
 			(layer "F.SilkS")
 			(uuid "3c3937db-3724-40a7-a474-f9f0a925c183")
 			(effects
@@ -13508,7 +13508,7 @@
 		(descr "SOIC, 20 Pin (JEDEC MS-013AC, https://www.analog.com/media/en/package-pcb-resources/package/233848rw_20.pdf)")
 		(tags "SOIC SO")
 		(property "Reference" "U12"
-			(at 0 7.495 0)
+			(at 4.475 -7.495 0)
 			(layer "F.SilkS")
 			(uuid "61cc4b60-1a84-429d-a4b4-f3d2714163aa")
 			(effects
@@ -17394,7 +17394,7 @@
 		(descr "SOIC, 20 Pin (JEDEC MS-013AC, https://www.analog.com/media/en/package-pcb-resources/package/233848rw_20.pdf)")
 		(tags "SOIC SO")
 		(property "Reference" "U11"
-			(at 0 7.495 0)
+			(at 4.475 -7.495 0)
 			(layer "F.SilkS")
 			(uuid "1958a422-d28f-4979-a3ae-28298c5fe196")
 			(effects
