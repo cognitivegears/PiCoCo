@@ -41,9 +41,12 @@ def export_dsn(board: "pcbnew.BOARD", dsn_path: Path) -> None:
         sys.exit(f"ExportSpecctraDSN failed for {dsn_path}")
 
 
-def run_freerouting(jar: Path, dsn_path: Path, ses_path: Path, passes: int) -> None:
+def run_freerouting(jar: Path, dsn_path: Path, ses_path: Path, passes: int,
+                    rules: Path | None = None) -> None:
     cmd = [JAVA, "-jar", str(jar), "-de", str(dsn_path), "-do", str(ses_path),
            "-mp", str(passes), "-mt", "1"]
+    if rules is not None:
+        cmd += ["-dr", str(rules)]  # Freerouting .rules: via_costs, per-layer direction/cost factors
     print("+", " ".join(cmd))
     log_path = ses_path.with_suffix(".log")
     proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1)
@@ -129,6 +132,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     ap.add_argument("--passes", type=int, default=50, help="Freerouting -mp (default 50)")
     ap.add_argument("--out", type=Path, default=None, help="output board (default: overwrite input)")
     ap.add_argument("--jar", type=Path, default=DEFAULT_JAR, help="Freerouting jar path")
+    ap.add_argument("--rules", type=Path, default=None, help="Freerouting .rules file (-dr)")
     return ap.parse_args(argv)
 
 
@@ -146,7 +150,7 @@ def main(argv: list[str] | None = None) -> None:
     board = pcbnew.LoadBoard(str(board_path))
     export_dsn(board, dsn_path)
 
-    run_freerouting(args.jar, dsn_path, ses_path, args.passes)
+    run_freerouting(args.jar, dsn_path, ses_path, args.passes, args.rules)
 
     # Reload fresh for the import, matching the spike's proven two-step load/export
     # then load/import sequence rather than reusing the export-side board object.
