@@ -91,7 +91,7 @@ PLACEMENT: dict[str, tuple[float, float, float]] = {
     "TP4": (166.0, 50.0, 0), "TP5": (166.0, 54.0, 0), "TP6": (170.0, 38.0, 0), "TP8": (170.0, 42.0, 0),
     # v2.3.1 additions: R23 SLENB pull-up by U13's inputs, R25 U10_OE pull-up by JP2,
     # JP4 Q->/CART tie by the Q4 stage, FID3 on the left edge below the module.
-    "R23": (188.0, 72.0, 0), "R25": (146.0, 77.5, 0), "JP5": (122.5, 66.0, 0), "C16": (160.0, 83.5, 90), "J1": (112.0, 60.0, 90), "JP4": (122.5, 75.0, 0), "FID3": (102.6, 63.0, 0),
+    "R23": (188.0, 72.0, 0), "R25": (146.0, 77.5, 0), "JP5": (122.5, 66.0, 0), "J3": (131.0, 61.0, 90), "J2": (170.0, 56.0, 0), "C16": (160.0, 83.5, 90), "J1": (112.0, 60.0, 90), "JP4": (122.5, 75.0, 0), "FID3": (102.6, 63.0, 0),
     # Fiducials 3 mm in from two diagonal corners. FID1 at (102.6, 80.0) per
     # review (measured clear with 1.5mm margin there); earlier fallbacks
     # (102.6, 47.2) sat inside U1's pad clearance/courtyard, (102.6, 70.0)
@@ -164,11 +164,11 @@ TEXTS = [  # (text, x, y, layer, size)
     # line always bled into either U1 or R11 (which sits just past x=172.6).
     # Two lines fit that corridor comfortably and the y=68.5..71.5 band is
     # clear (below C10, above R12/U12's row at y>=82).
-    ("JP5: hdr34-> 1-2 /CART  2-3 /NMI", 138.0, 63.5, "F.SilkS", 0.8),
-    ("(JP3 or JP5, never both)", 138.0, 65.5, "F.SilkS", 0.8),
+    ("JP5/J3: hdr34-> 1-2 /CART  2-3 /NMI", 141.5, 65.0, "F.SilkS", 0.8),
+    ("(JP3/J2 or JP5/J3, never both)", 141.5, 67.0, "F.SilkS", 0.8),
     ("EXP Plus-W", 112.0, 63.2, "F.SilkS", 0.8),
-    ("JP3 1-2=AUDIO", 164.5, 58.5, "F.SilkS", 0.8),
-    ("2-3=E on hdr34", 164.5, 60.5, "F.SilkS", 0.8),
+    ("JP3/J2 1-2=AUDIO", 165.0, 57.5, "F.SilkS", 0.8),
+    ("2-3=E on hdr34", 165.0, 59.5, "F.SilkS", 0.8),
     ("no parts under module", 125.0, 62.0, "F.Fab", 1.0),
 ]
 
@@ -184,6 +184,7 @@ _STALE_TEXT_PREFIX = '(gr_text "PiCoCo\\nUniversal Cartridge'
 _RETIRED_TEXTS = [
     "JP3 1-2=E  2-3=AUDIO (Pico2)",  # split into two lines (review F2)
     "JP3 1-2=E", "2-3=AUDIO (Pico2)",  # v2.3.1: audio is the default now
+    "JP5: hdr34-> 1-2 /CART  2-3 /NMI", "(JP3 or JP5, never both)", "JP3 1-2=AUDIO",
     "EXP Plus-W",  # moved; upsert keys on text so the old position is deleted here
     "PiCoCo v2.3  CERN-OHL-S-2.0",
     "JLCJLCJLCJLC",  # v2.3.1: ordered with "Remove Mark", no order-number placeholder

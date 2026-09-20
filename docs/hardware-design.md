@@ -131,6 +131,11 @@ a GPIO compared to routing both /CTS and /SCS separately.
 | TP1–TP8 | 1×1 mm SMD pads | — | OE_BUS, RW_BUF, CTS_BUF, SCS_BUF, E_BUF, +3V3, SND_CART, GND |
 | FID1–FID3 | 1 mm fiducial, 2 mm mask | — | SMT assembly fiducials, no net, excluded from BOM |
 
+J2 and J3 are DNP 1x3 2.54 mm pin headers on the same three nets as JP3 and
+JP5 respectively, for builders who want a movable shunt instead of a solder
+bridge. Fit at most one of each pair: cut the solder jumper before shunting the
+header, or the two selections short together.
+
 **Unique active parts: 7** (Pico 2 / Plus-W module, SN74LVC245A, AMS1117‑3.3,
 SN74LVC00A, 2N7002, SS14 Schottky). All are in the JLCPCB Basic or
 Extended Library. All passives are 0805; DNP refs (R2, R10, R15, R17, Q3,

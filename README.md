@@ -39,11 +39,15 @@ cased, future-variant footprint, not this board.
      so the CPU jumps to $C000 as code continuously, and a DOS ROM's first
      bytes ("DK") are not a valid instruction. Only bridge it for a
      cartridge-style ROM that expects the classic autostart hookup.
+   - `J2` / `J3` (DNP 1x3 pin headers) are twins of JP3 and JP5 on the same
+     nets: fit one and use a shunt if you expect to flip the setting often.
+     Cut the solder jumper first — a bridged JP and a shunt in the other
+     position would short two signals.
    - `JP5` open (default): shares header pin 34 with JP3, so bridge at most
      one of them. 1-2 gives a Pico 2 a firmware-pulsed /CART (the Q4 stage,
      populated); 2-3 gives a firmware-pulsed /NMI instead (the Q3 stage —
      fit R15/R17 too). No firmware drives either position yet.
-5. **DNP parts** (not fitted by default): R2 R10 R15 R17 Q3 C12 C15 J1. These
+5. **DNP parts** (not fitted by default): R2 R10 R15 R17 Q3 C12 C15 J1 J2 J3. These
    are all Plus-W provisions or optional stages, by design, not leftover
    indecision — a Pico 2 build works correctly without them. Removing R7
    disables the /HALT boot hold: a blank or dead module then no longer

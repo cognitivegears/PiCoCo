@@ -177,6 +177,7 @@ SYMBOLS = [
     ("Jumper:SolderJumper_2_Open", KICAD_STOCK / "Jumper.kicad_sym", "SolderJumper_2_Open"),
     ("Jumper:SolderJumper_3_Open", KICAD_STOCK / "Jumper.kicad_sym", "SolderJumper_3_Open"),
     ("Connector_Generic:Conn_01x05", KICAD_STOCK / "Connector_Generic.kicad_sym", "Conn_01x05"),
+    ("Connector_Generic:Conn_01x03", KICAD_STOCK / "Connector_Generic.kicad_sym", "Conn_01x03"),
     ("Mechanical:Fiducial", KICAD_STOCK / "Mechanical.kicad_sym", "Fiducial"),
     ("Connector:TestPoint", KICAD_STOCK / "Connector.kicad_sym", "TestPoint"),
     ("power:+5V", KICAD_STOCK / "power.kicad_sym", "+5V"),
@@ -816,6 +817,13 @@ def build() -> tuple[str, "Sheet"]:
     s.place("Jumper:SolderJumper_3_Bridged12", "JP3", "P34_SEL", 100.0, 60.0,
             pin_nets={"1": "AUDIO_PWM", "2": "PICO_P34", "3": "E_BUF"}, footprint=SJ, in_bom="no")
 
+    # J2/J3: DNP 1x3 pin-header twins of JP3/JP5 for people who want a shunt they can move.
+    s.place("Connector_Generic:Conn_01x03", "J2", "JP3 hdr", 110.0, 60.0,
+            pin_nets={"1": "AUDIO_PWM", "2": "PICO_P34", "3": "E_BUF"},
+            footprint="Connector_PinHeader_2.54mm:PinHeader_1x03_P2.54mm_Vertical", in_bom="no", dnp=True)
+    s.place("Connector_Generic:Conn_01x03", "J3", "JP5 hdr", 250.0, 50.0,
+            pin_nets={"1": "CART_DRV", "2": "PICO_P34", "3": "NMI_DRV"},
+            footprint="Connector_PinHeader_2.54mm:PinHeader_1x03_P2.54mm_Vertical", in_bom="no", dnp=True)
     # ---------- JP4: Q -> /CART autostart tie (open; the classic Program Pak trick) ----------
     s.place("Jumper:SolderJumper_2_Open", "JP4", "CART_TIE", 100.0, 80.0,
             pin_nets={"1": "Q_CART", "2": "CART_CART"},

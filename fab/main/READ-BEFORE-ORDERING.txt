@@ -21,13 +21,13 @@ JLCPCB ORDER SETTINGS (v2.3.1, 2026-09)
   Castellated holes: No / Impedance: No
   SMT assembly: Top side, Economic. Files: fab/main/PiCoCo-BOM-jlc.csv, fab/main/PiCoCo-CPL-jlc.csv
   Extended parts on this board: SN74LVC245A x4 (one part number), SN74LVC00A x1. Confirm stock.
-  Parts NOT placed (by design): U1 module (yours), R2 R10 R15 R17 Q3 C12 C15 J1 (DNP). Q4/R16/R18
+  Parts NOT placed (by design): U1 module (yours), R2 R10 R15 R17 Q3 C12 C15 J1 J2 J3 (DNP). Q4/R16/R18
   (the JP5-reachable /CART drive stage) ARE placed regardless of module.
   JP2 ships bridged 1-2 (hardware /OE default); JP3 ships bridged 1-2, which now routes
   AUDIO_PWM to header pin 34 by default (Pico 2 sound out of the box) — cut 1-2/bridge 2-3 to
   put E on header pin 34 instead; JP4 (Q_CART<->CART_CART autostart tie) ships open by default;
   JP5 (header-pin-34 /CART or /NMI drive select) ships open by default and shares that header
-  pin with JP3 — never bridge both JP3 and JP5. J1 ("EXP (Plus-W)" header) is DNP.
+  pin with JP3 — never bridge both JP3 and JP5. J1 ("EXP (Plus-W)" header) and J2/J3 (1x3 pin-header twins of JP3/JP5) are DNP.
   Check the placement preview: every SOIC/SOT pin-1 dot matches the silkscreen. If any part is
   rotated, fix the ROT table in tools/jlc_post.py, rerun tools/gen_fab.sh, re-upload.
   Look hardest at D2 (SMA diode: cathode band must face U1/VSYS, reversed = board never powers)
