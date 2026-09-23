@@ -118,7 +118,10 @@ through a Multi-Pak Interface (MPI).
   (Waveshare schematic or a continuity check) that its radio does not use
   pad-grid GP24/GP25/GP29 (CTS_BUF/SCS_BUF/A14_BUF), and find the module's
   actual LED pin — `firmware/boards/plusw.h` defines no `PIN_LED` until this
-  is confirmed safe to drive.
+  is confirmed safe to drive. Also confirm 16 MB flash on the module (no
+  runtime JEDEC ID check exists; `PICO_FLASH_SIZE_BYTES` in
+  `firmware/boards/picoco_plusw.h` is a build-time assumption, not verified
+  against the part actually on the board).
 
 ### F.2 Per-build bring-up steps
 

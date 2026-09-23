@@ -16,11 +16,19 @@ set(CORE_SRC
 set(HOST_ONLY_SRC src/dw/dw_store_posix.c)
 
 if(NOT PICOCO_HOST)
+  if(PICOCO_BOARD STREQUAL "pico2_breadboard")
+    # ponytail: legacy alias — PICOCO_BOARD used to hold the pin-header stem
+    # directly (pre-Plus-W refactor); normalize an old cached build dir
+    # instead of silently misreading it or forcing a clean reconfigure.
+    set(PICOCO_BOARD "pico2" CACHE STRING "PiCoCo board: pico2 or plusw" FORCE)
+  endif()
   if(PICOCO_BOARD STREQUAL "plusw")
     list(APPEND PICO_BOARD_HEADER_DIRS "${CMAKE_CURRENT_LIST_DIR}/boards")
     set(PICO_BOARD picoco_plusw CACHE STRING "" FORCE)
+  elseif(PICOCO_BOARD STREQUAL "pico2")
+    set(PICO_BOARD pico2 CACHE STRING "" FORCE)
   else()
-    set(PICO_BOARD pico2 CACHE STRING "")
+    message(FATAL_ERROR "PICOCO_BOARD must be 'pico2' or 'plusw' (got '${PICOCO_BOARD}')")
   endif()
   set(PICO_PLATFORM rp2350-arm-s CACHE STRING "")
   include(pico_sdk_import.cmake)
