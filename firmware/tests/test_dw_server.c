@@ -49,6 +49,7 @@ static int counting_sync(dw_file *f) {
     g_sync_count++;
     return g_orig_sync(f);
 }
+static int failing_sync(dw_file *f) { (void)f; return -1; }
 
 static void on_send(void *ctx, const uint8_t *buf, size_t n) {
     (void)ctx;
@@ -246,6 +247,27 @@ TEST(write_syncs_after_success) {
     dw_feed(&s, msg, sizeof(msg), 0);
     ASSERT_EQ(out[0], 0);
     ASSERT_EQ(g_sync_count, 1);
+}
+
+TEST(write_sync_failure_reports_write_err) {
+    setup();
+    dw_store_ops wrapped = *st.ops;
+    wrapped.sync = failing_sync;
+    dw_store wrapped_store = { .ops = &wrapped, .ctx = st.ctx };
+    s.drives[0].store = &wrapped_store;
+
+    uint8_t d[256];
+    memset(d, 0xA5, sizeof(d));
+    uint16_t sum = dw_checksum(d, 256);
+    uint8_t msg[1 + 1 + 3 + 256 + 2];
+    msg[0] = 0x57; msg[1] = 0; msg[2] = 0; msg[3] = 0; msg[4] = 4;
+    memcpy(msg + 5, d, 256);
+    msg[261] = (uint8_t)(sum >> 8);
+    msg[262] = (uint8_t)(sum & 0xFF);
+    dw_feed(&s, msg, sizeof(msg), 0);
+    ASSERT_EQ(out[0], DW_E_WRITE);
+    ASSERT_EQ(s.stats.writes, 0);
+    ASSERT_EQ(s.stats.write_err, 1);
 }
 
 TEST(write_bad_checksum_is_crc_and_untouched) {
@@ -603,6 +625,7 @@ int main(void) {
     RUN(hdbdos_past_end_reads_zeros);
     RUN(write_ok_then_read_back);
     RUN(write_syncs_after_success);
+    RUN(write_sync_failure_reports_write_err);
     RUN(write_bad_checksum_is_crc_and_untouched);
     RUN(write_readonly_is_wrprot);
     RUN(payload_split_across_feeds);

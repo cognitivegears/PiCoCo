@@ -149,13 +149,15 @@ static void do_write(dw_server *s, uint32_t now_ms) {
     } else {
         rc = (uint8_t)dw_disk_write(&s->drives[drive], lsn, data);
         if (rc == DW_E_OK) {
-            s->stats.writes++;
             /* Durability across a CoCo reset (roadmap item 1): the Pico reboots on
              * every /RESET, at any instant, so sync now rather than hoping RESET or
-             * eject comes first. */
+             * eject comes first. A sync failure is a write failure: don't tell the
+             * CoCo the sector landed if it isn't actually durable. */
             dw_disk *d = &s->drives[drive];
-            if (d->store && d->store->ops && d->store->ops->sync) d->store->ops->sync(&d->f);
+            if (d->store && d->store->ops && d->store->ops->sync && d->store->ops->sync(&d->f) != 0)
+                rc = DW_E_WRITE;
         }
+        if (rc == DW_E_OK) s->stats.writes++;
         else if (rc == DW_E_WRITE) s->stats.write_err++;
     }
     tx(s, &rc, 1);
