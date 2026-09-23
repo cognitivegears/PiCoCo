@@ -1,18 +1,16 @@
 #pragma once
 #include <stdint.h>
 #include <stdbool.h>
+#include PICOCO_BOARD_H   /* PICOCO_FS_OFFSET / PICOCO_FS_SIZE: board-specific flash layout */
 
-/* On-flash FAT filesystem: firmware occupies 0x000000..0x17FFFF, this
- * partition is the rest of the Pico 2's 4 MB flash. See docs/CLAUDE.md /
- * the firmware spec for the layout. */
-#define PICOCO_FS_OFFSET 0x180000u
-#define PICOCO_FS_SIZE   0x280000u
 #define FS_SECTOR 512u
 #define FS_SECTORS (PICOCO_FS_SIZE / FS_SECTOR)
 
 int  fs_flash_mount(void);        /* 0 ok; formats first if no valid volume; -1 on failure */
 void fs_flash_unmount(void);
-int  fs_flash_format(void);       /* f_mkfs FAT12 (640 clusters, 4 KB each), then mount; 0 ok */
+int  fs_flash_format(void);       /* f_mkfs FAT12 (cluster count set by the board's PICOCO_FS_SIZE,
+                                    * 4 KB each), 2 FATs, then mount; 0 ok. Existing volumes formatted
+                                    * before this change keep 1 FAT until reformatted. */
 bool fs_flash_mounted(void);
 
 /* USB MSC export: on unmounts FatFS and hands the raw blocks to the host;

@@ -1,6 +1,10 @@
 cmake_minimum_required(VERSION 3.20)
 option(PICOCO_HOST "Build host library, tests and picoco-host instead of Pico firmware" OFF)
-set(PICOCO_VERSION "0.3-pico")
+set(PICOCO_VERSION "1.1")
+# PiCoCo board: "pico2" (Pico 2 / RP2350A, default) or "plusw" (Waveshare
+# RP2350B-Plus-W). Picks both the PiCoCo pin header (boards/<x>.h) and, for
+# plusw, the SDK's PICO_BOARD (boards/picoco_plusw.h, below).
+set(PICOCO_BOARD "pico2" CACHE STRING "PiCoCo board: pico2 or plusw")
 
 set(CORE_SRC
   src/dw/dw_util.c src/dw/dw_disk.c src/dw/dw_server.c
@@ -12,7 +16,12 @@ set(CORE_SRC
 set(HOST_ONLY_SRC src/dw/dw_store_posix.c)
 
 if(NOT PICOCO_HOST)
-  set(PICO_BOARD pico2 CACHE STRING "")
+  if(PICOCO_BOARD STREQUAL "plusw")
+    list(APPEND PICO_BOARD_HEADER_DIRS "${CMAKE_CURRENT_LIST_DIR}/boards")
+    set(PICO_BOARD picoco_plusw CACHE STRING "" FORCE)
+  else()
+    set(PICO_BOARD pico2 CACHE STRING "")
+  endif()
   set(PICO_PLATFORM rp2350-arm-s CACHE STRING "")
   include(pico_sdk_import.cmake)
   project(picoco C CXX ASM)
@@ -26,12 +35,16 @@ if(NOT PICOCO_HOST)
     src/fs_flash.c src/dw/dw_store_fatfs.c
     src/plat_pico.c src/usb/usb_descriptors.c src/main.c
     src/crash.c src/bus/bus_core1.c)
-  set(PICOCO_BOARD pico2_breadboard CACHE STRING "")
+  if(PICOCO_BOARD STREQUAL "plusw")
+    set(PICOCO_PIN_HEADER plusw)
+  else()
+    set(PICOCO_PIN_HEADER pico2_breadboard)
+  endif()
   target_include_directories(picoco PRIVATE src src/usb src/dw src/bus src/dev src/console boards third_party/fatfs)
   target_compile_options(picoco PRIVATE -Wall -Wextra)
   set_source_files_properties(${FATFS_SRC} PROPERTIES COMPILE_OPTIONS -w)
   target_compile_definitions(picoco PRIVATE
-    PICOCO_BOARD_H="${PICOCO_BOARD}.h"
+    PICOCO_BOARD_H="${PICOCO_PIN_HEADER}.h"
     PICOCO_LOG_LEVEL=3
     PICOCO_VERSION="${PICOCO_VERSION}"
     PICO_FLASH_ASSUME_CORE1_SAFE=1

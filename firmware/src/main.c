@@ -45,12 +45,16 @@ static void console_out(void *ctx, const char *s) {
     }
 }
 static void gpio_setup(void) {
-    for (int g = 0; g <= 28; g++) {
-        if (g >= 23 && g <= 25) continue;             /* internal on the module */
-        gpio_init(g); gpio_set_dir(g, GPIO_IN); gpio_pull_up(g);
+    for (int g = 0; g < 48; g++) {
+        if (PICOCO_INPUT_MASK & (1ULL << g)) { gpio_init(g); gpio_set_dir(g, GPIO_IN); gpio_pull_up(g); }
     }
     gpio_init(PIN_HALT); gpio_set_dir(PIN_HALT, GPIO_OUT); gpio_put(PIN_HALT, 1);   /* keep /HALT asserted until released after core1 launch, below */
+#ifdef PIN_CART_DRV
+    gpio_init(PIN_CART_DRV); gpio_set_dir(PIN_CART_DRV, GPIO_OUT); gpio_put(PIN_CART_DRV, 0);   /* keep /CART released (Q4 off) */
+#endif
+#ifdef PIN_LED
     gpio_init(PIN_LED);  gpio_set_dir(PIN_LED, GPIO_OUT);
+#endif
 }
 int main(void) {
     gpio_setup();
@@ -75,7 +79,9 @@ int main(void) {
     multicore_launch_core1(bus_core1_main);
     gpio_put(PIN_HALT, 0);   /* release /HALT: spec 8.1 */
     LOG_I(LOG_M_MAIN, "core1 up, halt released");
+#ifdef PIN_LED
     uint32_t last_blink = 0; bool led = false;
+#endif
     for (;;) {
         tud_task();
         uint32_t now = plat_now_ms();
@@ -87,12 +93,14 @@ int main(void) {
             char lb[256]; size_t ln = log_drain(lb, sizeof lb - 1);
             if (ln) { lb[ln] = 0; console_out(NULL, lb); }
         }
+#ifdef PIN_LED
         if (fs_flash_exporting()) {
             gpio_put(PIN_LED, 1);   /* solid while the USB drive is exported */
         } else {
             uint32_t period = mode_get() == MODE_NATIVE ? 250 : 500;  /* 2 Hz native, 1 Hz otherwise */
             if (now - last_blink >= period) { last_blink = now; led = !led; gpio_put(PIN_LED, led); }
         }
+#endif
         watchdog_update();
     }
 }

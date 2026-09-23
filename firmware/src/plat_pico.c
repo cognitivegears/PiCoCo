@@ -39,7 +39,9 @@ void plat_smoke(void) {
        drive is on. */
     for (int t = 0; t < 50; t++) {
         for (int g = 0; g <= 7; g++) { gpio_set_dir(g, GPIO_OUT); gpio_put(g, t & 1); }
+#ifdef PIN_LED
         gpio_put(PIN_LED, t & 1);   /* the main loop's own blink is stalled while smoke runs */
+#endif
         sleep_ms(50); tud_task();
     }
     for (int g = 0; g <= 7; g++) gpio_set_dir(g, GPIO_IN);
