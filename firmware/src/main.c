@@ -48,7 +48,7 @@ static void gpio_setup(void) {
     for (int g = 0; g < 48; g++) {
         if (PICOCO_INPUT_MASK & (1ULL << g)) { gpio_init(g); gpio_set_dir(g, GPIO_IN); gpio_pull_up(g); }
     }
-    gpio_init(PIN_HALT); gpio_set_dir(PIN_HALT, GPIO_OUT); gpio_put(PIN_HALT, 1);   /* keep /HALT asserted until released after core1 launch, below */
+    gpio_init(PIN_HALT); gpio_put(PIN_HALT, 1); gpio_set_dir(PIN_HALT, GPIO_OUT);   /* latch the value before enabling the output so /HALT never glitches low; keep it asserted until released after core1 launch, below */
 #ifdef PIN_CART_DRV
     gpio_init(PIN_CART_DRV); gpio_set_dir(PIN_CART_DRV, GPIO_OUT); gpio_put(PIN_CART_DRV, 0);   /* keep /CART released (Q4 off) */
 #endif
