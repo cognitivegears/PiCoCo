@@ -58,6 +58,16 @@ if(NOT PICOCO_HOST)
     hardware_flash hardware_sync hardware_watchdog
     tinyusb_device tinyusb_board)
   pico_add_extra_outputs(picoco)
+  find_package(Python3 COMPONENTS Interpreter)
+  if(Python3_FOUND)
+    add_custom_command(TARGET picoco POST_BUILD
+      COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tools/check_core1_flash_free.py
+              $<TARGET_FILE:picoco> ${CMAKE_NM} ${CMAKE_OBJDUMP} ${CMAKE_CURRENT_SOURCE_DIR}/..
+      COMMENT "Checking core1 (BUS_HOT) code stays flash-free"
+      VERBATIM)
+  else()
+    message(WARNING "python3 not found; skipping the core1 flash-free check")
+  endif()
   return()
 endif()
 
