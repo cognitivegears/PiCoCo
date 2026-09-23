@@ -36,6 +36,15 @@ int fs_flash_write_blocks(uint32_t lba, const uint8_t *buf, uint32_t n) {
             if (sector < lba || sector >= lba + n) continue;
             memcpy(blk + s * FS_SECTOR, buf + (sector - lba) * FS_SECTOR, FS_SECTOR);
         }
+        /* ponytail: a sync after every DriveWire write re-touches this same block
+         * whenever it's the root dir or FAT (every file's directory entry lives in
+         * one block) — skip the erase/program cycle entirely when nothing changed,
+         * cuts flash wear and closes the reset-mid-erase window for blocks that
+         * didn't move. */
+        if (memcmp(blk, (const uint8_t *)(XIP_BASE + PICOCO_FS_OFFSET + block_off), sizeof(blk)) == 0) {
+            watchdog_update();
+            continue;
+        }
         uint32_t irq = save_and_disable_interrupts();
         flash_range_erase(PICOCO_FS_OFFSET + block_off, sizeof(blk));
         flash_range_program(PICOCO_FS_OFFSET + block_off, blk, sizeof(blk));
@@ -76,10 +85,11 @@ bool fs_flash_mounted(void) { return s_mounted; }
 int fs_flash_format(void) {
     static uint8_t work[4096]; /* static: f_mkfs's work buffer, too big for the stack */
     s_mounted = false;
-    /* n_fat=2: the Pico reboots on every CoCo /RESET, at any instant (roadmap
-     * item 1); a second FAT survives a reset that corrupts the FAT FatFS was
-     * mid-write on. */
-    MKFS_PARM parm = { .fmt = FM_FAT, .n_fat = 2, .align = 0, .n_root = 0, .au_size = 4096 };
+    /* n_fat=1: on this flash, both FAT copies would sit in the same 4 KB erase
+     * block and FatFS never reads FAT2 on mount, so a second FAT only doubles
+     * FAT erases for no real protection. Reset safety (roadmap item 1) comes
+     * from sync-after-write plus the skip-unchanged-block check above instead. */
+    MKFS_PARM parm = { .fmt = FM_FAT, .n_fat = 1, .align = 0, .n_root = 0, .au_size = 4096 };
     if (f_mkfs("", &parm, work, sizeof(work)) != FR_OK) return -1;
     if (f_mount(&s_fatfs, "", 1) != FR_OK) return -1;
     if (f_setlabel("PICOCO") != FR_OK) LOG_E(LOG_M_FS, "f_setlabel failed");

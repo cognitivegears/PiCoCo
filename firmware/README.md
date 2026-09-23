@@ -149,12 +149,14 @@ The on-flash FAT filesystem (`fs_flash.c`/`dw_store_fatfs.c`) lives at
 `PICOCO_FS_OFFSET..` of flash, sized by the board header
 (`firmware/boards/*.h`): `0x180000..0x3FFFFF` on a Pico 2 (4 MB flash, 640
 FAT12 clusters), `0x180000..0xFFFFFF` on a Plus-W (16 MB flash, 3712
-clusters). Formatted with 2 FATs on first boot (durability across a CoCo
-reset — see `docs/ADDITIONAL_ROADMAP.md` §6 item 1); a volume formatted
-before this change keeps 1 FAT until `fs format` reformats it. `picoco.cfg`
-at the root holds the saved console config (see `dw save`/
-`console_run_config`); DriveWire disk images and `dw capture` recordings
-also live at the root.
+clusters). Reset safety across a CoCo `/RESET` (the Pico reboots on every
+one, at any instant — see `docs/ADDITIONAL_ROADMAP.md` §6 item 1) comes
+from `dw_server.c` syncing after every successful DriveWire write, and
+`fs_flash_write_blocks` skipping the erase/program cycle for any 4 KB block
+that didn't actually change (the common case for a resync of the root dir
+or FAT). `picoco.cfg` at the root holds the saved console config (see
+`dw save`/`console_run_config`); DriveWire disk images and `dw capture`
+recordings also live at the root.
 
 ### Export
 

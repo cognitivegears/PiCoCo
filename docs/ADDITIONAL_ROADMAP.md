@@ -186,9 +186,13 @@ first order (ground stitching, 0.5 mm power trunks, C16, sound values, JP5, J1,
 wider antenna keepout) or deferred to v2.4 (see hardware-design §9).
 
 ### Firmware, ordered by value
-1. **DONE (2026-09-22).** FAT safety across CoCo resets: `fs_flash_format()` now formats
-   with `n_fat = 2`; `dw_server.c`'s `do_write()` calls `ops->sync` after a successful
-   DriveWire write. Existing volumes keep 1 FAT until `fs format` reformats them.
+1. **DONE (2026-09-22).** FAT safety across CoCo resets: `dw_server.c`'s `do_write()`
+   calls `ops->sync` after a successful DriveWire write (and reports the write as failed
+   if the sync itself fails), and `fs_flash_write_blocks` skips the erase/program cycle
+   for any 4 KB block that's unchanged (the common case: a sync after every write
+   re-touches the same root-dir/FAT block). `n_fat` stays 1 — on this flash both FAT
+   copies would share one 4 KB erase block and FatFS never reads FAT2 on mount, so a
+   second FAT would only double FAT erases with no real protection.
 2. **Auto-save mounts.** `dw mount` reaches flash only on `save`; the community workflow is
    mount-then-reset-to-boot, so the mount is lost. Write `picoco.cfg` on mount/eject.
 3. **DriveWire virtual-channel command shell.** `dw_server.c` stubs OP_SERWRITE/OP_SERREAD.
