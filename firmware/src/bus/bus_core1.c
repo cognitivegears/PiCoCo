@@ -4,7 +4,11 @@
 #include "hardware/timer.h"
 #include PICOCO_BOARD_H
 
-#define OE_MASK (1u << PIN_OE_BUS)
+/* OE_BUS lives in a different SIO register on each board (gpio_in on a Pico
+ * 2, gpio_hi_in on a Plus-W where it's GP40) — BUS_OE_REG/BUS_OE_MASK come
+ * from the board header so this file reads the right one either way.
+ * Address/data/RW are always in gpio_in on both boards. */
+#define OE_HIGH() (sio_hw->BUS_OE_REG & BUS_OE_MASK)
 #define RW_MASK (1u << PIN_RW)
 #define D_MASK  (0xFFu << PIN_D0)
 
@@ -14,7 +18,7 @@
 BUS_HOT void bus_core1_main(void) {
     (void)save_and_disable_interrupts();          /* never restored: core1 does nothing else */
     for (;;) {
-        while (sio_hw->gpio_in & OE_MASK) { }     /* wait for a cart cycle (OE_BUS low) */
+        while (OE_HIGH()) { }                     /* wait for a cart cycle (OE_BUS low) */
         uint32_t in0 = sio_hw->gpio_in;
         /* ponytail: diagnostic resample ~70 ns later; use the later sample. Bench 2026-09-16 saw
          * A8 read high on ~3% of cycles; this tells settling-at-sample-time from a bad level. */
@@ -28,16 +32,24 @@ BUS_HOT void bus_core1_main(void) {
                 sio_hw->gpio_clr = D_MASK;
                 sio_hw->gpio_set = (uint32_t)bus_table[idx] << PIN_D0;
                 sio_hw->gpio_oe_set = D_MASK;
-                while (!(sio_hw->gpio_in & OE_MASK)) { }
+                while (!OE_HIGH()) { }
                 sio_hw->gpio_oe_clr = D_MASK;
             } else {
-                while (!(sio_hw->gpio_in & OE_MASK)) { }
+                while (!OE_HIGH()) { }
             }
             bus_on_read_done(idx, time_us_32());
-        } else {                                  /* CoCo write: last sample before OE_BUS rises */
-            uint32_t d;
-            do { d = sio_hw->gpio_in; } while (!(d & OE_MASK));
-            bus_on_write(idx, (uint8_t)((d >> PIN_D0) & 0xFF), time_us_32());
+        } else {                                  /* CoCo write: use the last gpio_in sample taken
+                                                    * while OE_BUS was still low, not the first one
+                                                    * with OE_BUS high (U10 may have begun
+                                                    * tri-stating by then). prev starts at `in`,
+                                                    * itself sampled while OE_BUS was low above. */
+            uint32_t d, prev = in;
+            for (;;) {
+                d = sio_hw->gpio_in;
+                if (OE_HIGH()) break;
+                prev = d;
+            }
+            bus_on_write(idx, (uint8_t)((prev >> PIN_D0) & 0xFF), time_us_32());
         }
     }
 }
