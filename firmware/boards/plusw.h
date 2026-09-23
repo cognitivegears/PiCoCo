@@ -13,12 +13,10 @@
 #define PIN_CART_DRV 33  /* Q4 gate (populated, v2.3.1): drive HIGH to assert /CART.
                           * Keep LOW (released) at boot — no firmware /CART pulse yet
                           * (roadmap item 12). */
-/* No PIN_LED: the Plus-W's LED pin is unverified — the pad-grid GP25 that a
- * naive port of PICO_DEFAULT_LED_PIN would reach is SCS_BUF, a U13 buffer
- * output, not an LED (see hardware-design.md sec 3.2). LED code in main.c and
- * plat_pico.c is #ifdef PIN_LED'd out without this define.
- * ponytail: add PIN_LED here once the physical module's LED pin is confirmed
- * safe to drive. */
+#define PIN_LED     23   /* LED2, a plain GPIO; not brought out, so no carrier net. LED1 is on the
+                          * radio's WL_GPIO0 (needs the CYW43 driver, unused). Never GP25: that is
+                          * SCS_BUF on the pad grid. Source: Zephyr rp2350b_plus_w.dtsi led0 and
+                          * arduino-pico issue #3297 (Waveshare schematic, continuity-checked). */
 
 /* Pad-grid inputs, capture only (no firmware use yet): GP24 CTS_BUF, GP25
  * SCS_BUF, GP26 E_BUF, GP27 Q_BUF, GP28 SLENB_BUF, GP29 A14_BUF, GP30

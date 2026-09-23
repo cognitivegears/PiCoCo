@@ -115,10 +115,10 @@ through a Multi-Pak Interface (MPI).
 - R7 = 10 kΩ (the v2.3.1 value; 100 kΩ loses to the RP2350's own reset
   pull-down and never releases /HALT).
 - Plus-W builds only, before first power: confirm on the physical module
-  (Waveshare schematic or a continuity check) that its radio does not use
-  pad-grid GP24/GP25/GP29 (CTS_BUF/SCS_BUF/A14_BUF), and find the module's
-  actual LED pin — `firmware/boards/plusw.h` defines no `PIN_LED` until this
-  is confirmed safe to drive. Also confirm 16 MB flash on the module (no
+  (Waveshare schematic or a continuity check) that its radio uses GP36-GP39,
+  not pad-grid GP24/GP25/GP29 (CTS_BUF/SCS_BUF/A14_BUF): Zephyr's board port
+  and arduino-pico issue #3297 both say GP36-39. Firmware blinks LED2 on
+  GP23 (same sources); after flashing, check the LED blinks. Also confirm 16 MB flash on the module (no
   runtime JEDEC ID check exists; `PICO_FLASH_SIZE_BYTES` in
   `firmware/boards/picoco_plusw.h` is a build-time assumption, not verified
   against the part actually on the board).

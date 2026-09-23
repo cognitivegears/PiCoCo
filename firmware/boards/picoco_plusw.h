@@ -39,10 +39,9 @@ pico_board_cmake_set(PICO_PLATFORM, rp2350)
 #endif
 
 // --- LED ---
-// ponytail: no PICO_DEFAULT_LED_PIN. The Plus-W's LED pin is unverified, and
-// inheriting the Pico 2's GP25 would drive SCS_BUF (a U13 buffer output) —
-// see firmware/boards/plusw.h. Add it here once the physical module's LED is
-// confirmed safe to drive.
+#ifndef PICO_DEFAULT_LED_PIN
+#define PICO_DEFAULT_LED_PIN 23   // LED2; never the Pico 2's GP25 (SCS_BUF here), see plusw.h
+#endif
 // no PICO_DEFAULT_WS2812_PIN
 
 // --- FLASH ---

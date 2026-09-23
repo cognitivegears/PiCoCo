@@ -183,11 +183,12 @@ backlog, `docs/ADDITIONAL_ROADMAP.md` §6).
 
 **Plus-W board header trap, avoided:** `PICO_DEFAULT_LED_PIN` is `GP25` on
 a Pico 2. On a Plus-W, pad-grid `GP25` is `SCS_BUF` — a U13 **output**,
-not an LED. `firmware/boards/picoco_plusw.h` (the SDK-level board header)
-does not define `PICO_DEFAULT_LED_PIN` at all, and `firmware/boards/plusw.h`
-defines no `PIN_LED`; LED code in `main.c`/`plat_pico.c` is `#ifdef
-PIN_LED`'d out on this board. The Plus-W's actual LED pin is unverified —
-add `PIN_LED` to `plusw.h` once it's confirmed safe to drive.
+not an LED. The Plus-W has two user LEDs: LED1 on the radio's `WL_GPIO0`
+(needs the CYW43 driver) and LED2 on `GP23`, which the module does not bring
+out. `firmware/boards/plusw.h` uses LED2 (`PIN_LED 23`). The radio itself
+uses GP36-GP39 (REG_ON, DATA/IRQ, CS, CLK), clear of the pad grid. Sources:
+Zephyr `boards/waveshare/rp2350b_plus_w` (PR #119523) and arduino-pico
+issue #3297 (quotes the Waveshare schematic); not yet checked on a module.
 
 ### 3.3 PIO block usage (v2 bus engine)
 
