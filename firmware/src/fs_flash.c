@@ -76,7 +76,10 @@ bool fs_flash_mounted(void) { return s_mounted; }
 int fs_flash_format(void) {
     static uint8_t work[4096]; /* static: f_mkfs's work buffer, too big for the stack */
     s_mounted = false;
-    MKFS_PARM parm = { .fmt = FM_FAT, .n_fat = 1, .align = 0, .n_root = 0, .au_size = 4096 };
+    /* n_fat=2: the Pico reboots on every CoCo /RESET, at any instant (roadmap
+     * item 1); a second FAT survives a reset that corrupts the FAT FatFS was
+     * mid-write on. */
+    MKFS_PARM parm = { .fmt = FM_FAT, .n_fat = 2, .align = 0, .n_root = 0, .au_size = 4096 };
     if (f_mkfs("", &parm, work, sizeof(work)) != FR_OK) return -1;
     if (f_mount(&s_fatfs, "", 1) != FR_OK) return -1;
     if (f_setlabel("PICOCO") != FR_OK) LOG_E(LOG_M_FS, "f_setlabel failed");

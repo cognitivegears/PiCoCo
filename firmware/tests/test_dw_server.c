@@ -226,6 +226,28 @@ TEST(write_ok_then_read_back) {
     ASSERT_EQ(out[3], 0xA5);
 }
 
+TEST(write_syncs_after_success) {
+    setup();
+    dw_store_ops wrapped = *st.ops;
+    g_orig_sync = wrapped.sync;
+    wrapped.sync = counting_sync;
+    dw_store wrapped_store = { .ops = &wrapped, .ctx = st.ctx };
+    s.drives[0].store = &wrapped_store;
+    g_sync_count = 0;
+
+    uint8_t d[256];
+    memset(d, 0xA5, sizeof(d));
+    uint16_t sum = dw_checksum(d, 256);
+    uint8_t msg[1 + 1 + 3 + 256 + 2];
+    msg[0] = 0x57; msg[1] = 0; msg[2] = 0; msg[3] = 0; msg[4] = 3;
+    memcpy(msg + 5, d, 256);
+    msg[261] = (uint8_t)(sum >> 8);
+    msg[262] = (uint8_t)(sum & 0xFF);
+    dw_feed(&s, msg, sizeof(msg), 0);
+    ASSERT_EQ(out[0], 0);
+    ASSERT_EQ(g_sync_count, 1);
+}
+
 TEST(write_bad_checksum_is_crc_and_untouched) {
     setup();
     uint8_t d[256];
@@ -580,6 +602,7 @@ int main(void) {
     RUN(hdbdos_drive_wrap_is_notrdy);
     RUN(hdbdos_past_end_reads_zeros);
     RUN(write_ok_then_read_back);
+    RUN(write_syncs_after_success);
     RUN(write_bad_checksum_is_crc_and_untouched);
     RUN(write_readonly_is_wrprot);
     RUN(payload_split_across_feeds);

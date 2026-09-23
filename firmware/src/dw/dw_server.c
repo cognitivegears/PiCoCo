@@ -148,7 +148,14 @@ static void do_write(dw_server *s, uint32_t now_ms) {
         s->stats.notrdy++;
     } else {
         rc = (uint8_t)dw_disk_write(&s->drives[drive], lsn, data);
-        if (rc == DW_E_OK) s->stats.writes++;
+        if (rc == DW_E_OK) {
+            s->stats.writes++;
+            /* Durability across a CoCo reset (roadmap item 1): the Pico reboots on
+             * every /RESET, at any instant, so sync now rather than hoping RESET or
+             * eject comes first. */
+            dw_disk *d = &s->drives[drive];
+            if (d->store && d->store->ops && d->store->ops->sync) d->store->ops->sync(&d->f);
+        }
         else if (rc == DW_E_WRITE) s->stats.write_err++;
     }
     tx(s, &rc, 1);
