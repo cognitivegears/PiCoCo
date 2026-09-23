@@ -102,6 +102,79 @@ CoCo test:
 - Have the logic analyzer on E, /CTS, /SCS, OE_BUS for row 5.
 - Have the HDB-DOS DriveWire 8 KB ROM ready to copy via `fs export`.
 
+## F. PCB bring-up (v2.3.1): two boards, real CoCo hardware
+
+One board built with a Pico 2, one with a Waveshare RP2350B-Plus-W
+(`-DPICOCO_BOARD=plusw`). Test both on CoCo 1, CoCo 2, CoCo 3, bare and
+through a Multi-Pak Interface (MPI).
+
+### F.1 Pre-power checks (both boards)
+
+- JP2 at 1-2 (hardware /OE), JP3 at 1-2 (audio on header pin 34), JP4 open
+  (no autostart tie), JP5 open (no firmware /CART or /NMI drive yet).
+- R7 = 10 kΩ (the v2.3.1 value; 100 kΩ loses to the RP2350's own reset
+  pull-down and never releases /HALT).
+- Plus-W builds only, before first power: confirm on the physical module
+  (Waveshare schematic or a continuity check) that its radio does not use
+  pad-grid GP24/GP25/GP29 (CTS_BUF/SCS_BUF/A14_BUF), and find the module's
+  actual LED pin — `firmware/boards/plusw.h` defines no `PIN_LED` until this
+  is confirmed safe to drive.
+
+### F.2 Per-build bring-up steps
+
+1. Build and flash:
+   - Pico 2: `cmake -B build-pico -G Ninja -DPICO_SDK_PATH=... firmware &&
+     ninja -C build-pico`, then `flash.sh build-pico/picoco.uf2`.
+   - Plus-W: same with `-DPICOCO_BOARD=plusw` into `build-pico-plusw`.
+2. Power up with the cart seated; /HALT should hold (CoCo dead) until
+   `log dump` shows `core1 up, halt released`.
+3. `status`: check cycle counts are moving and `bus addr_resample` is 0 (or
+   small and not growing) once past the CoCo's own boot-time ROM copy.
+4. Becker loop, no ROM needed: `becker loop`, `bus drive on`, then on the
+   CoCo `POKE &HFF42,65: PRINT PEEK(&HFF41), PEEK(&HFF41), PEEK(&HFF42)` →
+   `0 2 65`.
+5. `rom load <rom>` (see F.3 for which file), `save`, power-cycle: HDB-DOS
+   boots, `DIR` lists the test disk, `LOADM"DINORUN":EXEC` runs it.
+6. `SAVE` a program from BASIC, power-cycle, `DIR` still lists it.
+7. `dw stats`: `crc_err 0` throughout.
+
+### F.3 ROM notes
+
+- CoCo 1 and CoCo 2: `hdbdw3bck.rom` (`rom load hdbdw3bck.rom`, then `save`).
+  `hdbdw3bc3.rom` (bc3, 1.79 MHz during transfers) is CoCo 3 only.
+- CoCo 1 needs Extended Color BASIC (not plain Color BASIC) for HDB-DOS to
+  hook in.
+- On CoCo 1/2, BASIC `PEEK(&HC000)` reaches the cart directly (unlike a
+  CoCo 3, which runs BASIC from RAM) — they execute the DOS ROM as code from
+  the cart, so an address-decode error crashes immediately instead of
+  showing up as a stray PEEK. Watch `bus addr_resample` closely on these two.
+- Confirm the test disk image is readable from CoCo 1/2 DOS before blaming
+  the hardware for a failed `DIR`.
+
+### F.4 Through an MPI
+
+- Set both the /CTS and /SCS slot-select switches to PiCoCo's slot.
+- An unmodified Tandy 26-3024 MPI needs the CoCo 3 upgrade to work with a
+  CoCo 3; a 26-3124 works as shipped.
+- The MPI's own buffers add delay, so the CoCo 3 fast-mode (bc3) row through
+  the MPI is the timing-margin test for roadmap item 6 (read-path margin).
+- A working MPI row is also the first data point for the unverified /SLENB
+  item in `docs/hardware-design.md` §9 (deferred to v2.4).
+- Also try a second cart in another MPI slot, and switch PiCoCo between
+  slots, to rule out a slot-specific fault.
+
+### F.5 Test matrix
+
+Rows: CoCo model / mode. Columns: board. Cells: pass/fail + date, or blank
+until run.
+
+| CoCo | Pico 2, bare | Pico 2, MPI | Plus-W, bare | Plus-W, MPI |
+|---|---|---|---|---|
+| CoCo 1 (`hdbdw3bck`) | | | | |
+| CoCo 2 (`hdbdw3bck`) | | | | |
+| CoCo 3, 0.89 MHz (`hdbdw3bck`) | | | | |
+| CoCo 3, 1.79 MHz (`hdbdw3bc3`) | | | | |
+
 ## How to resume with Claude
 
 Plug the Pico in, then say "resume the bench test plan at step A" (or

@@ -121,7 +121,7 @@ in the original proposal.
 | GP22      | 29               | /R/W (input from U12; also drives U10 DIR) |
 | GP26      | 31               | **OE_BUS** — cart‑selected (U15 output) |
 | GP27      | 32               | **HALT_GATE** — output; drives Q2 → /HALT |
-| GP28      | 34               | AUDIO_PWM by default (JP3 1-2, v2.3.1); E (input from U13) if JP3 is cut to 2-3 |
+| GP28      | 34               | AUDIO_PWM by default (JP3 1-2, v2.3.1); E (input from U13) if JP3 is cut to 2-3. Firmware does not initialise this pin (no sound firmware yet, `docs/ADDITIONAL_ROADMAP.md` §6 item 11) — neither driven nor pulled. |
 | RUN       | 30               | CoCo /RESET (via R9 series; R10 pull‑up footprint is DNP by default) |
 | VSYS      | 39               | +5V via D2 Schottky |
 
@@ -134,14 +134,17 @@ address‑valid window). Firmware disambiguates by **A13**:
   stale range this section used to claim.
 - `OE_BUS` low with `A13=1` ⇒ Becker access in $FF40–$FF5F window.
 
-### 3.2.1 Plus-W pin plan (board v2.3, not implemented)
+### 3.2.1 Plus-W pin plan (board v2.3, implemented)
 
 The v2.3 board (`docs/superpowers/specs/2026-09-17-main-board-v2.3-design.md`
 §3.2) adds 15 hidden underside pads to the `PiCoCo:Pico-Carrier`
 footprint, wired only when a Waveshare RP2350B-Plus-W is soldered flat
-instead of a Pico 2 — NC on a Pico 2 build. Firmware support for these
-pins does not exist yet; this table records the wiring so a future
-`boards/` header has something to build against.
+instead of a Pico 2 — NC on a Pico 2 build. `firmware/boards/plusw.h`
+(select with `-DPICOCO_BOARD=plusw`) implements this table; `bus_core1.c`
+reads OE_BUS from `sio_hw->gpio_hi_in` on this board (GP40 is bit 8 of the
+high GPIO bank, not part of `gpio_in`) via a board-header-supplied
+register/mask pair, and `main.c`'s `gpio_setup()` inits exactly the pins
+below plus D0-7/A0-13//R/W/OE_BUS, from a board-header pin mask.
 
 Header pins 31/32/34 carry the same nets on both modules, but the
 GPIO number differs: on a Pico 2 those pins are `GP26`/`GP27`/`GP28`;
@@ -178,12 +181,13 @@ Pico 2 build picks at most one of audio (JP3), a firmware `/CART` pulse
 No firmware for either JP5 position exists yet (item 12 in the roadmap
 backlog, `docs/ADDITIONAL_ROADMAP.md` §6).
 
-**Plus-W board header trap:** `PICO_DEFAULT_LED_PIN` is `GP25`. On a
-Plus-W, pad-grid `GP25` is `SCS_BUF` — a U13 **output**, not an LED. A
-future Plus-W `boards/` header that inherits the Pico 2 LED pin
-unmodified would have firmware driving a buffer output as if it were an
-LED; give the Plus-W header its own `PICO_DEFAULT_LED_PIN` (the Pico's
-own onboard LED, used on a Pico 2 build) before writing that header.
+**Plus-W board header trap, avoided:** `PICO_DEFAULT_LED_PIN` is `GP25` on
+a Pico 2. On a Plus-W, pad-grid `GP25` is `SCS_BUF` — a U13 **output**,
+not an LED. `firmware/boards/picoco_plusw.h` (the SDK-level board header)
+does not define `PICO_DEFAULT_LED_PIN` at all, and `firmware/boards/plusw.h`
+defines no `PIN_LED`; LED code in `main.c`/`plat_pico.c` is `#ifdef
+PIN_LED`'d out on this board. The Plus-W's actual LED pin is unverified —
+add `PIN_LED` to `plusw.h` once it's confirmed safe to drive.
 
 ### 3.3 PIO block usage (v2 bus engine)
 

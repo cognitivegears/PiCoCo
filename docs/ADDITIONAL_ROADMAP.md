@@ -186,10 +186,9 @@ first order (ground stitching, 0.5 mm power trunks, C16, sound values, JP5, J1,
 wider antenna keepout) or deferred to v2.4 (see hardware-design §9).
 
 ### Firmware, ordered by value
-1. **FAT safety across CoCo resets.** R9 reboots the Pico on every CoCo reset, at any
-   instant. `fs_flash.c` formats with `n_fat = 1` and `dw_disk_write` never syncs; a reset
-   during a 4 KB erase/program can take the FAT with it. Do `n_fat = 2` and `ops->sync`
-   after a write (or on the first idle pump after one).
+1. **DONE (2026-09-22).** FAT safety across CoCo resets: `fs_flash_format()` now formats
+   with `n_fat = 2`; `dw_server.c`'s `do_write()` calls `ops->sync` after a successful
+   DriveWire write. Existing volumes keep 1 FAT until `fs format` reformats them.
 2. **Auto-save mounts.** `dw mount` reaches flash only on `save`; the community workflow is
    mount-then-reset-to-boot, so the mount is lost. Write `picoco.cfg` on mount/eject.
 3. **DriveWire virtual-channel command shell.** `dw_server.c` stubs OP_SERWRITE/OP_SERREAD.
@@ -198,20 +197,22 @@ wider antenna keepout) or deferred to v2.4 (see hardware-design §9).
    software that already exists. Worth more than PiCoCo-DOS (§1).
 4. **NitrOS-9 over Becker as a passed milestone** (EOU `dwio_becker.sb`, boot `/dd` from
    HDB-DOS `DOS`). DWINIT already clears `hdbdos` for drive numbers < 0x80.
-5. **Write-cycle sampling.** `bus_core1.c` takes the first word with OE_BUS high, when U10
-   has begun tri-stating; it works because the floating pins decay slowly. Keep the previous
-   sample and use its data bits (same instruction count).
+5. **DONE (2026-09-22).** Write-cycle sampling: `bus_core1.c`'s write path now keeps the
+   last `gpio_in` sample taken while OE_BUS was still low (`prev`) and uses its data bits,
+   instead of the first sample with OE_BUS high.
 6. **Read-path margin.** Ten nops (67 ns at 150 MHz) before the address read; real
    OE-to-data ~180-200 ns, not the documented 70 ns. On the first PCB read `bus
    addr_resample`; if zero, drop the nops. Then `set_sys_clock_khz(200000)`.
 7. **/HALT flow-control holds** longer than a GIME tick (16.7 ms) cost NitrOS-9 clock ticks;
    bound runtime holds to a few hundred us (the 1.2 s boot hold is fine).
-8. **Flash-free core1 build check**: a post-build `nm` step asserting everything reachable
-   from `bus_core1_main` is in RAM (`PICO_FLASH_ASSUME_CORE1_SAFE=1` turns a violation into a
-   hang, not a build error). `bus_core1.c` also has no test coverage; say so in TEST_PLAN.
-9. `fs_flash.h` hardcodes 2.5 MB of a 4 MB Pico 2 (~15 images); move to the board header
-   before the 16 MB Plus-W build. Plus-W board header trap: `PICO_DEFAULT_LED_PIN` = GP25,
-   which is `SCS_BUF` (a U13 output) on the pad grid.
+8. **DONE (2026-09-22).** Flash-free core1 build check: `firmware/tools/check_core1_flash_free.py`
+   runs as a POST_BUILD step on the `picoco` target, following every direct branch from
+   `bus_core1_main` and the Becker read hooks, and fails the build if any lands outside SRAM.
+   `bus_core1.c` still has no test coverage; see TEST_PLAN.md.
+9. **DONE (2026-09-22).** `PICOCO_FS_OFFSET`/`PICOCO_FS_SIZE` moved to the board headers
+   (`fs_flash.h` includes `PICOCO_BOARD_H`); the Plus-W gets the rest of its 16 MB flash
+   (3712 FAT12 clusters). The Plus-W board header trap avoided: `firmware/boards/plusw.h`
+   defines no `PIN_LED` (its LED pin is unverified), so LED code compiles out on that board.
 10. SPDX headers on every firmware source; `console_exec` should reject >6 tokens / >135
     chars instead of truncating silently; note that `bus_stats` counters are non-atomic.
 11. Sound firmware (PWM on GP34/header 34) does not exist yet; the analog stage is populated.
