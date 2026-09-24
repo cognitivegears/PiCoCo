@@ -92,8 +92,8 @@ static void draw_row(u8 row, file_ent *e, u8 inv)
         u32_to_dec(e->kb, kb);
         strcat(kb, "K");
         put_at(row, (u8)(COLS - strlen(kb)), kb, inv);
+        VRAM[(u16)row * COLS + (COLS - strlen(kb) - 1)] = inv ? 0x20 : 0x60;   /* gap before the size */
     }
-    VRAM[(u16)row * COLS + 26] = inv ? 0x20 : 0x60;   /* keep a gap before the size */
 }
 
 static void draw_list(file_ent *e, int n, int s, int t, u8 row0, u8 rows)
@@ -257,7 +257,7 @@ static int confirm_exit(void)
     put_at(MSG_ROW, 0, "NOT SAVED: V=SAVE+EXIT", 1);
     put_at(MSG_ROW + 1, 0, "BREAK=EXIT  OTHER KEY=STAY", 1);
     k = key();
-    if (k == 'V' || k == 'v') { do_save(); return 1; }
+    if (k == 'V' || k == 'v') { do_save(); return ui_dirty == 0; }
     return k == 3;
 }
 
@@ -290,4 +290,82 @@ void ui_run(void)
     }
 }
 
-void settings_run(void) { msg("SETTINGS: TASK 13"); }   /* replaced in Task 13 */
+static void strip_load(char *s)
+{
+    if (strncmp(s, "load ", 5) == 0) memmove(s, s + 5, strlen(s + 5) + 1);
+}
+
+static void fmt_time(u32 t, char *out)
+{
+    int y, mo, d, h, mi;
+    unix_to_civil(t, &y, &mo, &d, &h, &mi);
+    out[0] = (char)('0' + y / 1000); out[1] = (char)('0' + y / 100 % 10);
+    out[2] = (char)('0' + y / 10 % 10); out[3] = (char)('0' + y % 10);
+    out[4] = '-'; out[5] = (char)('0' + mo / 10); out[6] = (char)('0' + mo % 10);
+    out[7] = '-'; out[8] = (char)('0' + d / 10); out[9] = (char)('0' + d % 10);
+    out[10] = ' '; out[11] = (char)('0' + h / 10); out[12] = (char)('0' + h % 10);
+    out[13] = ':'; out[14] = (char)('0' + mi / 10); out[15] = (char)('0' + mi % 10);
+    out[16] = '\0';
+}
+
+static void pick_rom(void)
+{
+    char *body;
+    int n, i;
+    if (picoco_cmd("fs ls", lsbuf, sizeof lsbuf, &body) != 0) { msg("CANNOT LIST FILES"); return; }
+    n = parse_ls(body, files, MAX_FILES, 1);
+    if (!n) { msg("NO .ROM FILES ON FLASH"); return; }
+    sort_files(files, n);
+    i = pick_list("ROM FOR NEXT BOOT", files, n);
+    if (i < 0) return;
+    strcpy(line, "rom boot ");
+    strcat(line, files[i].name);
+    if (ui_cmd(line, &body) == 0) { ui_dirty = 1; msg("SAVE, THEN RESET"); }
+}
+
+void settings_run(void)
+{
+    char now[40], next[40], hdb[8], tv[16], clk[8], ts[20], *body;
+    u32 t;
+    u8 k;
+    for (;;) {
+        now[0] = next[0] = hdb[0] = tv[0] = clk[0] = '\0';
+        if (ui_cmd("status", &body) != 0) return;
+        line_value(body, "rom now ", now, sizeof now);
+        line_value(body, "rom next ", next, sizeof next);
+        line_value(body, "dw hdbdos ", hdb, sizeof hdb);
+        if (ui_cmd("time", &body) != 0) return;
+        line_value(body, "time ", tv, sizeof tv);
+        line_value(body, "clock ", clk, sizeof clk);
+        strip_load(now); strip_load(next);
+        fmt_time(dec_to_u32(tv), ts);
+        clear_screen();
+        put_at(0, 0, "SETTINGS", 0);
+        put_at(0, (u8)(COLS - 3 - strlen(fw)), "FW ", 0);
+        put_at(0, (u8)(COLS - strlen(fw)), fw, 0);
+        put_at(2, 0, "ROM NOW  ", 0);  put_at(2, 9, now, 0);
+        put_at(3, 0, "ROM NEXT ", 0);  put_at(3, 9, next, 0);
+        put_at(5, 0, "R:CHOOSE ROM FOR NEXT BOOT", 0);
+        put_at(6, 0, "H:HDB-DOS DRIVE MODE ", 0); put_at(6, 21, hdb, 0);
+        put_at(7, 0, "T:CLOCK ", 0);   put_at(7, 8, ts, 0);
+        if (strcmp(clk, "kept") != 0) put_at(8, 2, "(LOST AT RESET)", 0);
+        put_at(10, 0, "V:SAVE   BREAK:BACK", 0);
+        k = key();
+        if (k >= 'a' && k <= 'z') k = (u8)(k - 32);
+        if (k == 3) return;
+        if (k == 'R') pick_rom();
+        else if (k == 'H') {
+            if (ui_cmd(strcmp(hdb, "on") == 0 ? "dw hdbdos off" : "dw hdbdos on", &body) == 0) ui_dirty = 1;
+        } else if (k == 'T') {
+            put_at(12, 0, "FORMAT: YYYY-MM-DD HH:MM", 0);
+            if (input_line("TIME: ", ts, 16) > 0) {
+                if (parse_datetime(ts, &t) != 0) msg("BAD DATE/TIME");
+                else {
+                    strcpy(line, "time set ");
+                    u32_to_dec(t, line + 9);
+                    ui_cmd(line, &body);
+                }
+            }
+        } else if (k == 'V') do_save();
+    }
+}
