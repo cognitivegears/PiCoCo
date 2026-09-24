@@ -176,6 +176,65 @@ transfer:
 macOS writes `.fseventsd/` and `._*` AppleDouble files to the volume; `fs ls`
 hides any name starting with `.`, so these don't show up and are harmless.
 
+## Console commands added in 1.2
+
+DW4-compatible disk commands (used by NitrOS-9's `dw` utility and the
+`coco/` manager program equally):
+
+- `dw disk show [n]`: with no argument, lists every mounted drive in DW4's
+  wire format; with `n`, shows just that drive's file.
+- `dw disk insert <n> <file>`: same as `dw mount n file`, but the file
+  name is the rest of the line (spaces allowed) and an occupied drive is
+  ejected first.
+- `dw disk eject <n>`: ejects drive `n`.
+
+`fs new <name>`: creates a blank, formatted 35-track (161,280-byte)
+RS-DOS image, byte-for-byte the same as ToolShed's `decb dskini` (all
+`$FF` except track 17 sectors 1 and 2, as DSKINI leaves them). Refuses an
+existing name, a name containing `/` or `\`, a name 32 characters or
+longer, and `picoco.cfg` (see below).
+
+`rom boot <file>`: records the ROM to load on the *next* boot only (no
+live swap under a running DOS); checks the file exists and is 8192 or
+16384 bytes. `status` now shows both `rom now` (what's currently driving
+`/CTS`) and `rom next` (what `rom boot` + `save` will load at the next
+reset).
+
+`time` now also prints `clock kept|lost`, showing whether the RP2350's
+always-on timer carried the clock across the last `/RESET` (see
+`docs/superpowers/specs/2026-09-23-coco-manager-design.md` §4.5).
+
+`picoco.cfg` can never be mounted (`dw mount`/`dw disk insert`) or
+created (`fs new`) as a disk image, on the console or over DriveWire: it
+replays at boot with full USB privilege (`fs format`, `smoke`, `becker
+off`, ...), so letting a remote `WRITE` rewrite it would hand that
+privilege to whatever wrote the disk.
+
+### DriveWire virtual-serial command channel
+
+`firmware/src/dw/dw_vser.c` implements DW4's virtual-serial command mode
+(channels 1-13; one session at a time) so any DW4 client — NitrOS-9's
+`dw`, DwTerm, or the `coco/` manager program — can run console commands
+over the same Becker/DriveWire link used for disk I/O, framed exactly as
+DW4 Java 4.3.3p (`OK command successful` / `FAIL nnn <msg>`, both
+terminated `\n\r`). Reopening a channel after a reply was already queued
+starts a clean session rather than piling onto the stale one.
+
+Remote commands go through a deny-by-default allowlist
+(`console_exec_remote` in `firmware/src/console/console.c`); only these
+run over DriveWire:
+
+    status version help fs ls fs new dw mount dw eject dw hdbdos
+    dw disk rom boot time save
+
+Everything else (`smoke`, `halt`, `bus`, `becker`, `fs
+format|rm|export|import`, `rom load|pattern|off`, `trace`, `crash`,
+`log`, `stats`, `dw capture|selftest|stats`, `reboot`, `bootsel`, ...)
+answers `FAIL 255 console only` — a new console command is USB-only
+until someone adds it to the allowlist.
+
+Firmware version is 1.2.
+
 ## Bring-up
 
 Breadboard milestones from `docs/breadboard-plan.md` section 6, mapped to

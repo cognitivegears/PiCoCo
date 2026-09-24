@@ -105,11 +105,20 @@ SERSETSTAT/SERINIT/SERTERM and the FASTWRITE default.
   failure, as in Java.
 - One session at a time. An SS.Open on a second channel while a command
   port is open gets an immediate hangup (`[0x10, ch]`) on the next SERREAD.
+- SS.Open on the *same* channel that already has a queued reply (the
+  client never sent SS.Close and reopened after a timeout instead) starts
+  a clean session rather than adding to the stale one: as built,
+  `vser_open` resets all per-port state and starts `opens` back at 1. An
+  SS.Open on the same channel before any reply is queued just increments
+  `opens`, as originally specified.
 - Commands run synchronously on core0. The longest (`fs new`, section
   4.4) holds the CoCo's SERREAD reply for up to a few seconds; the CoCo
   side's timeout allows for it (section 5.2).
 - Output longer than the 4096-byte buffer is truncated and ends with a
-  line `...`.
+  line `...`. As built, that marker is always its own line: on
+  truncation the firmware backs up to the last `\n` before the cut and
+  appends `"...\n"` there, rather than splicing `...` onto a partial
+  trailing line — the last partial line is dropped, not corrupted.
 
 Error-code mapping (DW4 `DWDefs`): messages starting `usage` are 010,
 `bad drive` is 101, everything else is 255. The console's `cerr()` message
@@ -143,6 +152,16 @@ capture|selftest|stats`, `reboot`, `bootsel`.
 The allowlist is deny-by-default: a new console command is USB-only until
 someone adds it here.
 
+`dw mount`/`dw disk insert` (remote or console) and `fs new` all refuse a
+name whose final path component, case-insensitively and after trimming
+trailing `.`/` `, is `picoco.cfg` (`dw_disk_is_config_name`, the one
+choke point every mount path goes through, `firmware/src/dw/dw_disk.c`).
+`picoco.cfg` replays at boot with full USB privilege (`fs format`,
+`smoke`, `becker off`, ...), so a remote `WRITE` must never be able to
+rewrite it. FatFS treats `\` as a path separator the same as `/`, so the
+check splits on both — `\picoco.cfg` refuses too, not just
+`/picoco.cfg`.
+
 ### 4.4 New console commands (available on USB too)
 
 - `dw disk show [n]`: DW4 format. No argument prints
@@ -155,10 +174,16 @@ someone adds it here.
   Replies `Disk inserted in drive n.`.
 - `dw disk eject <n>`: replies `Disk ejected from drive n.\r\n`.
 - `fs new <name>`: creates a formatted, empty 35-track RS-DOS image of
-  161,280 bytes: every byte $FF except the FAT sector (track 17 sector 2,
-  offset 0x13300) bytes 68-255, which are $00, as `DSKINI` leaves them.
-  Check the result against a `DSKINI0` image from XRoar in the tests.
-  Refuses if the file exists or the name contains `/`.
+  161,280 bytes: every byte $FF except track 17 sector 1 (the unused
+  directory-adjacent sector, offset 0x13200-0x132FF), which is entirely
+  $00, and the FAT sector (track 17 sector 2, offset 0x13300) bytes
+  68-255, which are $00, as real `DSKINI`/ToolShed's `decb dskini` leave
+  them — checked byte-for-byte against a `dskini` image in the tests (the
+  zeroed track-17-sector-1 byte range was found during implementation;
+  the original draft of this section only had the FAT sector). Refuses
+  if the file exists, the name is 32 characters or longer (the on-disk
+  `name[32]` can't hold it), the name contains `/` or `\`, or the name is
+  `picoco.cfg` (§4.3).
 - `rom boot <file>`: checks the file exists and is 8192 or 16384 bytes,
   then records `load <file>` as the saved ROM command. It does not touch
   `bus_table`. `status` shows both the running ROM and the next-boot ROM.
@@ -203,6 +228,15 @@ RUN-pin reset:
 | `ui.c` | Screens, keys, list scrolling |
 | `boot.c` | Boot flows (5.5) |
 | `main.c` | Startup: `version` check, first screen |
+
+As built, the `fs ls` reply buffer (`LSBUF`, 4120 bytes: a 23-byte `OK`
+header plus a 4096-byte body plus a NUL) does not live in `ui.c`'s BSS.
+CMOC's Pico-side core0 stack budget and the $3800-$7800 program window
+left no room for a 4 KB static buffer on top of the rest of the program,
+so `LSBUF` is placed at a fixed $2700-$3717 instead, between the
+`PICOCO.BAS` loader (`$2601`) and the program image (`$3800`) — see
+`coco/README.md` "Memory layout" for the full picture, including the
+`BASIC PROGRAM TOO BIG` guard this requires.
 
 Timeouts: 1 s per byte while a reply is streaming; 10 s for the first
 byte of a command's reply (covers `fs new`). On timeout the program shows

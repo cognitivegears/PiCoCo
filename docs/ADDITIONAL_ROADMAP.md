@@ -195,10 +195,11 @@ wider antenna keepout) or deferred to v2.4 (see hardware-design §9).
    second FAT would only double FAT erases with no real protection.
 2. **Auto-save mounts.** `dw mount` reaches flash only on `save`; the community workflow is
    mount-then-reset-to-boot, so the mount is lost. Write `picoco.cfg` on mount/eject.
-3. **DriveWire virtual-channel command shell.** `dw_server.c` stubs OP_SERWRITE/OP_SERREAD.
-   DW4's server shell rides that channel and is how NitrOS-9's `dw` utility inserts disks.
-   A minimal `dw disk show|insert|eject` gives disk selection from the CoCo with client
-   software that already exists. Worth more than PiCoCo-DOS (§1).
+3. **DONE (2026-09-23).** DriveWire virtual-channel command shell: `firmware/src/dw/dw_vser.c`
+   implements DW4 command mode (channels 1-13) with a deny-by-default allowlist
+   (`console_exec_remote`), and `dw disk show|insert|eject` plus `fs new`/`rom boot` give disk
+   selection and image creation from any DW4 client, including the new `coco/` manager
+   program. See `docs/superpowers/specs/2026-09-23-coco-manager-design.md`.
 4. **NitrOS-9 over Becker as a passed milestone** (EOU `dwio_becker.sb`, boot `/dd` from
    HDB-DOS `DOS`). DWINIT already clears `hdbdos` for drive numbers < 0x80.
 5. **DONE (2026-09-22).** Write-cycle sampling: `bus_core1.c`'s write path now keeps the

@@ -240,6 +240,90 @@ watching a window. Two pieces make that possible:
    running); use `kill -9 <pid>` (or `pkill -9 -f 'xroar -machine'`) to stop
    headless instances started this way.
 
-On a PiCoCo: copy `PICOCO.DSK` to the flash (`fs export`), `dw mount 3
-PICOCO.DSK`, `save`, then on the CoCo `DRIVE 3:RUN"PICOCO"`.
-Needs firmware 1.2 or later and `becker native`.
+## On the bench (real hardware)
+
+1. Copy `PICOCO.DSK` to the PiCoCo's flash: `fs export`, drag it onto the
+   `PICOCO` volume, `fs import` (see `firmware/README.md` "Export").
+2. `dw mount 3 PICOCO.DSK`, then `save`.
+3. Needs firmware 1.2 or later, and `becker native` (`becker native` then
+   `save` if the board isn't already in that mode).
+4. On the CoCo: `DRIVE 3:RUN"PICOCO"`. The `DRIVE 3:` prefix matters —
+   the `PICOCO.BAS` loader `LOADM`s from BASIC's default drive.
+
+## Using the manager
+
+Main screen keys:
+- `0`-`3`: mount the selected image in that drive.
+- `SHIFT+E` then `0`-`3`: eject that drive.
+- `SHIFT+N`: prompt for a name (`.DSK` appended if there's no extension),
+  `fs new` a blank image.
+- `SHIFT+B`: boot the selected image (see Boot below).
+- `SHIFT+S`: settings screen.
+- `SHIFT+V`: save (`save`) — persists mounts, next-boot ROM choice, and
+  HDB-DOS drive mode.
+- Up/Down arrows: move the selection; `SHIFT`+arrows: page up/down.
+- Letters: jump to the first file name starting with that letter (type
+  several quickly to narrow further, SDC Explorer style).
+- `BREAK`: exit to BASIC (warm start, no hardware reset). If anything
+  changed since the last save, offers save-then-exit or stay.
+
+A CoCo reset after `SHIFT+V` (save) keeps the mounts; a reset without
+saving drops them, since every `/RESET` reboots the Pico, which replays
+`picoco.cfg` from scratch.
+
+### Settings screen (SHIFT+S)
+
+- `R`: pick a `.ROM` file for the *next* boot (`rom boot`) — does not
+  swap the ROM currently driving `/CTS`. Shows `SAVE, THEN RESET`
+  afterward.
+- `H`: toggle HDB-DOS drive-by-LSN addressing (`dw hdbdos on|off`).
+- `T`: set the clock (`YYYY-MM-DD HH:MM`), converted to Unix seconds and
+  sent as `time set`. Shows `(LOST AT RESET)` under the current time if
+  the firmware reports `clock lost` (see `docs/firmware-architecture.md`
+  §4.5; the AON bench check is still pending).
+- `V`: save. `BREAK`: back to the main screen.
+
+### Boot (SHIFT+B)
+
+1. Mounts the selected image to drive 0.
+2. Reads track 34 sector 1 (LSN 612).
+3. If it starts with `OS`: loads all 18 sectors of track 34 to
+   $2600-$37FF and jumps to $2602, as Disk BASIC's `DOS` command does
+   (OS-9 boot; not exercised in XRoar — no Becker OS-9 boot disk
+   available there — so this path is bench-only).
+4. Otherwise: reads the RS-DOS directory (track 17, sectors 3-11), lists
+   the `.BAS`/`.BIN` entries, and hands the picked one to BASIC as
+   `DRIVE0:RUN"NAME"` or `DRIVE0:LOADM"NAME":EXEC`. Always `DRIVE0:`:
+   the booted image is in drive 0, but the manager itself may have been
+   launched from another drive (step 4 of "On the bench" above uses
+   drive 3), which would otherwise be BASIC's default drive for the
+   handoff command.
+
+## Memory layout
+
+- `PICOCO.BAS` (`10 LOADM"PICOCO":EXEC`) loads at $2601.
+- The `fs ls` reply buffer (`LSBUF`, 4120 bytes: a 23-byte `OK` header
+  plus a 4096-byte body plus a NUL) lives at a fixed $2700-$3717 instead
+  of BSS, between the loader and the program, freeing that space for the
+  program itself. `ui_run()` refuses to start (`BASIC PROGRAM TOO BIG`)
+  if BASIC's array-end pointer (`ARYEND`, $001F) already reaches past
+  $2700 — i.e. the BASIC program that `RUN`s `PICOCO` is too large.
+- `PICOCO.BIN` loads at $3800 (`ORG` in `coco/Makefile`).
+- OS-9 boot (track 34 -> $2600-$37FF) and the `RUN"X"`/`LOADM"X"`
+  handoff both overwrite $2700-$37FF, but only after the picked file's
+  name has already been copied out of `LSBUF`, so the overlap is safe.
+
+## Developer notes
+
+- **CMOC 0.1.100 miscompiles `!func(...)` used as a value** (verified
+  on-device): `if (!f())` is fine, but assigning the negation of a
+  direct function-call result (e.g. `keep = !ends_with_ci(...)`) is not.
+  Write `f() == 0` instead. See the `ponytail:` comment in
+  `coco/parse.c`'s `parse_ls`.
+- **`cls` clashes with CMOC's `coco.h`**, which already declares one;
+  this program's screen-clear function is named `clear_screen` instead.
+- Keep using the headless XRoar recipe above for anything that doesn't
+  need real hardware. `picoco-host` doesn't exercise the OS-9 boot
+  branch or go past what the RVEC4 handoff spike already covers — see
+  `docs/superpowers/specs/2026-09-23-coco-manager-design.md` §5.5, which
+  passed in XRoar on both the CoCo 2 and CoCo 3 profiles.
