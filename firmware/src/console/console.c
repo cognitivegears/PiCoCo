@@ -446,9 +446,9 @@ static const char *fs_busy_reason(void) {
  * FAT sector's (track 17 sector 2) bytes 68..255 are $00 (68 free
  * granules, the rest unused). */
 static int cmd_fs_new(const char *name) {
-    if (strchr(name, '/') || strchr(name, '\\')) return cerr("bad name");
     if (strlen(name) >= 32) return cerr("name too long"); /* dw_disk name[32] can't hold it */
     if (dw_disk_is_config_name(name)) return cerr("reserved name");
+    if (!dw_disk_name_ok(name)) return cerr("bad name");
     dw_file f;
     if (g_store->ops->open(g_store->ctx, name, false, &f) >= 0) {
         g_store->ops->close(&f);

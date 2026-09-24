@@ -375,6 +375,18 @@ TEST(remote_refuses_mounting_config) {
     ASSERT(dw.drives[0].mounted);
 }
 
+/* FatFS ends a path at the first byte < 0x20 and drops a trailing
+ * separator (ff.c ~2900), so "picoco.cfg\" opens picoco.cfg on the Pico
+ * even though its last path component (split on '\\') is empty, not
+ * "picoco.cfg". dw_disk_name_ok must refuse it outright. */
+TEST(remote_refuses_config_bypass_backslash) {
+    setup();
+    char cmd[32];
+    snprintf(cmd, sizeof(cmd), "dw disk insert 0 picoco.cfg\\");
+    ASSERT_EQ(remote(cmd), 255);
+    ASSERT(!dw.drives[0].mounted);
+}
+
 TEST(remote_error_codes) {
     setup();
     ASSERT_EQ(remote("dw hdbdos"), 10);
@@ -563,6 +575,7 @@ int main(void) {
     RUN(remote_allowed_commands_run);
     RUN(remote_refuses_console_only);
     RUN(remote_refuses_mounting_config);
+    RUN(remote_refuses_config_bypass_backslash);
     RUN(remote_error_codes);
     RUN(remote_output_truncates);
     RUN(remote_tiny_cap_no_crash);

@@ -32,9 +32,23 @@ bool dw_disk_is_config_name(const char *name) {
     return strcasecmp(comp, "picoco.cfg") == 0;
 }
 
+/* See dw_disk.h. Separators and control bytes are rejected outright rather
+ * than split-and-trimmed like dw_disk_is_config_name does for picoco.cfg,
+ * because FatFS ends a name at the first byte < 0x20 and ignores a
+ * trailing separator: matching "the last component is picoco.cfg" would
+ * let "picoco.cfg\" (last component empty) or "picoco.cfg\x01" (FatFS
+ * truncates to "picoco.cfg") slip past a component-based check. */
+bool dw_disk_name_ok(const char *name) {
+    if (!name[0]) return false;
+    for (const unsigned char *p = (const unsigned char *)name; *p; p++) {
+        if (*p < 0x20 || *p == 0x7F || *p == '/' || *p == '\\' || *p == ':') return false;
+    }
+    return !dw_disk_is_config_name(name);
+}
+
 int dw_disk_open(dw_store *store, const char *name, bool read_only, dw_disk *d) {
     if (strlen(name) >= sizeof(d->name)) return -1;
-    if (dw_disk_is_config_name(name)) return -1;
+    if (!dw_disk_name_ok(name)) return -1;
     memset(d, 0, sizeof(*d));
     dw_file f;
     int oret = store->ops->open(store->ctx, name, !read_only, &f);
