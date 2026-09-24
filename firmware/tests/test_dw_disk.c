@@ -199,6 +199,15 @@ TEST(name_ok_allows_ordinary_names) {
     ASSERT_EQ(dw_disk_name_ok("xpicoco.cfg"), true);
 }
 
+/* FatFS's CP437 short-name upcase table (ff.c TBL_CT437) folds several
+ * bytes >= 0x80 onto plain ASCII letters (e.g. 0xA2 -> 'O'), so
+ * "pic\xA2co.cfg" would open picoco.cfg on the Pico even though it isn't
+ * a byte-for-byte match. Refuse every byte >= 0x80 outright. */
+TEST(name_ok_refuses_high_bytes) {
+    ASSERT_EQ(dw_disk_name_ok("pic\xA2""co.cfg"), false);
+    ASSERT_EQ(dw_disk_name_ok("p\x8A" "co.dsk"), false);
+}
+
 int main(void) {
     char tmpl[300];
     const char *tmpdir = getenv("TMPDIR");
@@ -223,5 +232,6 @@ int main(void) {
     RUN(missing_file);
     RUN(name_ok_refuses_bypass_bytes);
     RUN(name_ok_allows_ordinary_names);
+    RUN(name_ok_refuses_high_bytes);
     TEST_MAIN_END
 }

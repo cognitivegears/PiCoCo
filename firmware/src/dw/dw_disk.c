@@ -10,14 +10,16 @@ static uint32_t u24be(const uint8_t *p) { return ((uint32_t)p[0] << 16) | ((uint
 /* picoco.cfg is replayed by console_run_config with full USB privilege at
  * next boot (fs format, smoke, becker off, ...); mounting it as a DriveWire
  * disk would let a remote WRITE rewrite the boot config with that
- * privilege, so refuse it here at the one choke point every mount path
- * (console "dw mount", remote "dw mount", "dw disk") goes through. Matches
- * on the final path component only, after FatFS-style trailing '.'/' '
- * trimming, so "/picoco.cfg", "PICOCO.CFG", "picoco.cfg." and
- * "picoco.cfg " all refuse too. FatFS (third_party/fatfs/ff.c IsSeparator)
- * also treats '\\' as a path separator and strips a leading one, so '\\'
- * is a separator here too -- otherwise "\picoco.cfg" would bypass this on
- * the Pico while looking like a no-op prefix on the host. */
+ * privilege. dw_disk_name_ok (below) is the one choke point every
+ * mount/create path actually goes through -- this helper is also called
+ * directly by "fs new" for a distinct "reserved name" message, so it only
+ * does the picoco.cfg component match, not the full guard. Matches on the
+ * final path component only, after FatFS-style trailing '.'/' ' trimming,
+ * so "/picoco.cfg", "PICOCO.CFG", "picoco.cfg." and "picoco.cfg " all
+ * refuse too. FatFS (third_party/fatfs/ff.c IsSeparator) also treats '\\'
+ * as a path separator and strips a leading one, so '\\' is a separator
+ * here too -- otherwise "\picoco.cfg" would bypass this on the Pico while
+ * looking like a no-op prefix on the host. */
 bool dw_disk_is_config_name(const char *name) {
     const char *base = name;
     for (const char *p = name; *p; p++) {
@@ -37,11 +39,22 @@ bool dw_disk_is_config_name(const char *name) {
  * because FatFS ends a name at the first byte < 0x20 and ignores a
  * trailing separator: matching "the last component is picoco.cfg" would
  * let "picoco.cfg\" (last component empty) or "picoco.cfg\x01" (FatFS
- * truncates to "picoco.cfg") slip past a component-based check. */
+ * truncates to "picoco.cfg") slip past a component-based check.
+ *
+ * Every byte >= 0x80 is refused too: FatFS builds 8.3 short names by
+ * upcasing through its OEM code page table (third_party/fatfs/ff.c
+ * TBL_CT437, since ffconf.h sets FF_CODE_PAGE 437), and CP437's upcase
+ * folds several high bytes onto plain ASCII letters -- e.g. 0xA2 ("o"
+ * acute) folds to 'O' -- so a name like "pic\xA2co.cfg" that this guard
+ * would otherwise allow still opens picoco.cfg on the Pico. DriveWire
+ * image names sent by the CoCo never need CP437 accents, so the simplest
+ * correct rule is: no byte >= 0x20 and < 0x80 other than the separators
+ * above is refused; everything >= 0x80 is refused outright rather than
+ * trying to enumerate which high bytes a given code page folds. */
 bool dw_disk_name_ok(const char *name) {
     if (!name[0]) return false;
     for (const unsigned char *p = (const unsigned char *)name; *p; p++) {
-        if (*p < 0x20 || *p == 0x7F || *p == '/' || *p == '\\' || *p == ':') return false;
+        if (*p < 0x20 || *p >= 0x7F || *p == '/' || *p == '\\' || *p == ':') return false;
     }
     return !dw_disk_is_config_name(name);
 }

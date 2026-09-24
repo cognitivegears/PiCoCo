@@ -24,13 +24,17 @@ bool dw_disk_is_config_name(const char *name);
 
 /* True if name is safe to open/create as a DriveWire disk image or "fs new"
  * target on this flat (no-subdirectory) volume: non-empty; no byte < 0x20
- * or == 0x7F (FatFS's create_name ends a path at any byte < ' ' and
+ * or >= 0x7F (FatFS's create_name ends a path at any byte < ' ' and
  * silently drops a trailing separator -- ff.c ~2900 -- so "picoco.cfg\" and
  * "picoco.cfg\x01" must be caught here, not by matching a trailing
- * separator); no '/', '\\' or ':' (there are no subdirectories or drive
- * prefixes here); and not picoco.cfg per dw_disk_is_config_name. This is
- * the one choke point every mount/create path (console "dw mount"/"fs new",
- * remote "dw mount"/"dw disk insert"/"fs new") goes through. */
+ * separator; bytes >= 0x80 are refused because FatFS's CP437 short-name
+ * upcase table, TBL_CT437 in ff.c, folds several of them onto plain ASCII
+ * letters -- e.g. 0xA2 folds to 'O' -- so "pic\xA2co.cfg" would otherwise
+ * open picoco.cfg on the Pico); no '/', '\\' or ':' (there are no
+ * subdirectories or drive prefixes here); and not picoco.cfg per
+ * dw_disk_is_config_name. This is the one choke point every mount/create
+ * path (console "dw mount"/"fs new", remote "dw mount"/"dw disk
+ * insert"/"fs new") goes through. */
 bool dw_disk_name_ok(const char *name);
 
 /* 0 ok, -1 not found, -2 unsupported (e.g. JVC sector size != 256) */

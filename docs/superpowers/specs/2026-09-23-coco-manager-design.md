@@ -155,19 +155,24 @@ someone adds it here.
 `dw mount`/`dw disk insert` (remote or console) and `fs new` all refuse a
 name that fails `dw_disk_name_ok` (`firmware/src/dw/dw_disk.c`), the one
 choke point every mount/create path goes through. A name is refused if
-it's empty, holds a byte < 0x20 or 0x7F, holds `/`, `\` or `:` (there are
-no subdirectories or drive prefixes on this volume), or — after trimming
-trailing `.`/` `, case-insensitively — equals `picoco.cfg`
-(`dw_disk_is_config_name`). `picoco.cfg` replays at boot with full USB
-privilege (`fs format`, `smoke`, `becker off`, ...), so a remote `WRITE`
-must never be able to rewrite it. The control-byte and separator checks
-exist because FatFS's `create_name` ends a path at any byte < 0x20 and
-silently drops a trailing separator (`ff.c` ~2900): a component-only check
-like the original `dw_disk_is_config_name` (splitting on `/`, `\`, `:` and
+it's empty, holds a byte < 0x20, holds a byte >= 0x7F (0x7F itself or
+anything >= 0x80), holds `/`, `\` or `:` (there are no subdirectories or
+drive prefixes on this volume), or — after trimming trailing `.`/` `,
+case-insensitively — equals `picoco.cfg` (`dw_disk_is_config_name`).
+`picoco.cfg` replays at boot with full USB privilege (`fs format`,
+`smoke`, `becker off`, ...), so a remote `WRITE` must never be able to
+rewrite it. The control-byte and separator checks exist because FatFS's
+`create_name` ends a path at any byte < 0x20 and silently drops a
+trailing separator (`ff.c` ~2900): a component-only check like the
+original `dw_disk_is_config_name` (splitting on `/`, `\`, `:` and
 matching the last component) sees `picoco.cfg\` as an *empty* last
 component, not `picoco.cfg`, and lets it through even though FatFS opens
 `picoco.cfg` for it — `dw_disk_name_ok` refuses any separator or control
-byte outright instead of trying to parse around them.
+byte outright instead of trying to parse around them. Bytes >= 0x80 are
+refused for a related reason: FatFS's CP437 short-name upcase table
+(`ff.c` `TBL_CT437`) folds several of them onto plain ASCII letters (e.g.
+0xA2 folds to `O`), so a name like `pic\xA2co.cfg` would still open
+`picoco.cfg` on the Pico without ever matching it byte-for-byte.
 
 ### 4.4 New console commands (available on USB too)
 
