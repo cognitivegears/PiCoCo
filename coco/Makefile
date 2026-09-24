@@ -15,8 +15,11 @@ PICOCO.DSK: PICOCO.BIN PICOCO.BAS
 	$(DECB) copy -2 -b PICOCO.BIN $@,PICOCO.BIN
 	$(DECB) copy -0 -a -t PICOCO.BAS $@,PICOCO.BAS
 
-test:
-	@echo "no host tests yet"
+test: test_parse
+	./test_parse
+
+test_parse: test_parse.c parse.c parse.h
+	cc -std=c99 -Wall -Wextra -fsanitize=address,undefined -o $@ test_parse.c parse.c
 
 clean:
 	rm -f PICOCO.BIN PICOCO.DSK *.o *.map *.lst *.s test_parse
