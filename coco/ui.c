@@ -9,10 +9,20 @@
 #define LIST_ROWS 9
 #define MSG_ROW 14
 #define TICKS (*(volatile u16 *)0x0112)
+#define ARYEND (*(volatile u16 *)0x001F)   /* BASIC end-of-arrays pointer */
+
+/* "fs ls" body (up to 4096 + 23-byte OK header + NUL) lives at a fixed
+ * address instead of BSS, between the 1-line PICOCO.BAS loader ($2601) and
+ * the program image ($3800): frees 4120 bytes of program RAM. Safe because
+ * boot.c's OS-9 boot (track 34 -> $2600) and RUN"X"/LOADM"X" handoff only
+ * touch this region after the picked file's name has already been copied
+ * out of it, i.e. once the list is no longer needed. ui_run() refuses to
+ * start if BASIC's own arrays already reach into this region. */
+#define LSBUF ((char *)0x2700)
+#define LSBUF_SIZE 4120
 
 u8 ui_dirty;
 static char reply[768];
-static char lsbuf[4120];   /* firmware body up to 4096 + 23-byte OK header + NUL */
 static file_ent files[MAX_FILES];
 static int nfiles, sel, top;
 static char drives[4][32];
@@ -140,7 +150,7 @@ static void load_files(void)
 {
     char *body;
     nfiles = 0;
-    if (picoco_cmd("fs ls", lsbuf, sizeof lsbuf, &body) != 0) { msg("CANNOT LIST FILES"); return; }
+    if (picoco_cmd("fs ls", LSBUF, LSBUF_SIZE, &body) != 0) { msg("CANNOT LIST FILES"); return; }
     nfiles = parse_ls(body, files, MAX_FILES, 0);
     sort_files(files, nfiles);
     if (sel >= nfiles) sel = nfiles ? nfiles - 1 : 0;
@@ -266,6 +276,7 @@ void ui_run(void)
     char *body;
     u8 k;
     clear_screen();
+    if (ARYEND > 0x2700) { msg("BASIC PROGRAM TOO BIG"); return; }
     put_at(0, 0, "PICOCO MANAGER", 0);
     put_at(2, 0, "CONNECTING...", 0);
     if (ui_cmd("version", &body) != 0) return;
@@ -312,7 +323,7 @@ static void pick_rom(void)
 {
     char *body;
     int n, i;
-    if (picoco_cmd("fs ls", lsbuf, sizeof lsbuf, &body) != 0) { msg("CANNOT LIST FILES"); return; }
+    if (picoco_cmd("fs ls", LSBUF, LSBUF_SIZE, &body) != 0) { msg("CANNOT LIST FILES"); return; }
     n = parse_ls(body, files, MAX_FILES, 1);
     if (!n) { msg("NO .ROM FILES ON FLASH"); return; }
     sort_files(files, n);
