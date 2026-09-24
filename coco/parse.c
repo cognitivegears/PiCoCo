@@ -18,6 +18,14 @@ int ends_with_ci(const char *s, const char *suf)
     return cmp_ci(s + a - b, suf) == 0;
 }
 
+/* "rom boot"/"rom load" take one token, so a ROM name with a space can't be
+ * booted; keep it off the picker rather than let it be picked and fail. */
+static int has_space(const char *s)
+{
+    while (*s) { if (*s == ' ') return 1; s++; }
+    return 0;
+}
+
 int parse_reply(char *buf, char **body)
 {
     char *p;
@@ -59,6 +67,22 @@ void u32_to_dec(u32 v, char *out)
     *out = '\0';
 }
 
+/* True if text has a line that is exactly "...": the firmware's marker for
+ * a "fs ls" reply body too big for its remote reply cap (console.c
+ * remote_output_truncates). Must run before parse_ls, which rewrites line
+ * terminators to NUL in place. */
+int list_truncated(const char *text)
+{
+    const char *p = text, *line;
+    while (*p) {
+        line = p;
+        while (*p && *p != '\n' && *p != '\r') p++;
+        if (p - line == 3 && line[0] == '.' && line[1] == '.' && line[2] == '.') return 1;
+        while (*p == '\n' || *p == '\r') p++;
+    }
+    return 0;
+}
+
 int parse_ls(char *text, file_ent *out, int max, int roms)
 {
     int n = 0, keep;
@@ -74,7 +98,7 @@ int parse_ls(char *text, file_ent *out, int max, int roms)
         if (!sp || sp == line || sp[1] < '0' || sp[1] > '9') continue;
         *sp = '\0';
         size = dec_to_u32(sp + 1);
-        if (roms) keep = ends_with_ci(line, ".ROM");
+        if (roms) keep = ends_with_ci(line, ".ROM") && has_space(line) == 0;
         /* ponytail: CMOC miscompiles `!func(...)` inline (verified on-device);
          * use `== 0` instead of `!` on a direct function-call result. */
         else keep = (ends_with_ci(line, ".ROM") == 0) && cmp_ci(line, "picoco.cfg") != 0;

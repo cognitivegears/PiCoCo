@@ -63,10 +63,18 @@ void msg(const char *s)
     key();
 }
 
+static void msg2(const char *l1, const char *l2)
+{
+    clear_row(MSG_ROW); clear_row(MSG_ROW + 1);
+    put_at(MSG_ROW, 0, l1, 1);
+    put_at(MSG_ROW + 1, 0, l2, 1);
+    key();
+}
+
 int ui_cmd(const char *l, char **body)
 {
     int rc = picoco_cmd(l, reply, sizeof reply, body);
-    if (rc == PC_TIMEOUT) msg("PICOCO NOT RESPONDING");
+    if (rc == PC_TIMEOUT) msg2("PICOCO NOT RESPONDING", "(BECKER NATIVE? FIRMWARE >= 1.2?)");
     else if (rc == PC_BAD) msg("BAD REPLY (FIRMWARE >= 1.2?)");
     else if (rc == PC_TOOLONG) msg("NAME TOO LONG");
     else if (rc > 0) msg(*body);
@@ -149,11 +157,14 @@ static void load_drives(void)
 static void load_files(void)
 {
     char *body;
+    int trunc;
     nfiles = 0;
     if (picoco_cmd("fs ls", LSBUF, LSBUF_SIZE, &body) != 0) { msg("CANNOT LIST FILES"); return; }
+    trunc = list_truncated(body);           /* before parse_ls rewrites body in place */
     nfiles = parse_ls(body, files, MAX_FILES, 0);
     sort_files(files, nfiles);
     if (sel >= nfiles) sel = nfiles ? nfiles - 1 : 0;
+    if (trunc || nfiles == MAX_FILES) msg("LIST TRUNCATED");
 }
 
 static void draw_header(void)
@@ -279,8 +290,18 @@ void ui_run(void)
     clear_screen();
     if (ARYEND > 0x2700) { msg("BASIC PROGRAM TOO BIG"); return; }
     put_at(0, 0, "PICOCO MANAGER", 0);
-    put_at(2, 0, "CONNECTING...", 0);
-    if (ui_cmd("version", &body) != 0) return;
+    for (;;) {
+        clear_row(2);
+        put_at(2, 0, "CONNECTING...", 0);
+        if (ui_cmd("version", &body) == 0) break;
+        clear_row(MSG_ROW); clear_row(MSG_ROW + 1);
+        put_at(MSG_ROW, 0, "R=RETRY  BREAK=EXIT", 1);
+        for (;;) {
+            k = key();
+            if (k == 3) return;
+            if (k == 'r' || k == 'R') break;
+        }
+    }
     line_value(body, "version ", fw, sizeof fw);
     load_drives();
     load_files();

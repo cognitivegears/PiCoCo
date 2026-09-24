@@ -26,14 +26,22 @@ static void t_ls(void) {
         char t2[] = "zaxxon.dsk 161280\nHDBDW3BC3.ROM 8192\n";
         CHECK(parse_ls(t2, f, 8, 1) == 1 && strcmp(f[0].name, "HDBDW3BC3.ROM") == 0);
     }
+    {
+        /* "rom boot"/"rom load" take one token, so a ROM name with a space
+         * can't be booted -- the picker must hide it. */
+        char t3[] = "HDBDW3BC3.ROM 8192\nold color basic.ROM 8192\n";
+        CHECK(parse_ls(t3, f, 8, 1) == 1 && strcmp(f[0].name, "HDBDW3BC3.ROM") == 0);
+    }
 }
 
 static void t_ls_truncated_tail(void) {
     char text[] = "a.dsk 100\nb.dsk 2\n...\n";
     file_ent f[8];
+    CHECK(list_truncated(text));            /* must run before parse_ls rewrites text */
     CHECK(parse_ls(text, f, 8, 0) == 2);
     {
         char t3[] = "a.dsk 100\nb.dsk 2\nc.dsk 3\n";
+        CHECK(!list_truncated(t3));
         CHECK(parse_ls(t3, f, 2, 0) == 2);   /* max respected */
     }
 }

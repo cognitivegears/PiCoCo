@@ -23,9 +23,13 @@ typedef struct { char name[13]; u8 type; } rs_ent; /* "NAME.EXT"; type 0 BASIC, 
 /* Firmware reply "OK ...\n\r<body>" -> 0, body; "FAIL nnn msg\n\r" -> nnn,
  * body = msg (terminated in place); anything else -> -1. */
 int  parse_reply(char *buf, char **body);
-/* "name size" lines, split in place. roms=1 keeps *.ROM only; roms=0 hides
- * *.ROM and picoco.cfg. Returns entries stored. */
+/* "name size" lines, split in place. roms=1 keeps *.ROM only (and hides
+ * names with a space, since "rom boot"/"rom load" take one token); roms=0
+ * hides *.ROM and picoco.cfg. Returns entries stored. */
 int  parse_ls(char *text, file_ent *out, int max, int roms);
+/* 1 if text has a line that is exactly "...": the firmware's truncation
+ * marker. Call before parse_ls, which rewrites text in place. */
+int  list_truncated(const char *text);
 void sort_files(file_ent *f, int n);
 /* "dw disk show" -> names[d] per drive, "" when empty. */
 void parse_disks(const char *text, char names[4][32]);
