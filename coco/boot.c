@@ -27,6 +27,7 @@ int boot_image(const char *name)
 {
     char *body;
     int i, n = 0, end = 0;
+    if (strlen(name) >= 32) { msg("NAME TOO LONG"); return 0; }
     strcpy(cmdline, "dw disk insert 0 ");
     strcat(cmdline, name);
     if (ui_cmd(cmdline, &body) != 0) return 0;
@@ -56,8 +57,14 @@ int boot_image(const char *name)
     for (i = 0; i < n; i++) { pick[i].name = rs[i].name; pick[i].kb = 0; }
     i = pick_list("RUN WHICH FILE? (DRIVE 0)", pick, n);
     if (i < 0) return 0;
-    if (rs[i].type == 0) { strcpy(cmdline, "RUN\""); strcat(cmdline, rs[i].name); strcat(cmdline, "\""); }
-    else { strcpy(cmdline, "LOADM\""); strcat(cmdline, rs[i].name); strcat(cmdline, "\":EXEC"); }
+    /* DRIVE0: forces the picked file's own drive: the manager may itself
+     * have been launched from another drive (DRIVE 3:RUN"PICOCO"), which
+     * makes that BASIC's default drive, but the booted image is always in
+     * drive 0 (mounted above). Without this prefix RUN/LOADM (and anything
+     * the picked program itself LOADMs/RUNs without a drive number) would
+     * look on the wrong drive. */
+    if (rs[i].type == 0) { strcpy(cmdline, "DRIVE0:RUN\""); strcat(cmdline, rs[i].name); strcat(cmdline, "\""); }
+    else { strcpy(cmdline, "DRIVE0:LOADM\""); strcat(cmdline, rs[i].name); strcat(cmdline, "\":EXEC"); }
     basic_handoff(cmdline);
     return 1;
 }

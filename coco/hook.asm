@@ -65,6 +65,7 @@ hook    pshs    b,x
         ldx     hook_ptr
         lda     ,x+
         stx     hook_ptr
+        tsta                    stx above clobbered Z; re-test A
         bne     hooknz
         lda     #13             NUL in the text: treat as CR (can't run away)
 hooknz  cmpa    #13

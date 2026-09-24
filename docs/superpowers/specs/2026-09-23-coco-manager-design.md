@@ -265,7 +265,12 @@ V:SAVE  BREAK:BACK
    and `JMP $2602`, as Disk BASIC's `DOS` command does.
 4. Otherwise: read the RS-DOS directory (track 17, sectors 3-11) and list
    the .BAS and .BIN entries. The user picks one; the program returns to
-   BASIC and runs `RUN"NAME"` or `LOADM"NAME":EXEC`.
+   BASIC and runs `DRIVE0:RUN"NAME"` or `DRIVE0:LOADM"NAME":EXEC` — the
+   booted image is always in drive 0 (step 1), but the manager itself may
+   have been launched from another drive (5.1: `DRIVE 3:RUN"PICOCO"`), which
+   makes 3 BASIC's default drive; without the `DRIVE0:` prefix the handoff
+   command (and any further file the picked program `LOADM`s or `RUN`s
+   without its own drive number) would look on the wrong drive.
 5. How to hand a command line to BASIC from machine code on Color/
    Extended/HDB-DOS ROMs is a spike. The fallback is to exit to BASIC and
    print the command for the user to type.

@@ -12,7 +12,7 @@
 #define ARYEND (*(volatile u16 *)0x001F)   /* BASIC end-of-arrays pointer */
 
 /* "fs ls" body (up to 4096 + 23-byte OK header + NUL) lives at a fixed
- * address instead of BSS, between the 1-line PICOCO.BAS loader ($2601) and
+ * address instead of BSS, between the 2-line PICOCO.BAS loader ($2601) and
  * the program image ($3800): frees 4120 bytes of program RAM. Safe because
  * boot.c's OS-9 boot (track 34 -> $2600) and RUN"X"/LOADM"X" handoff only
  * touch this region after the picked file's name has already been copied
@@ -196,6 +196,7 @@ static void do_mount(u8 d)
 {
     char *body;
     if (!nfiles) return;
+    if (strlen(files[sel].name) >= 32) { msg("NAME TOO LONG"); return; }
     strcpy(line, "dw disk insert ");
     line[15] = (char)('0' + d); line[16] = ' '; line[17] = '\0';
     strcat(line, files[sel].name);
