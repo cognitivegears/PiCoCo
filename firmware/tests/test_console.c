@@ -422,10 +422,11 @@ TEST(fs_new_makes_formatted_rsdos_image) {
     ASSERT_EQ(fread(img, 1, sizeof(img), f), sizeof(img));
     fclose(f);
     for (uint32_t i = 0; i < sizeof(img); i++) {
-        /* Matches ToolShed's `decb dskini` (which mirrors real DSKINI): the
-         * directory's first sector (track 17 sector 1, 0x13200..0x132FF) is
-         * entirely zero, and the FAT sector's (0x13300) tail past the 68
-         * granule-status bytes is zero too. */
+        /* Matches ToolShed's `decb dskini` (which mirrors real DSKINI):
+         * track 17 sector 1 (0x13200..0x132FF, unused by RS-DOS -- the
+         * directory itself is sectors 3-11) is entirely zero, and the FAT
+         * sector's (0x13300) tail past the 68 granule-status bytes is zero
+         * too. */
         uint8_t want = (i >= 0x13200 && i < 0x13300) ? 0x00 :
                        (i >= 0x13300 + 68 && i < 0x13400) ? 0x00 : 0xFF;
         if (img[i] != want) { printf("  byte %u = %02x\n", i, img[i]); ASSERT(0); }
@@ -453,6 +454,43 @@ TEST(fs_new_refuses_config_name) {
     ASSERT(strcmp(rbuf, "reserved name") == 0);
     ASSERT_EQ(file_size("PICOCO.CFG"), before);
     ASSERT(before != 161280);
+}
+
+/* FatFS (third_party/fatfs/ff.c IsSeparator) treats '\\' as a path
+ * separator too, so on the Pico "\picoco.cfg" would otherwise bypass the
+ * config guard (dw_disk_is_config_name only checked '/' and ':'). These
+ * run before any store access, so the refusal shows up on the host too. */
+TEST(fs_new_refuses_backslash_config) {
+    setup();
+    ASSERT_EQ(remote("fs new \\picoco.cfg"), 255);
+    ASSERT(strcmp(rbuf, "bad name") == 0 || strcmp(rbuf, "reserved name") == 0);
+}
+
+TEST(dw_mount_refuses_backslash_config) {
+    setup();
+    ASSERT_EQ(remote("dw mount 0 \\picoco.cfg"), 255);
+    ASSERT(!dw.drives[0].mounted);
+}
+
+/* "fs new" must take the rest of the raw line, like "dw disk insert" does,
+ * so a name with spaces isn't silently truncated to its first token. */
+TEST(fs_new_uses_full_raw_name) {
+    setup();
+    ASSERT_EQ(remote("fs new my disk.dsk"), 0);
+    ASSERT_EQ(file_size("my disk.dsk"), 161280);
+    ASSERT_EQ(file_size("my"), 0);
+}
+
+TEST(fs_new_refuses_long_name) {
+    setup();
+    char name[40];
+    memset(name, 'a', 32);
+    name[32] = '\0';
+    char cmd[64];
+    snprintf(cmd, sizeof(cmd), "fs new %s", name);
+    ASSERT_EQ(remote(cmd), 255);
+    ASSERT(strcmp(rbuf, "name too long") == 0);
+    ASSERT_EQ(file_size(name), 0);
 }
 
 TEST(rom_boot_records_without_loading) {
@@ -525,6 +563,10 @@ int main(void) {
     RUN(fs_new_makes_formatted_rsdos_image);
     RUN(fs_new_refuses_existing);
     RUN(fs_new_refuses_config_name);
+    RUN(fs_new_refuses_backslash_config);
+    RUN(dw_mount_refuses_backslash_config);
+    RUN(fs_new_uses_full_raw_name);
+    RUN(fs_new_refuses_long_name);
     RUN(rom_boot_records_without_loading);
     RUN(version_is_1_2);
     TEST_MAIN_END

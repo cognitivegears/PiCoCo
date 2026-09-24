@@ -273,7 +273,8 @@ static int cmd_trace(int argc, char **argv) {
 
 static int cmd_rom(int argc, char **argv) {
     if (argc < 2) return cerr("usage: rom pattern|off|load <file>|boot <file>");
-    if (plat_fs_exporting() && strcasecmp(argv[1], "load") == 0)
+    if (plat_fs_exporting() &&
+        (strcasecmp(argv[1], "load") == 0 || strcasecmp(argv[1], "boot") == 0))
         return cerr("fs export active; run fs import first");
     if (strcasecmp(argv[1], "pattern") == 0) {
         rom_pattern();
@@ -440,11 +441,13 @@ static const char *fs_busy_reason(void) {
 #define RSDOS_FAT_OFF   ((17u * 18u + 1u) * 256u)  /* track 17 sector 2 = 0x13300 */
 
 /* A blank 35-track RS-DOS disk as real DSKINI leaves it (verified against
- * ToolShed's decb dskini): all $FF, except the directory's first sector
- * (track 17 sector 1) is entirely $00, and the FAT sector's (track 17
- * sector 2) bytes 68..255 are $00 (68 free granules, the rest unused). */
+ * ToolShed's decb dskini): all $FF, except track 17 sector 1 (unused by
+ * RS-DOS; the directory itself is sectors 3-11) is entirely $00, and the
+ * FAT sector's (track 17 sector 2) bytes 68..255 are $00 (68 free
+ * granules, the rest unused). */
 static int cmd_fs_new(const char *name) {
-    if (strchr(name, '/')) return cerr("bad name");
+    if (strchr(name, '/') || strchr(name, '\\')) return cerr("bad name");
+    if (strlen(name) >= 32) return cerr("name too long"); /* dw_disk name[32] can't hold it */
     if (dw_disk_is_config_name(name)) return cerr("reserved name");
     dw_file f;
     if (g_store->ops->open(g_store->ctx, name, false, &f) >= 0) {
@@ -480,7 +483,7 @@ static int cmd_fs(int argc, char **argv) {
     if (strcasecmp(argv[1], "ls") == 0) { plat_fs_list(fs_ls_cb, NULL); return 0; }
     if (strcasecmp(argv[1], "new") == 0) {
         if (argc < 3) return cerr("usage: fs new <file>");
-        return cmd_fs_new(argv[2]);
+        return cmd_fs_new(raw_tail(2)); /* "fs new" is 2 tokens; rest is the name, spaces and all */
     }
     if (strcasecmp(argv[1], "rm") == 0) {
         if (argc < 3) return cerr("usage: fs rm <file>");

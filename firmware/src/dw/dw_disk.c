@@ -14,11 +14,14 @@ static uint32_t u24be(const uint8_t *p) { return ((uint32_t)p[0] << 16) | ((uint
  * (console "dw mount", remote "dw mount", "dw disk") goes through. Matches
  * on the final path component only, after FatFS-style trailing '.'/' '
  * trimming, so "/picoco.cfg", "PICOCO.CFG", "picoco.cfg." and
- * "picoco.cfg " all refuse too. */
+ * "picoco.cfg " all refuse too. FatFS (third_party/fatfs/ff.c IsSeparator)
+ * also treats '\\' as a path separator and strips a leading one, so '\\'
+ * is a separator here too -- otherwise "\picoco.cfg" would bypass this on
+ * the Pico while looking like a no-op prefix on the host. */
 bool dw_disk_is_config_name(const char *name) {
     const char *base = name;
     for (const char *p = name; *p; p++) {
-        if (*p == '/' || *p == ':') base = p + 1;
+        if (*p == '/' || *p == ':' || *p == '\\') base = p + 1;
     }
     char comp[32];
     size_t n = strlen(base);
