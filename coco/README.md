@@ -279,8 +279,9 @@ saving drops them, since every `/RESET` reboots the Pico, which replays
 - `H`: toggle HDB-DOS drive-by-LSN addressing (`dw hdbdos on|off`).
 - `T`: set the clock (`YYYY-MM-DD HH:MM`), converted to Unix seconds and
   sent as `time set`. Shows `(LOST AT RESET)` under the current time if
-  the firmware reports `clock lost` (see `docs/firmware-architecture.md`
-  §4.5; the AON bench check is still pending).
+  the firmware reports `clock lost` (see
+  `docs/superpowers/specs/2026-09-23-coco-manager-design.md` §4.5; the
+  AON bench check is still pending).
 - `V`: save. `BREAK`: back to the main screen.
 
 ### Boot (SHIFT+B)
@@ -301,7 +302,9 @@ saving drops them, since every `/RESET` reboots the Pico, which replays
 
 ## Memory layout
 
-- `PICOCO.BAS` (`10 LOADM"PICOCO":EXEC`) loads at $2601.
+- The 2-line `PICOCO.BAS` loader sits at $2601: line 10
+  (`IF PEEK(65534)=140 THEN WIDTH32`) sets 32-column mode on a CoCo 3,
+  line 20 (`LOADM"PICOCO":EXEC`) loads and runs the program.
 - The `fs ls` reply buffer (`LSBUF`, 4120 bytes: a 23-byte `OK` header
   plus a 4096-byte body plus a NUL) lives at a fixed $2700-$3717 instead
   of BSS, between the loader and the program, freeing that space for the
