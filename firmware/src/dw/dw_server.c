@@ -183,14 +183,20 @@ static void dispatch(dw_server *s, uint32_t now_ms) {
         case DW_OP_TERM:
         case DW_OP_INIT:
         case DW_OP_SERGETSTAT:
-        case DW_OP_SERINIT:
-        case DW_OP_SERTERM:
-        case DW_OP_SERWRITE:
         case DW_OP_PRINT:
         case DW_OP_PRINTFLUSH:
         case DW_OP_GETSTAT:
         case DW_OP_SETSTAT:
             break; /* consume, no reply */
+        case DW_OP_SERINIT:
+            vser_open(&s->vser, s->buf[0]);
+            break;
+        case DW_OP_SERTERM:
+            vser_close(&s->vser, s->buf[0]);
+            break;
+        case DW_OP_SERWRITE:
+            vser_write(&s->vser, s->buf[0], &s->buf[1], 1);
+            break;
         case DW_OP_RESET1:
         case DW_OP_RESET2:
         case DW_OP_RESET3: {
@@ -201,12 +207,14 @@ static void dispatch(dw_server *s, uint32_t now_ms) {
                     d->store->ops->sync(&d->f);
             }
             memset(&s->stats, 0, sizeof(s->stats));
+            vser_reset(&s->vser);
             break;
         }
         case DW_OP_DWINIT: {
             /* Clients sending a real drive number (< 0x80: NitrOS-9, CoCoBoot,
              * LWOS) mean HDB-DOS's drive-by-LSN split; turn it off for them. */
             if (s->buf[0] < 0x80) s->hdbdos = false;
+            vser_reset(&s->vser);
             uint8_t r = DW_PROTOCOL_VERSION;
             tx(s, &r, 1);
             break;
@@ -258,21 +266,27 @@ static void dispatch(dw_server *s, uint32_t now_ms) {
             return; /* stay out of the tail: not back to IDLE yet */
         }
         case DW_OP_SERREAD: {
-            uint8_t r[2] = {0, 0};
+            uint8_t r[2];
+            vser_serread(&s->vser, r);
             tx(s, r, sizeof(r));
             break;
         }
-        case DW_OP_SERREADM:
-            /* ponytail: no vserial channels to read from; spec says the
-             * server sends nothing back when it can't supply the bytes
-             * (count byte 0 would mean 256, but there's nothing to count). */
+        case DW_OP_SERREADM: {
+            /* buf = [chan, count]; count 0 means 256. Nothing is sent when
+             * the channel can't supply that many bytes (DW4 behaviour). */
+            uint8_t r[256];
+            size_t n = vser_serreadm(&s->vser, s->buf[0], s->buf[1] ? s->buf[1] : 256, r);
+            if (n) tx(s, r, n);
             break;
+        }
         case DW_OP_SERSETSTAT:
             /* buf = [chan, code]; COMST (0x28) carries 26 more status bytes. */
             if (s->have == 2 && s->buf[1] == 0x28) {
                 s->need = 2 + 26;
                 return;
             }
+            if (s->have == 2 && s->buf[1] == 0x29) vser_open(&s->vser, s->buf[0]);   /* SS.Open */
+            if (s->have == 2 && s->buf[1] == 0x2A) vser_close(&s->vser, s->buf[0]);  /* SS.Close */
             break;
         case DW_OP_SERWRITEM:
             /* buf = [chan, count]; count byte 0 means 256 (a full block).
@@ -282,6 +296,7 @@ static void dispatch(dw_server *s, uint32_t now_ms) {
                 s->need = (uint16_t)(2 + cnt);
                 return;
             }
+            vser_write(&s->vser, s->buf[0], &s->buf[2], (size_t)(s->have - 2));
             break;
         case DW_OP_NAMEOBJ_MOUNT:
         case DW_OP_NAMEOBJ_CREATE:
@@ -299,6 +314,8 @@ static void dispatch(dw_server *s, uint32_t now_ms) {
             /* FASTWRITE 0x80..0x8F, the DW4 fast-write window 0x90..0x9D,
              * AARON, WIREBUG_MODE, 230K230K/230K115K, and anything else
              * payload_len() recognizes: consume, no reply. */
+            if (s->op >= DW_OP_FASTWRITE_BASE && s->op <= DW_OP_FASTWRITE_BASE + 0x0F)
+                vser_write(&s->vser, (uint8_t)(s->op - DW_OP_FASTWRITE_BASE), &s->buf[0], 1);
             break;
     }
     s->state = DW_IDLE;
@@ -325,6 +342,7 @@ void dw_init(dw_server *s, dw_store *store, dw_send_fn send, void *ctx) {
     s->state = DW_IDLE;
     s->time_base = DW_TIME_BASE_DEFAULT;
     s->time_base_ms = 0;
+    vser_init(&s->vser, NULL, NULL);
 }
 
 void dw_feed(dw_server *s, const uint8_t *buf, size_t n, uint32_t now_ms) {
@@ -387,4 +405,9 @@ int64_t dw_time_get(dw_server *s, uint32_t now_ms) {
 void dw_set_capture(dw_server *s, dw_capture_fn fn, void *ctx) {
     s->capture = fn;
     s->capture_ctx = ctx;
+}
+
+void dw_set_exec(dw_server *s, vser_exec_fn fn, void *ctx) {
+    s->vser.exec = fn;
+    s->vser.exec_ctx = ctx;
 }

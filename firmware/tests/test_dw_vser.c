@@ -1,5 +1,6 @@
 #include "test.h"
 #include "dw_vser.h"
+#include "dw.h"
 #include <stdlib.h>
 
 static dw_vser v;
@@ -25,6 +26,19 @@ static void setup(void) {
 }
 
 static void wr(uint8_t ch, const char *s) { vser_write(&v, ch, (const uint8_t *)s, strlen(s)); }
+
+/* Wire tests: integration with dw_server */
+static dw_server srv;
+static uint8_t wout[8192];
+static size_t woutn;
+static void wsend(void *ctx, const uint8_t *b, size_t n) { (void)ctx; memcpy(wout + woutn, b, n); woutn += n; }
+#define WFEED(...) do { uint8_t _b[] = { __VA_ARGS__ }; dw_feed(&srv, _b, sizeof(_b), 0); } while (0)
+
+static void wsetup(void) {
+    dw_init(&srv, NULL, wsend, NULL);
+    dw_set_exec(&srv, fake_exec, NULL);
+    woutn = 0; exec_calls = 0; fake_rc = 0; fake_out = "hi\n";
+}
 
 /* Drains channel ch the way a client does; returns bytes read, sets *hung. */
 static size_t drain(uint8_t ch, uint8_t *buf, size_t cap, int *hung) {
@@ -278,6 +292,66 @@ TEST(reopen_after_reply_is_clean) {
     ASSERT(hung);
 }
 
+TEST(wire_setstat_open_serwritem_serread_serreadm) {
+    wsetup();
+    WFEED(0xC4, 1, 0x29);                        /* SS.Open ch 1 */
+    WFEED(0x64, 1, 4, 'v', 'e', 'r', '\r');      /* SERWRITEM */
+    ASSERT_EQ(exec_calls, 1);
+    ASSERT_EQ(woutn, 0);
+    WFEED(0x43);                                 /* SERREAD: 26 queued -> bulk */
+    ASSERT_EQ(woutn, 2);
+    ASSERT_EQ(wout[0], 18); ASSERT_EQ(wout[1], 26);
+    woutn = 0;
+    WFEED(0x63, 1, 26);                          /* SERREADM */
+    ASSERT_EQ(woutn, 26);
+    ASSERT_MEMEQ(wout, "OK command successful\n\rhi\n", 26);
+    woutn = 0;
+    WFEED(0x43);
+    ASSERT_EQ(wout[0], 0x10); ASSERT_EQ(wout[1], 1);
+}
+
+TEST(wire_serinit_is_open_and_serwrite_fastwrite) {
+    wsetup();
+    WFEED(0x45, 2);                              /* SERINIT ch 2 */
+    WFEED(0xC3, 2, 'x');                         /* SERWRITE */
+    WFEED(0x82, '\r');                           /* FASTWRITE ch 2 */
+    ASSERT_EQ(exec_calls, 1);
+    ASSERT(strcmp(last_line, "x") == 0);
+    WFEED(0xC5, 2);                              /* SERTERM */
+    ASSERT_EQ(srv.vser.ch, 0);
+}
+
+TEST(wire_setstat_close) {
+    wsetup();
+    WFEED(0xC4, 1, 0x29);
+    WFEED(0xC4, 1, 0x2A);
+    ASSERT_EQ(srv.vser.ch, 0);
+}
+
+TEST(wire_dwinit_and_reset_clear_sessions) {
+    wsetup();
+    WFEED(0xC4, 1, 0x29);
+    WFEED(0x5A, 0x80);
+    ASSERT_EQ(srv.vser.ch, 0);
+    WFEED(0xC4, 1, 0x29);
+    WFEED(0xFE);
+    ASSERT_EQ(srv.vser.ch, 0);
+}
+
+TEST(wire_serwritem_count_zero_is_256_bytes) {
+    wsetup();
+    WFEED(0xC4, 1, 0x29);
+    uint8_t pkt[3 + 256];
+    pkt[0] = 0x64; pkt[1] = 1; pkt[2] = 0;
+    memset(pkt + 3, 'a', 256);
+    dw_feed(&srv, pkt, sizeof(pkt), 0);
+    WFEED(0xC3, 1, '\r');
+    ASSERT_EQ(exec_calls, 0);    /* overflowed line: FAIL 010, exec never runs */
+    WFEED(0x43);
+    ASSERT_EQ(wout[0], 18);
+    ASSERT_EQ(wout[1], 24);      /* "FAIL 010 line too long\n\r" */
+}
+
 int main(void) {
     RUN(idle_serread_is_zero);
     RUN(write_without_open_is_dropped);
@@ -298,5 +372,10 @@ int main(void) {
     RUN(no_exec_handler_fails_255);
     RUN(fail_message_cut_to_80);
     RUN(reopen_after_reply_is_clean);
+    RUN(wire_setstat_open_serwritem_serread_serreadm);
+    RUN(wire_serinit_is_open_and_serwrite_fastwrite);
+    RUN(wire_setstat_close);
+    RUN(wire_dwinit_and_reset_clear_sessions);
+    RUN(wire_serwritem_count_zero_is_256_bytes);
     TEST_MAIN_END
 }
