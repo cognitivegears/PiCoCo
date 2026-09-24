@@ -256,6 +256,72 @@ TEST(bus_drive_cmd) {
     ASSERT(!bus_drive_get());
 }
 
+static char rbuf[4096];
+static size_t rn;
+static int remote(const char *line) {
+    memset(rbuf, 0, sizeof(rbuf));
+    rn = 0;
+    return console_exec_remote(NULL, line, rbuf, sizeof(rbuf) - 1, &rn);
+}
+
+TEST(remote_allowed_commands_run) {
+    setup();
+    ASSERT_EQ(remote("version"), 0);
+    ASSERT(strstr(rbuf, "version"));
+    ASSERT(!strstr(rbuf, "ok\n"));          /* no console "ok" terminator */
+    ASSERT_EQ(remote("fs ls"), 0);
+    ASSERT(strstr(rbuf, "raw.dsk"));
+    ASSERT_EQ(remote("dw mount 0 raw.dsk"), 0);
+    ASSERT(dw.drives[0].mounted);
+    ASSERT_EQ(outn, 0);                     /* nothing leaked to the USB console */
+}
+
+TEST(remote_refuses_console_only) {
+    setup();
+    const char *deny[] = { "smoke", "halt on", "bus drive off", "becker off", "fs rm raw.dsk",
+                           "fs format", "fs export", "rom load x.rom", "rom pattern", "trace dump",
+                           "crash", "log dw debug", "stats reset", "dw capture off", "dw selftest",
+                           "reboot", "bootsel", "frob" };
+    for (size_t i = 0; i < sizeof(deny) / sizeof(deny[0]); i++) {
+        ASSERT_EQ(remote(deny[i]), 255);
+        ASSERT(strcmp(rbuf, "console only") == 0);
+    }
+    ASSERT_EQ(mode_get(), MODE_DIAG);
+}
+
+TEST(remote_error_codes) {
+    setup();
+    ASSERT_EQ(remote("dw hdbdos"), 10);
+    ASSERT(strncmp(rbuf, "usage", 5) == 0);
+    ASSERT(!strchr(rbuf, '\n'));
+    ASSERT_EQ(remote("dw eject 9"), 101);
+    ASSERT(strcmp(rbuf, "bad drive") == 0);
+    ASSERT_EQ(remote("dw mount 0 nope.dsk"), 255);
+    ASSERT(strcmp(rbuf, "mount failed") == 0);
+}
+
+TEST(remote_output_truncates) {
+    setup();
+    for (int i = 0; i < 200; i++) {
+        char n[64];
+        snprintf(n, sizeof(n), "file_with_a_long_name_%03d.dsk", i);
+        mk(n, 1);
+    }
+    char small[256];
+    size_t sn = 0;
+    ASSERT_EQ(console_exec_remote(NULL, "fs ls", small, sizeof(small), &sn), 0);
+    ASSERT(sn <= sizeof(small));
+    ASSERT_MEMEQ(small + sn - 4, "...\n", 4);
+}
+
+TEST(remote_via_vserial_end_to_end) {
+    setup();
+    uint8_t pkt[] = { 0xC4, 1, 0x29, 0x64, 1, 8, 'v', 'e', 'r', 's', 'i', 'o', 'n', '\r' };
+    dw_feed(&dw, pkt, sizeof(pkt), 0);
+    ASSERT_EQ(dw.vser.qlen > 23, 1);
+    ASSERT_MEMEQ(dw.vser.q + dw.vser.qhead, "OK command successful\n\rversion ", 31);
+}
+
 int main(void) {
     char tmpl[300];
     const char *tmpdir = getenv("TMPDIR");
@@ -280,5 +346,10 @@ int main(void) {
     RUN(native_pump_backpressure);
     RUN(selftest_passes);
     RUN(bus_drive_cmd);
+    RUN(remote_allowed_commands_run);
+    RUN(remote_refuses_console_only);
+    RUN(remote_error_codes);
+    RUN(remote_output_truncates);
+    RUN(remote_via_vserial_end_to_end);
     TEST_MAIN_END
 }

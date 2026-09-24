@@ -38,6 +38,27 @@ static size_t linelen;
 /* Scratch for "trace dump"; too big for a stack frame. */
 static bus_trace_entry trace_buf[BUS_TRACE_SIZE];
 
+/* The line being executed, untokenised: "dw disk insert" re-joins its tail
+ * so image names may contain spaces (DW4 behaviour). */
+static const char *g_raw = "";
+
+/* ponytail: unused until Task 6 wires "dw disk insert"/"dw disk eject"
+ * through it; kept static now so its shape is fixed by this task's tests. */
+static const char *raw_tail(int skip) __attribute__((unused));
+static const char *raw_tail(int skip) {
+    static char tail[128];
+    const char *p = g_raw;
+    for (int i = 0; i < skip; i++) {
+        while (*p == ' ') p++;
+        while (*p && *p != ' ') p++;
+    }
+    while (*p == ' ') p++;
+    snprintf(tail, sizeof(tail), "%s", p);
+    size_t n = strlen(tail);
+    while (n && (tail[n - 1] == ' ' || tail[n - 1] == '\r' || tail[n - 1] == '\n')) tail[--n] = '\0';
+    return tail;
+}
+
 static void outf(const char *fmt, ...) {
     char buf[256];
     va_list ap;
@@ -510,23 +531,112 @@ void console_init(console_out_fn out, void *ctx, dw_server *dw, dw_store *store)
     cap_open = false;
     cap_off = 0;
     mode_bind(dw);
+    dw_set_exec(dw, console_exec_remote, NULL);
 }
 
-int console_exec(const char *line) {
-    char copy[136];
-    snprintf(copy, sizeof(copy), "%s", line);
+static int tokenize(char *copy, char **argv) {
     char *save = NULL;
-    char *argv[6];
     int argc = 0;
     char *tok = strtok_r(copy, " ", &save);
     while (tok && argc < 6) {
         argv[argc++] = tok;
         tok = strtok_r(NULL, " ", &save);
     }
+    return argc;
+}
+
+int console_exec(const char *line) {
+    char copy[136];
+    snprintf(copy, sizeof(copy), "%s", line);
+    char *argv[6];
+    int argc = tokenize(copy, argv);
     if (argc == 0) return cerr("empty");
+    g_raw = line;
     int rc = dispatch(argc, argv);
     if (rc == 0) outf("ok\n");
     return rc;
+}
+
+/* DriveWire virtual-serial front end (spec 2026-09-23 §4.3). Deny by
+ * default: a new console command is USB-only until it is listed here. */
+static const char *const remote_allow[] = {
+    "status", "version", "help", "time", "save",
+    "fs ls", "fs new", "dw mount", "dw eject", "dw hdbdos", "dw disk", "rom boot",
+};
+
+static bool remote_allowed(int argc, char **argv) {
+    for (size_t i = 0; i < sizeof(remote_allow) / sizeof(remote_allow[0]); i++) {
+        const char *e = remote_allow[i];
+        const char *sp = strchr(e, ' ');
+        size_t vl = sp ? (size_t)(sp - e) : strlen(e);
+        if (strlen(argv[0]) != vl || strncasecmp(argv[0], e, vl) != 0) continue;
+        if (!sp) return true;
+        if (argc >= 2 && strcasecmp(argv[1], sp + 1) == 0) return true;
+    }
+    return false;
+}
+
+static char *rcap;
+static size_t rcap_cap, rcap_len;
+static bool rcap_trunc;
+
+static void remote_out(void *ctx, const char *s) {
+    (void)ctx;
+    size_t l = strlen(s);
+    if (rcap_len + l > rcap_cap) {
+        l = rcap_cap - rcap_len;
+        rcap_trunc = true;
+    }
+    memcpy(rcap + rcap_len, s, l);
+    rcap_len += l;
+}
+
+int console_exec_remote(void *ctx, const char *line, char *out, size_t cap, size_t *outn) {
+    (void)ctx;
+    char copy[136];
+    snprintf(copy, sizeof(copy), "%s", line);
+    char *argv[6];
+    int argc = tokenize(copy, argv);
+    if (argc == 0 || !remote_allowed(argc, argv)) {
+        *outn = (size_t)snprintf(out, cap, "console only");
+        return 255;
+    }
+    console_out_fn saved = g_out;
+    void *saved_ctx = g_out_ctx;
+    rcap = out;
+    rcap_cap = cap > 5 ? cap - 5 : 0;   /* room for "...\n" and a NUL */
+    rcap_len = 0;
+    rcap_trunc = false;
+    g_out = remote_out;
+    g_out_ctx = NULL;
+    g_raw = line;
+    int rc = dispatch(argc, argv);
+    g_out = saved;
+    g_out_ctx = saved_ctx;
+    out[rcap_len] = '\0';
+    if (rc != 0) {
+        /* cerr() printed "err <msg>\n"; hand back just <msg>. */
+        const char *msg = "failed";
+        for (char *p = out; p && *p; ) {
+            if (strncmp(p, "err ", 4) == 0) msg = p + 4;
+            p = strchr(p, '\n');
+            if (p) p++;
+        }
+        char m[96];
+        size_t ml = strcspn(msg, "\n");
+        if (ml > 80) ml = 80;
+        memcpy(m, msg, ml);
+        m[ml] = '\0';
+        int code = strncmp(m, "usage", 5) == 0 ? 10 : strcmp(m, "bad drive") == 0 ? 101 : 255;
+        *outn = (size_t)snprintf(out, cap, "%s", m);
+        return code;
+    }
+    if (rcap_trunc) {
+        memcpy(out + rcap_len, "...\n", 4);
+        rcap_len += 4;
+    }
+    *outn = rcap_len;
+    return 0;
 }
 
 void console_feed(const uint8_t *buf, size_t n) {

@@ -10,3 +10,7 @@ void console_init(console_out_fn out, void *ctx, dw_server *dw, dw_store *store)
 void console_feed(const uint8_t *buf, size_t n);   /* accumulates up to 127 chars; executes on \r or \n */
 int  console_exec(const char *line);               /* 0 ok (printed "ok"), -1 err (printed "err <msg>") */
 int  console_run_config(void);                      /* plat_cfg_read, exec each line; lines executed, or <0 */
+
+/* DriveWire vserial command handler (vser_exec_fn): allowlisted commands only,
+ * output captured into out. 0 ok, else DW4 result code with out = message. */
+int  console_exec_remote(void *ctx, const char *line, char *out, size_t cap, size_t *outn);
