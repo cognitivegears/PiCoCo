@@ -162,9 +162,10 @@ TEST(overlong_line_fails_010) {
     wr(1, "\r");
     ASSERT_EQ(exec_calls, 0);
     uint8_t buf[256]; int hung;
-    size_t n = drain(1, buf, sizeof(buf), &hung);
-    buf[n] = 0;
-    ASSERT(strncmp((char *)buf, "FAIL 010 line too long\n\r", n) == 0);
+    size_t n = drain(1, buf, sizeof(buf) - 1, &hung);
+    const char *want = "FAIL 010 line too long\n\r";
+    ASSERT_EQ(n, strlen(want));
+    ASSERT_MEMEQ(buf, want, n);
     ASSERT(hung);
 }
 
@@ -231,9 +232,11 @@ TEST(no_exec_handler_fails_255) {
     vser_open(&v, 1);
     wr(1, "x\r");
     uint8_t buf[256]; int hung;
-    size_t n = drain(1, buf, sizeof(buf), &hung);
-    buf[n] = 0;
-    ASSERT(strncmp((char *)buf, "FAIL 255 no command handler\n\r", n) == 0);
+    size_t n = drain(1, buf, sizeof(buf) - 1, &hung);
+    const char *want = "FAIL 255 no command handler\n\r";
+    ASSERT_EQ(n, strlen(want));
+    ASSERT_MEMEQ(buf, want, n);
+    ASSERT(hung);
 }
 
 TEST(fail_message_cut_to_80) {
@@ -243,7 +246,36 @@ TEST(fail_message_cut_to_80) {
     fake_rc = 255; fake_out = longmsg;
     vser_open(&v, 1);
     wr(1, "x\r");
-    ASSERT_EQ(v.qlen, 9 + 80 + 2);
+    ASSERT_EQ(v.qlen, 9 + 80 + 2);  /* "FAIL 255 " (9) + 80*'m' + "\n\r" (2) */
+    uint8_t buf[256]; int hung;
+    size_t n = drain(1, buf, sizeof(buf) - 1, &hung);
+    ASSERT_EQ(n, 91);
+    ASSERT_EQ(buf[0], 'F'); ASSERT_EQ(buf[9], 'm');  /* "FAIL 255 " then 80 m's */
+    ASSERT_EQ(buf[88], 'm'); ASSERT_EQ(buf[89], '\n'); ASSERT_EQ(buf[90], '\r');
+    ASSERT(hung);
+}
+
+TEST(reopen_after_reply_is_clean) {
+    setup();
+    fake_out = "old\n";
+    vser_open(&v, 1);
+    wr(1, "a\r");
+    ASSERT_EQ(exec_calls, 1);
+    ASSERT(strcmp(last_line, "a") == 0);
+    /* Reopen without close or drain; should start fresh */
+    fake_out = "new\n";
+    vser_open(&v, 1);
+    ASSERT_EQ(v.ch, 1);
+    wr(1, "b\r");
+    ASSERT_EQ(exec_calls, 2);
+    ASSERT(strcmp(last_line, "b") == 0);
+    /* Drain should get only "b"'s response, not "a"'s */
+    uint8_t buf[512]; int hung;
+    size_t n = drain(1, buf, sizeof(buf) - 1, &hung);
+    const char *want = "OK command successful\n\rnew\n";
+    ASSERT_EQ(n, strlen(want));
+    ASSERT_MEMEQ(buf, want, n);
+    ASSERT(hung);
 }
 
 int main(void) {
@@ -265,5 +297,6 @@ int main(void) {
     RUN(reopen_after_hangup_is_clean);
     RUN(no_exec_handler_fails_255);
     RUN(fail_message_cut_to_80);
+    RUN(reopen_after_reply_is_clean);
     TEST_MAIN_END
 }

@@ -13,7 +13,7 @@
 #define VSER_BODY_MAX 4096
 
 /* Runs one command line. Returns 0 for OK with out[0..*outn) as the reply
- * body, or a DW4 result code with out[0..*outn) as a one-line message. */
+ * body, or a DW4 result code (1..255) with out[0..*outn) as a one-line message. */
 typedef int (*vser_exec_fn)(void *ctx, const char *line, char *out, size_t cap, size_t *outn);
 
 typedef struct {

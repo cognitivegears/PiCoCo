@@ -28,10 +28,19 @@ void vser_open(dw_vser *v, uint8_t ch) {
         v->ch = ch;
         v->opens = 1;
     } else if (v->ch == ch) {
-        v->opens++;
+        /* Client reopens after timeout without close; if reply already
+         * queued, start fresh. Otherwise just increment opens count. */
+        if (v->replied) {
+            session_clear(v);
+            v->ch = ch;
+            v->opens = 1;
+        } else {
+            v->opens++;
+        }
     } else {
         /* ponytail: one session at a time; a second channel gets an
-         * immediate hangup. Per-port state when tcp/WiFi channels need it. */
+         * immediate hangup. Per-port state when tcp/WiFi channels need it.
+         * reject_ch holds one pending; two rejects before SERREAD lose first. */
         v->reject_ch = ch;
     }
 }
@@ -43,10 +52,15 @@ void vser_close(dw_vser *v, uint8_t ch) {
 }
 
 static void queue_fail(dw_vser *v, int code, const char *msg) {
-    char *h = (char *)v->q;   /* msg lives at q+VSER_HDR_MAX: no overlap */
-    int n = snprintf(h, VSER_HDR_MAX - 2, "FAIL %03d %.80s", code, msg);
+    char *h = (char *)v->q;
+    /* snprintf with msg argument triggers -Wrestrict; build manually instead. */
+    int n = snprintf(h, VSER_HDR_MAX - 2, "FAIL %03d ", (uint8_t)code);
     if (n < 0) n = 0;
-    if (n > VSER_HDR_MAX - 3) n = VSER_HDR_MAX - 3;
+    if (n > VSER_HDR_MAX - 82) n = VSER_HDR_MAX - 82;  /* room for 80 msg + \n\r */
+    size_t msglen = strlen(msg);
+    if (msglen > 80) msglen = 80;
+    memcpy(h + n, msg, msglen);
+    n += msglen;
     h[n++] = '\n';
     h[n++] = '\r';
     v->qhead = 0;
