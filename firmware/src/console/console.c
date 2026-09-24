@@ -5,6 +5,7 @@
 #include "becker.h"
 #include "log.h"
 #include "plat.h"
+#include "dw_disk.h"
 #include <ctype.h>
 #include <stdarg.h>
 #include <stdio.h>
@@ -26,6 +27,7 @@ static dw_store *g_store;
 
 /* Remembered for "save" (rom_cmd empty = off, the default, so omitted). */
 static char rom_cmd[64];
+static char rom_now[64];   /* what is in bus_table now */
 
 /* "dw capture" state. */
 static dw_file cap_file;
@@ -234,6 +236,8 @@ static int cmd_status(void) {
     outf("bus drive %s\n", bus_drive_get() ? "on" : "off");
     outf("last reset %s\n", plat_last_reset());
     outf("dw hdbdos %s\n", g_dw->hdbdos ? "on" : "off"); /* DWINIT can flip this remotely */
+    outf("rom now %s\n", rom_now[0] ? rom_now : "none");
+    outf("rom next %s\n", rom_cmd[0] ? rom_cmd : "none");
     outf("becker reads %u writes %u underrun %u overrun %u\n",
          becker_stats.reads, becker_stats.writes, becker_stats.underrun, becker_stats.overrun);
     outf("log_dropped %u\n", log_dropped);
@@ -268,17 +272,19 @@ static int cmd_trace(int argc, char **argv) {
 }
 
 static int cmd_rom(int argc, char **argv) {
-    if (argc < 2) return cerr("usage: rom pattern|off|load <file>");
+    if (argc < 2) return cerr("usage: rom pattern|off|load <file>|boot <file>");
     if (plat_fs_exporting() && strcasecmp(argv[1], "load") == 0)
         return cerr("fs export active; run fs import first");
     if (strcasecmp(argv[1], "pattern") == 0) {
         rom_pattern();
         snprintf(rom_cmd, sizeof(rom_cmd), "pattern");
+        snprintf(rom_now, sizeof(rom_now), "pattern");
         return 0;
     }
     if (strcasecmp(argv[1], "off") == 0) {
         rom_off();
         rom_cmd[0] = '\0';
+        rom_now[0] = '\0';
         return 0;
     }
     if (strcasecmp(argv[1], "load") == 0) {
@@ -286,9 +292,19 @@ static int cmd_rom(int argc, char **argv) {
         int r = rom_load_file(g_store, argv[2]);
         if (r != 0) return cerr("rom load failed");
         snprintf(rom_cmd, sizeof(rom_cmd), "load %s", argv[2]);
+        snprintf(rom_now, sizeof(rom_now), "load %s", argv[2]);
         return 0;
     }
-    return cerr("usage: rom pattern|off|load <file>");
+    if (strcasecmp(argv[1], "boot") == 0) {
+        /* Next boot only: a live swap would change the DOS under a running CoCo. */
+        if (argc < 3) return cerr("usage: rom boot <file>");
+        int r = rom_check_file(g_store, argv[2]);
+        if (r == -2) return cerr("rom must be 8192 or 16384 bytes");
+        if (r != 0) return cerr("rom not found");
+        snprintf(rom_cmd, sizeof(rom_cmd), "load %s", argv[2]);
+        return 0;
+    }
+    return cerr("usage: rom pattern|off|load <file>|boot <file>");
 }
 
 static int cmd_becker(int argc, char **argv) {
@@ -419,11 +435,53 @@ static const char *fs_busy_reason(void) {
     return NULL;
 }
 
+#define RSDOS_35T_BYTES (35u * 18u * 256u)         /* 161280 */
+#define RSDOS_DIR_OFF   (17u * 18u * 256u)         /* track 17 sector 1 = 0x13200 */
+#define RSDOS_FAT_OFF   ((17u * 18u + 1u) * 256u)  /* track 17 sector 2 = 0x13300 */
+
+/* A blank 35-track RS-DOS disk as real DSKINI leaves it (verified against
+ * ToolShed's decb dskini): all $FF, except the directory's first sector
+ * (track 17 sector 1) is entirely $00, and the FAT sector's (track 17
+ * sector 2) bytes 68..255 are $00 (68 free granules, the rest unused). */
+static int cmd_fs_new(const char *name) {
+    if (strchr(name, '/')) return cerr("bad name");
+    if (dw_disk_is_config_name(name)) return cerr("reserved name");
+    dw_file f;
+    if (g_store->ops->open(g_store->ctx, name, false, &f) >= 0) {
+        g_store->ops->close(&f);
+        return cerr("file exists");
+    }
+    if (!g_store->ops->create || g_store->ops->create(g_store->ctx, name, &f) != 0)
+        return cerr("create failed");
+    static uint8_t blk[4096]; /* static: Pico core0 stack is 4 KB */
+    int rc = 0;
+    for (uint32_t off = 0; off < RSDOS_35T_BYTES && rc == 0; off += sizeof(blk)) {
+        uint32_t n = RSDOS_35T_BYTES - off < sizeof(blk) ? RSDOS_35T_BYTES - off : sizeof(blk);
+        memset(blk, 0xFF, n);
+        if (off <= RSDOS_DIR_OFF && RSDOS_DIR_OFF < off + n)
+            memset(blk + (RSDOS_DIR_OFF - off), 0x00, 256);
+        if (off <= RSDOS_FAT_OFF && RSDOS_FAT_OFF < off + n)
+            memset(blk + (RSDOS_FAT_OFF - off) + 68, 0x00, 256 - 68);
+        if (g_store->ops->write(&f, off, blk, n) != (int)n) rc = -1;
+    }
+    if (rc == 0 && g_store->ops->sync && g_store->ops->sync(&f) != 0) rc = -1;
+    g_store->ops->close(&f);
+    if (rc != 0) {
+        plat_fs_remove(name);
+        return cerr("write failed");
+    }
+    return 0;
+}
+
 static int cmd_fs(int argc, char **argv) {
-    if (argc < 2) return cerr("usage: fs ls|rm|format|export|import");
+    if (argc < 2) return cerr("usage: fs ls|new|rm|format|export|import");
     if (plat_fs_exporting() && strcasecmp(argv[1], "import") != 0)
         return cerr("fs export active; run fs import first");
     if (strcasecmp(argv[1], "ls") == 0) { plat_fs_list(fs_ls_cb, NULL); return 0; }
+    if (strcasecmp(argv[1], "new") == 0) {
+        if (argc < 3) return cerr("usage: fs new <file>");
+        return cmd_fs_new(argv[2]);
+    }
     if (strcasecmp(argv[1], "rm") == 0) {
         if (argc < 3) return cerr("usage: fs rm <file>");
         if (plat_fs_remove(argv[2]) != 0) return cerr("rm failed");
@@ -447,7 +505,7 @@ static int cmd_fs(int argc, char **argv) {
         if (plat_fs_export(false) != 0) return cerr("import unsupported");
         return 0;
     }
-    return cerr("usage: fs ls|rm|format|export|import");
+    return cerr("usage: fs ls|new|rm|format|export|import");
 }
 
 static int cmd_time(int argc, char **argv) {
@@ -574,6 +632,7 @@ void console_init(console_out_fn out, void *ctx, dw_server *dw, dw_store *store)
     g_store = store;
     linelen = 0;
     rom_cmd[0] = '\0';
+    rom_now[0] = '\0';
     cap_open = false;
     cap_off = 0;
     mode_bind(dw);

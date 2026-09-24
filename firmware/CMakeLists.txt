@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.20)
 option(PICOCO_HOST "Build host library, tests and picoco-host instead of Pico firmware" OFF)
-set(PICOCO_VERSION "1.1")
+set(PICOCO_VERSION "1.2")
 # PiCoCo board: "pico2" (Pico 2 / RP2350A, default) or "plusw" (Waveshare
 # RP2350B-Plus-W). Picks both the PiCoCo pin header (boards/<x>.h) and, for
 # plusw, the SDK's PICO_BOARD (boards/picoco_plusw.h, below).

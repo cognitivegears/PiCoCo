@@ -46,6 +46,17 @@ static void mk(const char *name, int nsect) {
     fclose(fp);
 }
 
+static uint32_t file_size(const char *name) {
+    char p[512];
+    snprintf(p, sizeof(p), "%s/%s", g_dir, name);
+    FILE *f = fopen(p, "rb");
+    if (!f) return 0;
+    fseek(f, 0, SEEK_END);
+    long n = ftell(f);
+    fclose(f);
+    return (uint32_t)n;
+}
+
 static void setup(void) {
     memset(out, 0, sizeof(out));
     outn = 0;
@@ -400,6 +411,81 @@ TEST(remote_via_vserial_end_to_end) {
     ASSERT_MEMEQ(dw.vser.q + dw.vser.qhead, "OK command successful\n\rversion ", 31);
 }
 
+TEST(fs_new_makes_formatted_rsdos_image) {
+    setup();
+    ASSERT_EQ(remote("fs new blank.dsk"), 0);
+    ASSERT_EQ(file_size("blank.dsk"), 161280);
+    char p[512];
+    snprintf(p, sizeof(p), "%s/blank.dsk", g_dir);
+    FILE *f = fopen(p, "rb");
+    static uint8_t img[161280];
+    ASSERT_EQ(fread(img, 1, sizeof(img), f), sizeof(img));
+    fclose(f);
+    for (uint32_t i = 0; i < sizeof(img); i++) {
+        /* Matches ToolShed's `decb dskini` (which mirrors real DSKINI): the
+         * directory's first sector (track 17 sector 1, 0x13200..0x132FF) is
+         * entirely zero, and the FAT sector's (0x13300) tail past the 68
+         * granule-status bytes is zero too. */
+        uint8_t want = (i >= 0x13200 && i < 0x13300) ? 0x00 :
+                       (i >= 0x13300 + 68 && i < 0x13400) ? 0x00 : 0xFF;
+        if (img[i] != want) { printf("  byte %u = %02x\n", i, img[i]); ASSERT(0); }
+    }
+    ASSERT_EQ(remote("dw disk insert 0 blank.dsk"), 0);
+}
+
+TEST(fs_new_refuses_existing) {
+    setup();
+    ASSERT_EQ(remote("fs new raw.dsk"), 255);
+    ASSERT(strcmp(rbuf, "file exists") == 0);
+    ASSERT_EQ(file_size("raw.dsk"), 630 * 256);
+    ASSERT_EQ(remote("fs new"), 10);
+    ASSERT_EQ(remote("fs new a/b.dsk"), 255);
+}
+
+/* Case-insensitive on macOS/FAT, so "PICOCO.CFG" may already resolve to a
+ * file another test left behind in the shared g_dir; assert refusal and
+ * that this call did not write a fresh blank image over whatever is there,
+ * rather than assuming the file starts out absent. */
+TEST(fs_new_refuses_config_name) {
+    setup();
+    uint32_t before = file_size("PICOCO.CFG");
+    ASSERT_EQ(remote("fs new PICOCO.CFG"), 255);
+    ASSERT(strcmp(rbuf, "reserved name") == 0);
+    ASSERT_EQ(file_size("PICOCO.CFG"), before);
+    ASSERT(before != 161280);
+}
+
+TEST(rom_boot_records_without_loading) {
+    setup();
+    static uint8_t rom[8192];
+    memset(rom, 0xAB, sizeof(rom));
+    char p[512];
+    snprintf(p, sizeof(p), "%s/next.rom", g_dir);
+    FILE *f = fopen(p, "wb");
+    fwrite(rom, 1, sizeof(rom), f);
+    fclose(f);
+    console_exec("rom off");
+    ASSERT_EQ(remote("rom boot next.rom"), 0);
+    ASSERT_EQ(bus_table[0x10], 0xFF);                 /* nothing swapped live */
+    ASSERT_EQ(remote("status"), 0);
+    ASSERT(strstr(rbuf, "rom now none\n"));
+    ASSERT(strstr(rbuf, "rom next load next.rom\n"));
+    ASSERT_EQ(remote("rom boot raw.dsk"), 255);       /* wrong size */
+    ASSERT_EQ(remote("rom boot nope.rom"), 255);
+    ASSERT_EQ(console_exec("save"), 0);
+    char cfg[1024];
+    int n = plat_cfg_read(cfg, sizeof(cfg) - 1);
+    ASSERT(n > 0);
+    cfg[n] = 0;
+    ASSERT(strstr(cfg, "rom load next.rom\n"));
+}
+
+TEST(version_is_1_2) {
+    setup();
+    ASSERT_EQ(remote("version"), 0);
+    ASSERT(strcmp(rbuf, "version 1.2\n") == 0);
+}
+
 int main(void) {
     char tmpl[300];
     const char *tmpdir = getenv("TMPDIR");
@@ -436,5 +522,10 @@ int main(void) {
     RUN(remote_output_truncates);
     RUN(remote_tiny_cap_no_crash);
     RUN(remote_via_vserial_end_to_end);
+    RUN(fs_new_makes_formatted_rsdos_image);
+    RUN(fs_new_refuses_existing);
+    RUN(fs_new_refuses_config_name);
+    RUN(rom_boot_records_without_loading);
+    RUN(version_is_1_2);
     TEST_MAIN_END
 }

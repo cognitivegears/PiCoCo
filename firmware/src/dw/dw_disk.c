@@ -15,7 +15,7 @@ static uint32_t u24be(const uint8_t *p) { return ((uint32_t)p[0] << 16) | ((uint
  * on the final path component only, after FatFS-style trailing '.'/' '
  * trimming, so "/picoco.cfg", "PICOCO.CFG", "picoco.cfg." and
  * "picoco.cfg " all refuse too. */
-static bool is_picoco_cfg(const char *name) {
+bool dw_disk_is_config_name(const char *name) {
     const char *base = name;
     for (const char *p = name; *p; p++) {
         if (*p == '/' || *p == ':') base = p + 1;
@@ -31,7 +31,7 @@ static bool is_picoco_cfg(const char *name) {
 
 int dw_disk_open(dw_store *store, const char *name, bool read_only, dw_disk *d) {
     if (strlen(name) >= sizeof(d->name)) return -1;
-    if (is_picoco_cfg(name)) return -1;
+    if (dw_disk_is_config_name(name)) return -1;
     memset(d, 0, sizeof(*d));
     dw_file f;
     int oret = store->ops->open(store->ctx, name, !read_only, &f);

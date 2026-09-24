@@ -16,6 +16,11 @@ typedef struct {
     char name[32];
 } dw_disk;
 
+/* True if name (final path component, trailing '.'/' ' trimmed,
+ * case-insensitive) is picoco.cfg: the boot config replays with USB-console
+ * privilege at boot, so a CoCo must never be able to mount or create it. */
+bool dw_disk_is_config_name(const char *name);
+
 /* 0 ok, -1 not found, -2 unsupported (e.g. JVC sector size != 256) */
 int  dw_disk_open(dw_store *store, const char *name, bool read_only, dw_disk *d);
 void dw_disk_close(dw_disk *d);
