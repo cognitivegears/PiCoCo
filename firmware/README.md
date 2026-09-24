@@ -191,8 +191,9 @@ DW4-compatible disk commands (used by NitrOS-9's `dw` utility and the
 `fs new <name>`: creates a blank, formatted 35-track (161,280-byte)
 RS-DOS image, byte-for-byte the same as ToolShed's `decb dskini` (all
 `$FF` except track 17 sectors 1 and 2, as DSKINI leaves them). Refuses an
-existing name, a name containing `/` or `\`, a name 32 characters or
-longer, and `picoco.cfg` (see below).
+existing name, a name 32 characters or longer, a name that fails
+`dw_disk_name_ok` (empty, a control byte, or `/`, `\`, `:`), and
+`picoco.cfg` (see below).
 
 `rom boot <file>`: records the ROM to load on the *next* boot only (no
 live swap under a running DOS); checks the file exists and is 8192 or
@@ -208,7 +209,15 @@ always-on timer carried the clock across the last `/RESET` (see
 created (`fs new`) as a disk image, on the console or over DriveWire: it
 replays at boot with full USB privilege (`fs format`, `smoke`, `becker
 off`, ...), so letting a remote `WRITE` rewrite it would hand that
-privilege to whatever wrote the disk.
+privilege to whatever wrote the disk. The guard (`dw_disk_name_ok` in
+`firmware/src/dw/dw_disk.c`) refuses the name outright rather than
+matching only a `picoco.cfg` path component: FatFS's `create_name` ends a
+path at any byte below `$20` and silently drops a trailing separator, so
+a name like `picoco.cfg\` or `picoco.cfg` followed by a control byte
+would still open `picoco.cfg` on the Pico even though a component-based
+check sees something else (or nothing) as the last component. So the
+guard refuses any name with a byte below `$20`/`$7F` or a `/`, `\`, `:`
+at all, in addition to matching `picoco.cfg` itself.
 
 ### DriveWire virtual-serial command channel
 

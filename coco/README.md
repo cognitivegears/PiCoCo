@@ -252,11 +252,18 @@ watching a window. Two pieces make that possible:
 
 ## Using the manager
 
+On startup the program runs `version` to check the link; if it times out,
+it shows `PICOCO NOT RESPONDING` and `(BECKER NATIVE? FIRMWARE >= 1.2?)`,
+then `R=RETRY  BREAK=EXIT` — press `R` to try again (e.g. after switching
+the board to `becker native`) or `BREAK` to give up and return to BASIC.
+
 Main screen keys:
 - `0`-`3`: mount the selected image in that drive.
 - `SHIFT+E` then `0`-`3`: eject that drive.
 - `SHIFT+N`: prompt for a name (`.DSK` appended if there's no extension),
-  `fs new` a blank image.
+  `fs new` a blank image. Refused (with the firmware's error text) if the
+  name already exists, is 32 characters or longer, is `picoco.cfg`, or
+  holds a `/`, `\`, `:` or control byte.
 - `SHIFT+B`: boot the selected image (see Boot below).
 - `SHIFT+S`: settings screen.
 - `SHIFT+V`: save (`save`) — persists mounts, next-boot ROM choice, and
@@ -267,15 +274,24 @@ Main screen keys:
 - `BREAK`: exit to BASIC (warm start, no hardware reset). If anything
   changed since the last save, offers save-then-exit or stay.
 
+The file list excludes `*.ROM` and `picoco.cfg`. If the firmware's reply
+was too big to fit (its `...` truncation marker) or the flash holds more
+than 128 matching files, the program shows `LIST TRUNCATED` once after
+loading — not every file may be listed.
+
 A CoCo reset after `SHIFT+V` (save) keeps the mounts; a reset without
 saving drops them, since every `/RESET` reboots the Pico, which replays
-`picoco.cfg` from scratch.
+`picoco.cfg` from scratch. `save` writes a `dw disk insert <n> <file>`
+line for each read-write mount (so a name with spaces, e.g. "my
+disk.dsk", survives the round trip — `dw mount` only takes one token) and
+a `dw mount <n> <file> ro` line for each read-only mount.
 
 ### Settings screen (SHIFT+S)
 
 - `R`: pick a `.ROM` file for the *next* boot (`rom boot`) — does not
   swap the ROM currently driving `/CTS`. Shows `SAVE, THEN RESET`
-  afterward.
+  afterward. Hides any `.ROM` file whose name contains a space, since
+  `rom boot` takes a single token and couldn't be sent one.
 - `H`: toggle HDB-DOS drive-by-LSN addressing (`dw hdbdos on|off`).
 - `T`: set the clock (`YYYY-MM-DD HH:MM`), converted to Unix seconds and
   sent as `time set`. Shows `(LOST AT RESET)` under the current time if

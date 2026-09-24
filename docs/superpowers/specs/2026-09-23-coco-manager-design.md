@@ -153,14 +153,21 @@ The allowlist is deny-by-default: a new console command is USB-only until
 someone adds it here.
 
 `dw mount`/`dw disk insert` (remote or console) and `fs new` all refuse a
-name whose final path component, case-insensitively and after trimming
-trailing `.`/` `, is `picoco.cfg` (`dw_disk_is_config_name`, the one
-choke point every mount path goes through, `firmware/src/dw/dw_disk.c`).
-`picoco.cfg` replays at boot with full USB privilege (`fs format`,
-`smoke`, `becker off`, ...), so a remote `WRITE` must never be able to
-rewrite it. FatFS treats `\` as a path separator the same as `/`, so the
-check splits on both — `\picoco.cfg` refuses too, not just
-`/picoco.cfg`.
+name that fails `dw_disk_name_ok` (`firmware/src/dw/dw_disk.c`), the one
+choke point every mount/create path goes through. A name is refused if
+it's empty, holds a byte < 0x20 or 0x7F, holds `/`, `\` or `:` (there are
+no subdirectories or drive prefixes on this volume), or — after trimming
+trailing `.`/` `, case-insensitively — equals `picoco.cfg`
+(`dw_disk_is_config_name`). `picoco.cfg` replays at boot with full USB
+privilege (`fs format`, `smoke`, `becker off`, ...), so a remote `WRITE`
+must never be able to rewrite it. The control-byte and separator checks
+exist because FatFS's `create_name` ends a path at any byte < 0x20 and
+silently drops a trailing separator (`ff.c` ~2900): a component-only check
+like the original `dw_disk_is_config_name` (splitting on `/`, `\`, `:` and
+matching the last component) sees `picoco.cfg\` as an *empty* last
+component, not `picoco.cfg`, and lets it through even though FatFS opens
+`picoco.cfg` for it — `dw_disk_name_ok` refuses any separator or control
+byte outright instead of trying to parse around them.
 
 ### 4.4 New console commands (available on USB too)
 
@@ -182,11 +189,22 @@ check splits on both — `\picoco.cfg` refuses too, not just
   zeroed track-17-sector-1 byte range was found during implementation;
   the original draft of this section only had the FAT sector). Refuses
   if the file exists, the name is 32 characters or longer (the on-disk
-  `name[32]` can't hold it), the name contains `/` or `\`, or the name is
-  `picoco.cfg` (§4.3).
+  `name[32]` can't hold it), the name is `picoco.cfg` (`reserved name`),
+  or the name otherwise fails `dw_disk_name_ok` (`bad name`: a control
+  byte, or `/`, `\`, `:` — see §4.3).
 - `rom boot <file>`: checks the file exists and is 8192 or 16384 bytes,
   then records `load <file>` as the saved ROM command. It does not touch
   `bus_table`. `status` shows both the running ROM and the next-boot ROM.
+- `save` writes one `dw mount <n> <file> ro\n` or `dw disk insert <n>
+  <file>\n` line per mounted drive (read-only vs read-write) plus lines
+  for `becker`, `rom`, `bus drive`, `dw hdbdos` and non-default `log`
+  levels, to `picoco.cfg`, replayed at boot by `console_run_config`.
+  Read-write mounts use `dw disk insert`, not `dw mount`, because `dw
+  mount` takes a single token: a read-write name with a space (e.g. "my
+  disk.dsk") would replay as `dw mount n my` and fail, where `dw disk
+  insert` re-joins its raw tail. Read-only mounts keep `dw mount ... ro`
+  (no `dw disk insert ... ro` alias exists), so a read-only name still
+  can't have spaces.
 
 The tokenizer limit (6 tokens, 127 chars) stays. `dw disk insert` is the
 only command that re-joins its tail.
@@ -240,8 +258,11 @@ so `LSBUF` is placed at a fixed $2700-$3717 instead, between the
 
 Timeouts: 1 s per byte while a reply is streaming; 10 s for the first
 byte of a command's reply (covers `fs new`). On timeout the program shows
-`PICOCO NOT RESPONDING` and `(BECKER NATIVE? FIRMWARE >= 1.2?)`, and offers retry
-or exit.
+`PICOCO NOT RESPONDING` and `(BECKER NATIVE? FIRMWARE >= 1.2?)`. The
+startup `version` check (5.1) offers `R=RETRY  BREAK=EXIT` and loops on
+`R` rather than dropping straight to BASIC on a cold Becker link;
+elsewhere a timeout just shows the message and returns to the screen the
+user was on.
 
 ### 5.3 Main screen
 
@@ -259,7 +280,10 @@ N:NEW S:SET V:SAVE BREAK:EXIT
 ```
 
 - The list comes from `fs ls`, excluding `*.ROM` and `picoco.cfg`, shown
-  uppercase and cut to fit. Mount names use the original case.
+  uppercase and cut to fit. Mount names use the original case. If the
+  reply was too big for the firmware's remote-command buffer (its `...`
+  truncation marker line) or hit the `MAX_FILES` (128) cap, the program
+  shows `LIST TRUNCATED` once after loading.
 - Up/Down move, Shift+Up/Down page, letters jump to the first matching
   name (SDC Explorer style).
 - 0-3 mount the selection (`dw disk insert`). Commands take SHIFT, as in
@@ -284,7 +308,9 @@ T:CLOCK 2026-09-23 14:02
 V:SAVE  BREAK:BACK
 ```
 
-- R lists `*.ROM` files, runs `rom boot`, then shows `SAVE, THEN RESET`.
+- R lists `*.ROM` files (hiding any whose name has a space, since `rom
+  boot`/`rom load` take a single token and couldn't be sent one), runs
+  `rom boot`, then shows `SAVE, THEN RESET`.
 - H toggles `dw hdbdos on|off`.
 - T asks for `YYYY-MM-DD HH:MM`, converts it to Unix seconds and runs
   `time set`. The note from 4.5 shows when the clock does not survive a
