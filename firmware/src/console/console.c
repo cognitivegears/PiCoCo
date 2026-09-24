@@ -5,6 +5,7 @@
 #include "becker.h"
 #include "log.h"
 #include "plat.h"
+#include <ctype.h>
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -42,9 +43,6 @@ static bus_trace_entry trace_buf[BUS_TRACE_SIZE];
  * so image names may contain spaces (DW4 behaviour). */
 static const char *g_raw = "";
 
-/* ponytail: unused until Task 6 wires "dw disk insert"/"dw disk eject"
- * through it; kept static now so its shape is fixed by this task's tests. */
-static const char *raw_tail(int skip) __attribute__((unused));
 static const char *raw_tail(int skip) {
     static char tail[128];
     const char *p = g_raw;
@@ -305,10 +303,58 @@ static int cmd_becker(int argc, char **argv) {
     return 0;
 }
 
+/* -1 unless s is a single digit naming a drive. */
+static int parse_drive(const char *s) {
+    if (!isdigit((unsigned char)s[0]) || s[1] != '\0') return -1;
+    int n = s[0] - '0';
+    return n < DW_MAX_DRIVES ? n : -1;
+}
+
+/* DW4-compatible "dw disk" (spec 2026-09-23 §4.4). Output formats follow DW4
+ * DWCmdDiskShow/Insert/Eject so NitrOS-9's dw utility reads them unchanged. */
+static int cmd_dw_disk(int argc, char **argv) {
+    const char *usage = "usage: dw disk show [n]|insert <n> <file>|eject <n>";
+    if (argc < 3) return cerr(usage);
+    if (strcasecmp(argv[2], "show") == 0) {
+        if (argc >= 4) {
+            int n = parse_drive(argv[3]);
+            if (n < 0) return cerr("bad drive");
+            if (!g_dw->drives[n].mounted) return cerr("drive not loaded");
+            outf("Details for disk in drive #%d:\r\n\r\n%s\r\n", n, g_dw->drives[n].name);
+            return 0;
+        }
+        outf("\r\nCurrent DriveWire disks:\r\n\r\n");
+        for (int i = 0; i < DW_MAX_DRIVES; i++) {
+            dw_disk *d = &g_dw->drives[i];
+            if (d->mounted) outf("X%-3d%c%s\r\n", i, d->read_only ? '*' : ' ', d->name);
+        }
+        return 0;
+    }
+    if (strcasecmp(argv[2], "insert") == 0) {
+        if (argc < 5) return cerr(usage);
+        int n = parse_drive(argv[3]);
+        if (n < 0) return cerr("bad drive");
+        if (dw_mount(g_dw, n, raw_tail(4), false) != 0) return cerr("mount failed");
+        outf("Disk inserted in drive %d.", n);
+        return 0;
+    }
+    if (strcasecmp(argv[2], "eject") == 0) {
+        if (argc < 4) return cerr(usage);
+        int n = parse_drive(argv[3]);
+        if (n < 0) return cerr("bad drive");
+        if (!g_dw->drives[n].mounted) return cerr("drive not loaded");
+        dw_eject(g_dw, n);
+        outf("Disk ejected from drive %d.\r\n", n);
+        return 0;
+    }
+    return cerr(usage);
+}
+
 static int cmd_dw(int argc, char **argv) {
-    if (argc < 2) return cerr("usage: dw mount|eject|hdbdos|stats|capture|selftest ...");
+    if (argc < 2) return cerr("usage: dw mount|disk|eject|hdbdos|stats|capture|selftest ...");
     if (plat_fs_exporting()) return cerr("fs export active; run fs import first");
     if (strcasecmp(argv[1], "selftest") == 0) return cmd_dw_selftest();
+    if (strcasecmp(argv[1], "disk") == 0) return cmd_dw_disk(argc, argv);
     if (strcasecmp(argv[1], "mount") == 0) {
         if (argc < 4) return cerr("usage: dw mount <n> <file> [ro]");
         int n = atoi(argv[2]);
@@ -359,7 +405,7 @@ static int cmd_dw(int argc, char **argv) {
         }
         return cerr("usage: dw capture on <file>|off");
     }
-    return cerr("usage: dw mount|eject|hdbdos|stats|capture|selftest ...");
+    return cerr("usage: dw mount|disk|eject|hdbdos|stats|capture|selftest ...");
 }
 
 /* Shared by "fs format" and "fs export": both yank FatFS out from under

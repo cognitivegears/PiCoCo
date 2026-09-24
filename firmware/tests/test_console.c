@@ -264,6 +264,56 @@ static int remote(const char *line) {
     return console_exec_remote(NULL, line, rbuf, sizeof(rbuf) - 1, &rn);
 }
 
+TEST(disk_show_format) {
+    setup();
+    ASSERT_EQ(console_exec("dw mount 0 raw.dsk"), 0);
+    ASSERT_EQ(console_exec("dw mount 2 raw.dsk ro"), 0);
+    outn = 0; out[0] = 0;
+    ASSERT_EQ(console_exec("dw disk show"), 0);
+    ASSERT(strstr(out, "\r\nCurrent DriveWire disks:\r\n\r\nX0   raw.dsk\r\nX2  *raw.dsk\r\n"));
+    outn = 0; out[0] = 0;
+    ASSERT_EQ(console_exec("dw disk show 2"), 0);
+    ASSERT(strstr(out, "Details for disk in drive #2:\r\n\r\nraw.dsk\r\n"));
+    ASSERT_EQ(console_exec("dw disk show 1"), -1);
+}
+
+TEST(disk_insert_and_eject) {
+    setup();
+    ASSERT_EQ(remote("dw disk insert 1 raw.dsk"), 0);
+    ASSERT(strcmp(rbuf, "Disk inserted in drive 1.") == 0);
+    ASSERT(dw.drives[1].mounted);
+    ASSERT_EQ(remote("dw disk eject 1"), 0);
+    ASSERT(strcmp(rbuf, "Disk ejected from drive 1.\r\n") == 0);
+    ASSERT(!dw.drives[1].mounted);
+    ASSERT_EQ(remote("dw disk eject 1"), 255);
+    ASSERT(strcmp(rbuf, "drive not loaded") == 0);
+    ASSERT_EQ(remote("dw disk insert x raw.dsk"), 101);
+    ASSERT_EQ(remote("dw disk insert 4 raw.dsk"), 101);
+    ASSERT_EQ(remote("dw disk"), 10);
+}
+
+TEST(disk_insert_name_with_spaces) {
+    setup();
+    mk("my game disk.dsk", 630);
+    ASSERT_EQ(remote("dw disk insert 0 my game disk.dsk  "), 0);
+    ASSERT(strcmp(dw.drives[0].name, "my game disk.dsk") == 0);
+}
+
+TEST(disk_insert_long_name_fails) {
+    setup();
+    mk("a_really_long_disk_image_name_over_32.dsk", 630);
+    ASSERT_EQ(remote("dw disk insert 0 a_really_long_disk_image_name_over_32.dsk"), 255);
+    ASSERT(strcmp(rbuf, "mount failed") == 0);
+}
+
+TEST(disk_insert_replaces_mounted) {
+    setup();
+    mk("b.dsk", 630);
+    ASSERT_EQ(console_exec("dw mount 0 raw.dsk"), 0);
+    ASSERT_EQ(remote("dw disk insert 0 b.dsk"), 0);
+    ASSERT(strcmp(dw.drives[0].name, "b.dsk") == 0);
+}
+
 TEST(remote_allowed_commands_run) {
     setup();
     ASSERT_EQ(remote("version"), 0);
@@ -374,6 +424,11 @@ int main(void) {
     RUN(native_pump_backpressure);
     RUN(selftest_passes);
     RUN(bus_drive_cmd);
+    RUN(disk_show_format);
+    RUN(disk_insert_and_eject);
+    RUN(disk_insert_name_with_spaces);
+    RUN(disk_insert_long_name_fails);
+    RUN(disk_insert_replaces_mounted);
     RUN(remote_allowed_commands_run);
     RUN(remote_refuses_console_only);
     RUN(remote_refuses_mounting_config);
