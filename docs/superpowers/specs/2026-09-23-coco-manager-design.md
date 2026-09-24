@@ -270,6 +270,22 @@ V:SAVE  BREAK:BACK
    Extended/HDB-DOS ROMs is a spike. The fallback is to exit to BASIC and
    print the command for the user to type.
 
+Spike result (2026-09-23): the handoff works on both the CoCo 2 (Color
+BASIC 1.3 + Extended 1.1 + HDB-DOS 1.5 becker) and the CoCo 3 (BASIC 2.1 +
+HDB-DOS 1.5 becker CoCo 3) in XRoar, so the fallback is not needed.
+`coco/hook.asm` points RVEC4 ($016A) at a hook that answers each CONSOLE IN
+call from a queued, CR-terminated line and restores the original 3 bytes
+before it hands back the CR. `xroar -trace` showed the same stack on both
+machines at RVEC4 entry: 0,S = $A179 (return into $A176, which did `JSR
+RVEC4`), 2,S = $A173 (return into CONSOLE IN at $A171, `BSR $A176`; $A173
+is `ANDA #$7F / RTS`), 4,S = the caller ($A39D for command-line input). The
+hook does `PULS B,X / LEAS 2,S / RTS`, the same exit HDB-DOS's own RVEC4
+handler uses. Queued `PRINT"HANDOFF OK"` and `RUN"HELLO"` both ran after
+`RUN"PICOCO"` returned to `OK`, and a command typed afterwards still ran.
+Two side effects: HDB-DOS's command-line recall does not record the queued
+line, and keys typed while the program runs can be eaten by BASIC's BREAK
+check (true without the hook too).
+
 ### 5.6 Exit
 
 BREAK on the main screen returns to BASIC with a warm start and no
