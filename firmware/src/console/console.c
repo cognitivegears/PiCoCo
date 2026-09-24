@@ -591,14 +591,22 @@ static void remote_out(void *ctx, const char *s) {
     rcap_len += l;
 }
 
+/* snprintf() returns the length it would have written, which can exceed
+ * cap - 1 on truncation; outn must never claim more than fits in out. */
+static size_t outn_clamp(int written, size_t cap) {
+    size_t n = written < 0 ? 0 : (size_t)written;
+    return n >= cap ? cap - 1 : n;
+}
+
 int console_exec_remote(void *ctx, const char *line, char *out, size_t cap, size_t *outn) {
     (void)ctx;
+    if (cap < 5) { *outn = 0; return 255; } /* too small even for "...\n" + NUL */
     char copy[136];
     snprintf(copy, sizeof(copy), "%s", line);
     char *argv[6];
     int argc = tokenize(copy, argv);
     if (argc == 0 || !remote_allowed(argc, argv)) {
-        *outn = (size_t)snprintf(out, cap, "console only");
+        *outn = outn_clamp(snprintf(out, cap, "console only"), cap);
         return 255;
     }
     console_out_fn saved = g_out;
@@ -628,10 +636,13 @@ int console_exec_remote(void *ctx, const char *line, char *out, size_t cap, size
         memcpy(m, msg, ml);
         m[ml] = '\0';
         int code = strncmp(m, "usage", 5) == 0 ? 10 : strcmp(m, "bad drive") == 0 ? 101 : 255;
-        *outn = (size_t)snprintf(out, cap, "%s", m);
+        *outn = outn_clamp(snprintf(out, cap, "%s", m), cap);
         return code;
     }
     if (rcap_trunc) {
+        /* spec §4.2: the marker is its own line, so drop the trailing
+         * partial line (if any) rather than splicing "..." onto it. */
+        while (rcap_len > 0 && out[rcap_len - 1] != '\n') rcap_len--;
         memcpy(out + rcap_len, "...\n", 4);
         rcap_len += 4;
     }

@@ -269,6 +269,8 @@ TEST(remote_allowed_commands_run) {
     ASSERT_EQ(remote("version"), 0);
     ASSERT(strstr(rbuf, "version"));
     ASSERT(!strstr(rbuf, "ok\n"));          /* no console "ok" terminator */
+    ASSERT_EQ(remote("VERSION"), 0);        /* case-insensitive */
+    ASSERT(strstr(rbuf, "version"));
     ASSERT_EQ(remote("fs ls"), 0);
     ASSERT(strstr(rbuf, "raw.dsk"));
     ASSERT_EQ(remote("dw mount 0 raw.dsk"), 0);
@@ -281,12 +283,29 @@ TEST(remote_refuses_console_only) {
     const char *deny[] = { "smoke", "halt on", "bus drive off", "becker off", "fs rm raw.dsk",
                            "fs format", "fs export", "rom load x.rom", "rom pattern", "trace dump",
                            "crash", "log dw debug", "stats reset", "dw capture off", "dw selftest",
-                           "reboot", "bootsel", "frob" };
+                           "reboot", "bootsel", "frob",
+                           "fs", "dw", "rom", "statusx", "fsls", "FS RM raw.dsk" };
     for (size_t i = 0; i < sizeof(deny) / sizeof(deny[0]); i++) {
         ASSERT_EQ(remote(deny[i]), 255);
         ASSERT(strcmp(rbuf, "console only") == 0);
     }
     ASSERT_EQ(mode_get(), MODE_DIAG);
+}
+
+TEST(remote_refuses_mounting_config) {
+    setup();
+    mk("picoco.cfg", 1);
+    mk("picoco.dsk", 1);
+    const char *deny[] = { "dw mount 0 PICOCO.CFG", "dw mount 0 picoco.cfg.",
+                            "dw mount 0 picoco.cfg ", "dw mount 0 /picoco.cfg" };
+    for (size_t i = 0; i < sizeof(deny) / sizeof(deny[0]); i++) {
+        ASSERT_EQ(remote(deny[i]), 255);
+        ASSERT(!dw.drives[0].mounted);
+    }
+    ASSERT_EQ(console_exec("dw mount 0 picoco.cfg"), -1);  /* USB path refuses it too */
+    ASSERT(!dw.drives[0].mounted);
+    ASSERT_EQ(remote("dw mount 0 picoco.dsk"), 0);         /* an ordinary name still mounts */
+    ASSERT(dw.drives[0].mounted);
 }
 
 TEST(remote_error_codes) {
@@ -312,6 +331,15 @@ TEST(remote_output_truncates) {
     ASSERT_EQ(console_exec_remote(NULL, "fs ls", small, sizeof(small), &sn), 0);
     ASSERT(sn <= sizeof(small));
     ASSERT_MEMEQ(small + sn - 4, "...\n", 4);
+    ASSERT(sn == 4 || small[sn - 5] == '\n');  /* marker is its own line */
+}
+
+TEST(remote_tiny_cap_no_crash) {
+    setup();
+    char tiny[4];
+    size_t tn = 99;
+    ASSERT_EQ(console_exec_remote(NULL, "version", tiny, sizeof(tiny), &tn), 255);
+    ASSERT_EQ(tn, 0);
 }
 
 TEST(remote_via_vserial_end_to_end) {
@@ -348,8 +376,10 @@ int main(void) {
     RUN(bus_drive_cmd);
     RUN(remote_allowed_commands_run);
     RUN(remote_refuses_console_only);
+    RUN(remote_refuses_mounting_config);
     RUN(remote_error_codes);
     RUN(remote_output_truncates);
+    RUN(remote_tiny_cap_no_crash);
     RUN(remote_via_vserial_end_to_end);
     TEST_MAIN_END
 }

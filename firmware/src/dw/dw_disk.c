@@ -1,13 +1,37 @@
 #include "dw_disk.h"
 #include <string.h>
 #include <stdio.h>
+#include <strings.h>
 
 static uint32_t u16le(const uint8_t *p) { return (uint32_t)p[0] | ((uint32_t)p[1] << 8); }
 static uint32_t u16be(const uint8_t *p) { return ((uint32_t)p[0] << 8) | (uint32_t)p[1]; }
 static uint32_t u24be(const uint8_t *p) { return ((uint32_t)p[0] << 16) | ((uint32_t)p[1] << 8) | (uint32_t)p[2]; }
 
+/* picoco.cfg is replayed by console_run_config with full USB privilege at
+ * next boot (fs format, smoke, becker off, ...); mounting it as a DriveWire
+ * disk would let a remote WRITE rewrite the boot config with that
+ * privilege, so refuse it here at the one choke point every mount path
+ * (console "dw mount", remote "dw mount", "dw disk") goes through. Matches
+ * on the final path component only, after FatFS-style trailing '.'/' '
+ * trimming, so "/picoco.cfg", "PICOCO.CFG", "picoco.cfg." and
+ * "picoco.cfg " all refuse too. */
+static bool is_picoco_cfg(const char *name) {
+    const char *base = name;
+    for (const char *p = name; *p; p++) {
+        if (*p == '/' || *p == ':') base = p + 1;
+    }
+    char comp[32];
+    size_t n = strlen(base);
+    if (n >= sizeof(comp)) n = sizeof(comp) - 1;
+    memcpy(comp, base, n);
+    comp[n] = '\0';
+    while (n && (comp[n - 1] == '.' || comp[n - 1] == ' ')) comp[--n] = '\0';
+    return strcasecmp(comp, "picoco.cfg") == 0;
+}
+
 int dw_disk_open(dw_store *store, const char *name, bool read_only, dw_disk *d) {
     if (strlen(name) >= sizeof(d->name)) return -1;
+    if (is_picoco_cfg(name)) return -1;
     memset(d, 0, sizeof(*d));
     dw_file f;
     int oret = store->ops->open(store->ctx, name, !read_only, &f);
