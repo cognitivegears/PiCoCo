@@ -22,5 +22,7 @@ void plat_reset_latch(void);                  /* Pico: call once, before watchdo
                                                   marker plat_last_reset() needs; host: no-op */
 size_t plat_bridge_read(uint8_t *buf, size_t n);   /* CDC0 in bridge mode; host: 0 */
 size_t plat_bridge_write(const uint8_t *buf, size_t n);
+bool plat_rtc_get(int64_t *unix_secs);        /* true if a clock that survives a CoCo reset is running; host: false */
+void plat_rtc_set(int64_t unix_secs);         /* host: no-op */
 const char *plat_fs_dir(void);                /* host only: directory backing the "filesystem" */
 void plat_host_set_dir(const char *dir);      /* host only */

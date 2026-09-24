@@ -514,10 +514,14 @@ static int cmd_fs(int argc, char **argv) {
 static int cmd_time(int argc, char **argv) {
     if (argc >= 2 && strcasecmp(argv[1], "set") == 0) {
         if (argc < 3) return cerr("usage: time set <unix>");
-        dw_time_set(g_dw, atoll(argv[2]), plat_now_ms());
+        int64_t t = atoll(argv[2]);
+        dw_time_set(g_dw, t, plat_now_ms());
+        plat_rtc_set(t);
         return 0;
     }
+    int64_t dummy;
     outf("time %lld\n", (long long)dw_time_get(g_dw, plat_now_ms()));
+    outf("clock %s\n", plat_rtc_get(&dummy) ? "kept" : "lost");
     return 0;
 }
 

@@ -124,3 +124,6 @@ int plat_cfg_write(const char *b, size_t n) {
 }
 const char *plat_fs_dir(void) { return ""; }
 void plat_host_set_dir(const char *d) { (void)d; }
+
+bool plat_rtc_get(int64_t *unix_secs) { (void)unix_secs; return false; }
+void plat_rtc_set(int64_t unix_secs) { (void)unix_secs; }

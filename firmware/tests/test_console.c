@@ -275,6 +275,12 @@ static int remote(const char *line) {
     return console_exec_remote(NULL, line, rbuf, sizeof(rbuf) - 1, &rn);
 }
 
+TEST(time_reports_clock_lost_on_host) {
+    setup();
+    ASSERT_EQ(remote("time"), 0);
+    ASSERT(strstr(rbuf, "clock lost\n"));
+}
+
 TEST(disk_show_format) {
     setup();
     ASSERT_EQ(console_exec("dw mount 0 raw.dsk"), 0);
@@ -553,6 +559,7 @@ int main(void) {
     RUN(disk_insert_name_with_spaces);
     RUN(disk_insert_long_name_fails);
     RUN(disk_insert_replaces_mounted);
+    RUN(time_reports_clock_lost_on_host);
     RUN(remote_allowed_commands_run);
     RUN(remote_refuses_console_only);
     RUN(remote_refuses_mounting_config);
