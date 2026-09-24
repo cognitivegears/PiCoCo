@@ -1,0 +1,7 @@
+PICOCO.BIN
+PICOCO.DSK
+*.o
+*.map
+*.lst
+*.s
+test_parse
