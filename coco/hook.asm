@@ -20,10 +20,21 @@
 * HDB-DOS's own RVEC4 handler does ($DE50 CoCo 3, $DE47 CoCo 2: PULS B,X /
 * LEAS 2,S / RTS). CINBFL is cleared as $A179 would have. B, X, U are kept.
 *
-* The hook and hook_text live in the program image, which BASIC does not
-* touch at the OK prompt; they only need to survive until the CR is read.
+* hook_text/hook_ptr/hook_save live in bss (writable RAM), not the loaded
+* image; they only need to survive until the CR is read, which holds at the
+* OK prompt. Call hook_install() once per arming: a second call before the
+* first fires would save the hook itself as "original" and never restore
+* the real vector.
+*
+* RVEC4 fires for every character read through CONSOLE IN, not just from the
+* keyboard (e.g. INPUT #-2 from tape/disk uses it too under some DOSes).
+* DEVNUM tells them apart; the hook only feeds queued text when DEVNUM = 0
+* (keyboard), and otherwise passes straight through to the original vector
+* unconsumed. If the queued text has no CR, a NUL terminator is treated as
+* one so the hook can't run past hook_text's end.
 RVEC4   EQU     $016A
 CINBFL  EQU     $0070           console-in EOF flag
+DEVNUM  EQU     $006F           current I/O device number (0 = keyboard)
 
         SECTION bss
         EXPORT  _hook_text
@@ -48,11 +59,15 @@ _hook_install
         rts
 
 hook    pshs    b,x
+        ldb     DEVNUM
+        bne     hookpass        not the keyboard: don't consume queued text
         clr     CINBFL
         ldx     hook_ptr
         lda     ,x+
         stx     hook_ptr
-        cmpa    #13
+        bne     hooknz
+        lda     #13             NUL in the text: treat as CR (can't run away)
+hooknz  cmpa    #13
         bne     hookout
         ldx     hook_save       last char: put RVEC4 back
         stx     RVEC4
@@ -61,4 +76,8 @@ hook    pshs    b,x
 hookout puls    b,x
         leas    2,s             drop the return into $A176...
         rts                     ...and return to $A173 with A = char
+
+hookpass
+        puls    b,x
+        jmp     hook_save       run the original vector, untouched
         ENDSECTION

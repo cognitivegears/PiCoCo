@@ -2,7 +2,7 @@
 CMOC ?= cmoc
 DECB ?= decb
 ORG  ?= 0x3800
-SRCS  = main.c ui.c dw.c parse.c boot.c
+SRCS  = main.c ui.c dw.c parse.c boot.c hook.asm
 
 all: PICOCO.DSK
 
