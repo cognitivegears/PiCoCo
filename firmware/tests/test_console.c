@@ -159,6 +159,24 @@ TEST(save_and_run_config_round_trip) {
     ASSERT_EQ(log_level(LOG_M_DW), LOG_DEBUG);
 }
 
+/* cmd_save must write "dw disk insert" (which re-joins its raw tail) for a
+ * read-write mount, not "dw mount" (one token): "my disk.dsk" would replay
+ * as "dw mount 0 my" and fail. */
+TEST(save_preserves_rw_name_with_spaces) {
+    setup();
+    mk("saved rw.dsk", 10);
+    ASSERT_EQ(console_exec("dw disk insert 0 saved rw.dsk"), 0);
+    ASSERT_EQ(console_exec("save"), 0);
+
+    dw_eject(&dw, 0);
+    ASSERT(!dw.drives[0].mounted);
+
+    ASSERT(console_run_config() > 0);
+    ASSERT(dw.drives[0].mounted);
+    ASSERT(!dw.drives[0].read_only);
+    ASSERT(strcmp(dw.drives[0].name, "saved rw.dsk") == 0);
+}
+
 TEST(config_bad_line_continues) {
     setup();
     const char *cfg = "frob\nbecker loop\n";
@@ -560,6 +578,7 @@ int main(void) {
     RUN(log_level_cmd);
     RUN(time_set);
     RUN(save_and_run_config_round_trip);
+    RUN(save_preserves_rw_name_with_spaces);
     RUN(config_bad_line_continues);
     RUN(capture_writes_file);
     RUN(native_pump_end_to_end);

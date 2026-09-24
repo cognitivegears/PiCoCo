@@ -579,11 +579,17 @@ static int cmd_save(void) {
     if (!cfg_append(cfg, sizeof(cfg), &len, "dw hdbdos %s\n", g_dw->hdbdos ? "on" : "off"))
         return cerr("config too large");
     for (int i = 0; i < DW_MAX_DRIVES; i++) {
-        if (g_dw->drives[i].mounted) {
-            if (!cfg_append(cfg, sizeof(cfg), &len, "dw mount %d %s%s\n", i,
-                             g_dw->drives[i].name, g_dw->drives[i].read_only ? " ro" : ""))
-                return cerr("config too large");
-        }
+        if (!g_dw->drives[i].mounted) continue;
+        /* "dw mount" takes one token, so a read-write name with spaces (e.g.
+         * "my disk.dsk") replays as "dw mount 0 my" and fails. "dw disk
+         * insert" re-joins its raw tail (console_run_config sets g_raw via
+         * console_exec), so use it for rw mounts; ro has no equivalent on
+         * "dw disk", so keep "dw mount ... ro" there (ro names still can't
+         * have spaces, unchanged from before). */
+        bool ok = g_dw->drives[i].read_only
+            ? cfg_append(cfg, sizeof(cfg), &len, "dw mount %d %s ro\n", i, g_dw->drives[i].name)
+            : cfg_append(cfg, sizeof(cfg), &len, "dw disk insert %d %s\n", i, g_dw->drives[i].name);
+        if (!ok) return cerr("config too large");
     }
     for (int m = 0; m < LOG_M_COUNT; m++) {
         int lvl = log_level(m);
