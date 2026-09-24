@@ -2,7 +2,7 @@
 CMOC ?= cmoc
 DECB ?= decb
 ORG  ?= 0x3800
-SRCS  = main.c
+SRCS  = main.c dw.c parse.c
 
 all: PICOCO.DSK
 
