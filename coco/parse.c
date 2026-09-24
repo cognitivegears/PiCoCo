@@ -75,7 +75,9 @@ int parse_ls(char *text, file_ent *out, int max, int roms)
         *sp = '\0';
         size = dec_to_u32(sp + 1);
         if (roms) keep = ends_with_ci(line, ".ROM");
-        else keep = !ends_with_ci(line, ".ROM") && cmp_ci(line, "picoco.cfg") != 0;
+        /* ponytail: CMOC miscompiles `!func(...)` inline (verified on-device);
+         * use `== 0` instead of `!` on a direct function-call result. */
+        else keep = (ends_with_ci(line, ".ROM") == 0) && cmp_ci(line, "picoco.cfg") != 0;
         if (!keep) continue;
         out[n].name = line;
         out[n].kb = (u16)((size + 1023UL) / 1024UL);
