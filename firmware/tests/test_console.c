@@ -256,6 +256,13 @@ TEST(bus_drive_cmd) {
     ASSERT(!bus_drive_get());
 }
 
+TEST(bus_selftest_is_pico_only_on_host) {
+    setup();
+    outn = 0;
+    ASSERT_EQ(console_exec("bus selftest"), -1);
+    ASSERT(strstr(out, "pico only"));
+}
+
 int main(void) {
     char tmpl[300];
     const char *tmpdir = getenv("TMPDIR");
@@ -280,5 +287,6 @@ int main(void) {
     RUN(native_pump_backpressure);
     RUN(selftest_passes);
     RUN(bus_drive_cmd);
+    RUN(bus_selftest_is_pico_only_on_host);
     TEST_MAIN_END
 }

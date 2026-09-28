@@ -42,7 +42,7 @@ if(NOT PICOCO_HOST)
   add_executable(picoco ${CORE_SRC} ${FATFS_SRC}
     src/fs_flash.c src/dw/dw_store_fatfs.c
     src/plat_pico.c src/usb/usb_descriptors.c src/main.c
-    src/crash.c src/bus/bus_core1.c)
+    src/crash.c src/bus/bus_core1.c src/bus/fake6809.c)
   if(PICOCO_BOARD STREQUAL "plusw")
     set(PICOCO_PIN_HEADER plusw)
   else()
@@ -63,8 +63,9 @@ if(NOT PICOCO_HOST)
     CFG_TUSB_CONFIG_FILE="tusb_config.h")
   target_link_libraries(picoco
     pico_stdlib pico_unique_id pico_multicore
-    hardware_flash hardware_sync hardware_watchdog
+    hardware_flash hardware_sync hardware_watchdog hardware_pio
     tinyusb_device tinyusb_board)
+  pico_generate_pio_header(picoco ${CMAKE_CURRENT_LIST_DIR}/src/bus/fake6809.pio)
   pico_add_extra_outputs(picoco)
   find_package(Python3 COMPONENTS Interpreter)
   if(Python3_FOUND)
@@ -105,4 +106,10 @@ endforeach()
 if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/host/picoco_host.c)
   add_executable(picoco-host host/picoco_host.c)
   target_link_libraries(picoco-host picoco_core)
+endif()
+
+find_package(Python3 COMPONENTS Interpreter)
+if(Python3_FOUND)
+  add_test(NAME bench COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tools/bench.py --skip-if-absent)
+  set_tests_properties(bench PROPERTIES SKIP_RETURN_CODE 77)
 endif()

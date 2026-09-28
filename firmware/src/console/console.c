@@ -18,6 +18,10 @@
 #define PICOCO_VERSION "dev"
 #endif
 
+#ifndef PICOCO_HOST
+#include "fake6809.h"
+#endif
+
 static console_out_fn g_out;
 static void *g_out_ctx;
 static dw_server *g_dw;
@@ -176,6 +180,10 @@ static int cmd_dw_selftest(void) {
     return 0;
 }
 
+#ifndef PICOCO_HOST
+static void selftest_line(const char *s) { outf("%s\n", s); }
+#endif
+
 static int cmd_bus(int argc, char **argv) {
     if (argc < 2) { outf("bus drive %s\n", bus_drive_get() ? "on" : "off"); return 0; }
     if (strcasecmp(argv[1], "drive") == 0) {
@@ -184,7 +192,20 @@ static int cmd_bus(int argc, char **argv) {
         if (strcasecmp(argv[2], "off") == 0) { bus_drive_set(false); return 0; }
         return cerr("usage: bus drive on|off");
     }
-    return cerr("usage: bus drive on|off");
+    if (strcasecmp(argv[1], "selftest") == 0) {
+#ifdef PICOCO_HOST
+        return cerr("bus selftest: pico only");
+#else
+        fake_result_t r;
+        int rc = fake6809_selftest(&r, selftest_line);
+        if (rc == -2) return cerr("bus selftest: bus is live (CoCo attached), refused");
+        outf("selftest cycles %u mismatches %u ring_overrun %u\n", r.cycles, r.mismatches, r.ring_overrun);
+        if (rc != 0) return cerr("selftest FAIL");
+        outf("selftest pass\n");
+        return 0;
+#endif
+    }
+    return cerr("usage: bus drive on|off | bus selftest");
 }
 
 /* "crash panic" is a hidden subcommand (not in help): exercises the
