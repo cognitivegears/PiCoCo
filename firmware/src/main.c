@@ -52,6 +52,9 @@ static void gpio_setup(void) {
 #ifdef PIN_CART_DRV
     gpio_init(PIN_CART_DRV); gpio_set_dir(PIN_CART_DRV, GPIO_OUT); gpio_put(PIN_CART_DRV, 0);   /* keep /CART released (Q4 off) */
 #endif
+#ifdef PIN_OE_FW
+    gpio_init(PIN_OE_FW); gpio_put(PIN_OE_FW, 1); gpio_set_dir(PIN_OE_FW, GPIO_OUT);   /* buffer disabled until core1 selects a cycle */
+#endif
 #ifdef PIN_LED
     gpio_init(PIN_LED);  gpio_set_dir(PIN_LED, GPIO_OUT);
 #endif

@@ -18,10 +18,20 @@
                           * SCS_BUF on the pad grid. Source: Zephyr rp2350b_plus_w.dtsi led0 and
                           * arduino-pico issue #3297 (Waveshare schematic, continuity-checked). */
 
-/* Pad-grid inputs, capture only (no firmware use yet): GP24 CTS_BUF, GP25
- * SCS_BUF, GP26 E_BUF, GP27 Q_BUF, GP28 SLENB_BUF, GP29 A14_BUF, GP30
- * A15_BUF. GP31 (OE_FW), GP32 (NMI_DRV) and the audio pins (GP34, GP42) are
+#define PICOCO_BOARD_PLUSW 1
+/* Pad-grid signals (all in sio_hw->gpio_in, bits < 32). The Plus-W core1
+ * loop (bus_core1.c) samples the address on Q and drives U10 /OE itself
+ * from PIN_OE_FW when JP2 is in the 2-3 position. GP34/GP42 (audio) are
  * left untouched: not driven, not pulled. */
+#define PIN_CTS     24
+#define PIN_SCS     25
+#define PIN_E       26
+#define PIN_Q       27
+#define PIN_SLENB   28
+#define PIN_A14     29
+#define PIN_A15     30
+#define PIN_OE_FW   31   /* output, active low; high = U10 disabled */
+/* GP32 (NMI_DRV) is left untouched: not driven, not pulled. */
 #define PICOCO_INPUT_MASK ((0xFFULL << PIN_D0) | (0x3FFFULL << PIN_A0) | (1ULL << PIN_RW) \
                            | (0x7FULL << 24) | (1ULL << PIN_OE_BUS))
 

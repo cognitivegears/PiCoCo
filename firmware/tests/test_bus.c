@@ -136,6 +136,25 @@ TEST(stats_new_fields_zeroed) {
     ASSERT_EQ(bus_stats.fw_selected, 0);
 }
 
+TEST(fw_decode_mask) {
+    bus_init();
+    ASSERT_EQ(bus_fw_mask, 0);
+    ASSERT_EQ(bus_fw_enable(0xFF7E), 0);
+    ASSERT_EQ(bus_fw_enable(0xFF6E), 0);
+    ASSERT_EQ(bus_fw_enable(0xFF5F), -1);      /* /SCS territory: hardware decodes it */
+    ASSERT_EQ(bus_fw_enable(0xFF80), -1);
+    ASSERT_EQ(bus_fw_enable(0xC000), -1);
+    ASSERT_EQ(bus_fw_mask, (1u << 0x1E) | (1u << 0x0E));
+    ASSERT(bus_fw_selected(0xFF7E, bus_fw_mask));
+    ASSERT(bus_fw_selected(0xFF6E, bus_fw_mask));
+    ASSERT(!bus_fw_selected(0xFF7D, bus_fw_mask));
+    ASSERT(!bus_fw_selected(0xBF7E, bus_fw_mask));   /* A14/A15 low: a different page */
+    ASSERT(!bus_fw_selected(0xFF7E, 0));
+    bus_fw_disable(0xFF7E);
+    ASSERT(!bus_fw_selected(0xFF7E, bus_fw_mask));
+    ASSERT(bus_fw_selected(0xFF6E, bus_fw_mask));
+}
+
 int main(void) {
     RUN(table_defaults_ff);
     RUN(set_read_and_range_clipped);
@@ -149,5 +168,6 @@ int main(void) {
     RUN(write_hook_runs_before_queue_with_data);
     RUN(write_hook_table_full);
     RUN(stats_new_fields_zeroed);
+    RUN(fw_decode_mask);
     TEST_MAIN_END
 }

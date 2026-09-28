@@ -40,6 +40,16 @@ static inline __attribute__((always_inline)) uint8_t bus_peek(uint16_t idx) {
 extern volatile bus_stats_t bus_stats;
 extern volatile bool bus_drive;   /* false = never drive D0..D7 (capture-only, milestone 0.4); read by core1 each cycle */
 
+/* Firmware address decode (Plus-W with JP2 2-3). One bit per address in
+ * $FF60-$FF7F; written by core0 only (32-bit store, atomic), read by core1
+ * every cycle. Everything else is hardware-selected by /CTS and /SCS. */
+extern volatile uint32_t bus_fw_mask;
+int  bus_fw_enable(uint16_t addr);    /* 0 ok, -1 if addr is outside $FF60-$FF7F */
+void bus_fw_disable(uint16_t addr);
+static inline __attribute__((always_inline)) bool bus_fw_selected(uint16_t addr, uint32_t mask) {
+    return (addr & 0xFFE0) == 0xFF60 && ((mask >> (addr & 0x1F)) & 1u);
+}
+
 void bus_drive_set(bool on);
 bool bus_drive_get(void);
 void bus_core1_main(void);                              /* BUS_HOT; never returns; core1 entry (launched from main.c) */

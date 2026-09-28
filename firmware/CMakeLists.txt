@@ -47,13 +47,14 @@ if(NOT PICOCO_HOST)
     set(PICOCO_PIN_HEADER plusw)
   else()
     set(PICOCO_PIN_HEADER pico2_breadboard)
-    # fake6809 (on-chip PIO selftest) needs pio1 on PIN_OE_BUS/PIN_A0..RW,
-    # which only lines up on a Pico 2 — on a Plus-W, PIN_OE_BUS is GP40,
-    # unreachable from pio1 and unrepresentable in its 32-bit pin masks.
-    target_sources(picoco PRIVATE src/bus/fake6809.c)
-    target_compile_definitions(picoco PRIVATE PICOCO_HAVE_FAKE6809=1)
-    pico_generate_pio_header(picoco ${CMAKE_CURRENT_LIST_DIR}/src/bus/fake6809.pio)
   endif()
+  # fake6809 (on-chip PIO selftest): pio1 drives A0-A13/R/W plus OE_BUS on a
+  # Pico 2, or A0-A15/R/W plus CTS/SCS/E/Q/SLENB on a Plus-W (fake6809.pio
+  # has one program per board; fake6809.c picks the right one on
+  # PICOCO_BOARD_PLUSW).
+  target_sources(picoco PRIVATE src/bus/fake6809.c)
+  target_compile_definitions(picoco PRIVATE PICOCO_HAVE_FAKE6809=1)
+  pico_generate_pio_header(picoco ${CMAKE_CURRENT_LIST_DIR}/src/bus/fake6809.pio)
   target_include_directories(picoco PRIVATE src src/usb src/dw src/bus src/dev src/console boards third_party/fatfs)
   target_compile_options(picoco PRIVATE -Wall -Wextra)
   set_source_files_properties(${FATFS_SRC} PROPERTIES COMPILE_OPTIONS -w)

@@ -15,6 +15,7 @@
 /* core1 entry: launched once from main.c after config replay, never returns.
  * Flash-free per Plan B - everything reachable from here must be BUS_HOT or
  * static inline (see the nm/objdump acceptance check in the task report). */
+#ifndef PICOCO_BOARD_PLUSW
 BUS_HOT void bus_core1_main(void) {
     (void)save_and_disable_interrupts();          /* never restored: core1 does nothing else */
     for (;;) {
@@ -53,3 +54,61 @@ BUS_HOT void bus_core1_main(void) {
         }
     }
 }
+#else  /* PICOCO_BOARD_PLUSW */
+#define E_MASK     (1u << PIN_E)
+#define Q_MASK     (1u << PIN_Q)
+#define CTS_MASK   (1u << PIN_CTS)
+#define SCS_MASK   (1u << PIN_SCS)
+#define A14_MASK   (1u << PIN_A14)
+#define A15_MASK   (1u << PIN_A15)
+#define OEFW_MASK  (1u << PIN_OE_FW)
+
+/* Plus-W: decode during E low, act during E high. Works with JP2 in either
+ * position (1-2: U15 also enables U10 for hardware-selected cycles, which is
+ * consistent with what we do; 2-3: only PIN_OE_FW enables it, which is what
+ * lets $FF60-$FF7F respond). */
+BUS_HOT void bus_core1_main(void) {
+    (void)save_and_disable_interrupts();
+    for (;;) {
+        while (sio_hw->gpio_in & E_MASK) { }            /* wait E low */
+        while (!(sio_hw->gpio_in & Q_MASK)) { }         /* wait Q high: address valid */
+        uint32_t in = sio_hw->gpio_in;
+        uint16_t idx = (in >> PIN_A0) & 0x3FFF;
+        bool sel;
+        if ((in & (CTS_MASK | SCS_MASK)) != (CTS_MASK | SCS_MASK)) {
+            sel = true;
+            bus_stats.hw_selected++;
+        } else {
+            uint16_t addr = idx | ((in & A14_MASK) ? 0x4000 : 0) | ((in & A15_MASK) ? 0x8000 : 0);
+            sel = bus_fw_selected(addr, bus_fw_mask);
+            if (sel) bus_stats.fw_selected++;
+        }
+        while (!(sio_hw->gpio_in & E_MASK)) { }         /* wait E high */
+        if (!sel) continue;                             /* loop top waits for E low: the end of this cycle */
+        if (in & RW_MASK) {                             /* CoCo read */
+            if (bus_drive) {
+                sio_hw->gpio_clr = D_MASK;
+                sio_hw->gpio_set = (uint32_t)bus_peek(idx) << PIN_D0;
+                sio_hw->gpio_oe_set = D_MASK;
+                sio_hw->gpio_clr = OEFW_MASK;           /* U10 outward */
+                while (sio_hw->gpio_in & E_MASK) { }
+                sio_hw->gpio_set = OEFW_MASK;
+                sio_hw->gpio_oe_clr = D_MASK;
+            } else {
+                while (sio_hw->gpio_in & E_MASK) { }
+            }
+            bus_on_read_done(idx, time_us_32());
+        } else {                                        /* CoCo write: last sample while E was high */
+            sio_hw->gpio_clr = OEFW_MASK;               /* U10 inward */
+            uint32_t d, prev = sio_hw->gpio_in;
+            for (;;) {
+                d = sio_hw->gpio_in;
+                if (!(d & E_MASK)) break;
+                prev = d;
+            }
+            sio_hw->gpio_set = OEFW_MASK;
+            bus_on_write(idx, (uint8_t)((prev >> PIN_D0) & 0xFF), time_us_32());
+        }
+    }
+}
+#endif
