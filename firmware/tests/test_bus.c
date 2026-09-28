@@ -107,17 +107,19 @@ TEST(write_hook_runs_before_queue_with_data) {
     bus_init();
     wh_order = 0; wh_data = 0;
     ASSERT_EQ(bus_add_write_hook(0x3F40, whook_capture), 0);
-    bus_on_write(0x3F41, 0x11, 0);            /* other index: no hook */
-    ASSERT_EQ(wh_order, 0);
     bus_on_write(0x3F40, 0x5A, 0);
-    ASSERT_EQ(wh_order, 1);
+    ASSERT_EQ(wh_order, 1);                 /* ring was still empty when the hook ran */
     ASSERT_EQ(wh_data, 0x5A);
     ASSERT_EQ(bus_stats.whooks_run, 1);
+    bus_on_write(0x3F41, 0x11, 0);          /* other index: no hook */
+    ASSERT_EQ(bus_stats.whooks_run, 1);
     uint16_t idx; uint8_t data;
-    ASSERT(bus_pop_write(&idx, &data));        /* 0x3F41 event */
-    ASSERT(bus_pop_write(&idx, &data));        /* 0x3F40 event still queued after the hook */
+    ASSERT(bus_pop_write(&idx, &data));     /* 0x3F40 event still queued after the hook */
     ASSERT_EQ(idx, 0x3F40);
     ASSERT_EQ(data, 0x5A);
+    ASSERT(bus_pop_write(&idx, &data));
+    ASSERT_EQ(idx, 0x3F41);
+    ASSERT(!bus_pop_write(&idx, &data));
 }
 
 TEST(write_hook_table_full) {
