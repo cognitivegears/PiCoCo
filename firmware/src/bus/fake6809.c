@@ -278,6 +278,7 @@ int fake6809_selftest(fake_result_t *r, void (*line)(const char *s)) {
         static const uint8_t  bexpect[8] = { 0xA5, 0x00, 0xA5, 0x00, 0xA5, 0x00, 0xA5, 0x00 };
         uint32_t cburst = 0;
         for (int d = 0; d <= 120; d += 2) {
+            busy_wait_us(2);   /* let core1 finish bus_on_read_done for the previous burst's last cycle before sampling the baseline */
             cburst = bus_stats.cycles;
             if (burst_reads(baddrs, bexpect, 8, (uint8_t)d) == 0) { r->burst_first_ok_delay = d; break; }
         }
