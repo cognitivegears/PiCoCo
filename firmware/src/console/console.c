@@ -13,6 +13,9 @@
 #ifndef PICOCO_HOST
 #include "pico/platform/panic.h"
 #endif
+#ifdef PICOCO_BOARD_H
+#include PICOCO_BOARD_H
+#endif
 
 #ifndef PICOCO_VERSION
 #define PICOCO_VERSION "dev"
@@ -194,7 +197,7 @@ static int cmd_bus(int argc, char **argv) {
     }
     if (strcasecmp(argv[1], "selftest") == 0) {
 #ifndef PICOCO_HAVE_FAKE6809
-        return cerr("bus selftest: pico only (needs a Pico 2 board, not Plus-W or host)");
+        return cerr("bus selftest: pico only (host build)");
 #else
         fake_result_t r;
         int rc = fake6809_selftest(&r, selftest_line);
@@ -309,8 +312,22 @@ static int cmd_becker(int argc, char **argv) {
 
 static int cmd_cart(int argc, char **argv) {
     if (argc < 2) { outf("cart %s\n", rom_cart_get() == CART_ON ? "on" : rom_cart_get() == CART_OFF ? "off" : "auto"); return 0; }
-    if (strcasecmp(argv[1], "on") == 0)   { rom_cart_set(CART_ON);   return 0; }
-    if (strcasecmp(argv[1], "off") == 0)  { rom_cart_set(CART_OFF);  return 0; }
+    if (strcasecmp(argv[1], "on") == 0) {
+#if defined(PICOCO_BOARD_H) && !defined(PIN_CART_DRV)
+        return cerr("cart: needs Plus-W (JP5 on a Pico 2)");
+#else
+        rom_cart_set(CART_ON);
+        return 0;
+#endif
+    }
+    if (strcasecmp(argv[1], "off") == 0) {
+#if defined(PICOCO_BOARD_H) && !defined(PIN_CART_DRV)
+        return cerr("cart: needs Plus-W (JP5 on a Pico 2)");
+#else
+        rom_cart_set(CART_OFF);
+        return 0;
+#endif
+    }
     if (strcasecmp(argv[1], "auto") == 0) { rom_cart_set(CART_AUTO); return 0; }
     return cerr("usage: cart on|off|auto");
 }

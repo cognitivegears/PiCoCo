@@ -57,6 +57,11 @@ void bus_core1_main(void);                              /* BUS_HOT; never return
 void bus_init(void);                                   /* table = 0xFF, rings empty, trace running */
 void bus_set_read(uint16_t idx, uint8_t v);
 void bus_set_read_range(uint16_t idx, const uint8_t *p, size_t n);   /* clipped at table end */
+/* Both hook tables must be fully registered before multicore_launch_core1():
+ * there is no publish barrier, so core1 (which reads hook_count/whook_count
+ * with no synchronization) assumes the table is already settled by the time
+ * it starts. Today every registration happens in a device's *_init(), all
+ * called from main() before the launch. */
 int  bus_add_read_hook(uint16_t idx, void (*fn)(void));             /* 0 ok, -1 full */
 int  bus_add_write_hook(uint16_t idx, void (*fn)(uint8_t data));   /* 0 ok, -1 full; fn is BUS_HOT, runs on core1 before the event is queued */
 bool bus_pop_write(uint16_t *idx, uint8_t *data);                   /* core0 consumer */

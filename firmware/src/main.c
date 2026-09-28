@@ -86,8 +86,10 @@ int main(void) {
     /* Autostart paks expect /CART pulsing after reset (a real pak ties it to
      * Q). Toggle Q4 for 500 ms after the /HALT release so Color BASIC's
      * cart check sees an edge after it has initialised the PIA; DOS ROMs
-     * ("DK") never get this, they would jump to $C000 as code. Power-on and
-     * Pico reboot only: a CoCo reset button press is not visible to us. */
+     * ("DK") never get this, they would jump to $C000 as code. /RESET drives
+     * the Pico's RUN pin through U13/R9 (hardware-design.md §4.5), so a CoCo
+     * reset-button press reboots the Pico too and repeats this whole boot
+     * sequence, pulse included — this is not power-on/Pico-reboot only. */
     uint32_t cart_until = rom_cart_wanted() ? plat_now_ms() + 500 : 0;
 #endif
 #ifdef PIN_LED

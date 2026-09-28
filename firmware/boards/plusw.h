@@ -11,8 +11,8 @@
 #define PIN_OE_BUS  40   /* header pin 31 = GP40 on this module (GP26 on a Pico 2) */
 #define PIN_HALT    41   /* header pin 32 = GP41; HIGH holds /HALT low (Q2 on) */
 #define PIN_CART_DRV 33  /* Q4 gate (populated, v2.3.1): drive HIGH to assert /CART.
-                          * Keep LOW (released) at boot — no firmware /CART pulse yet
-                          * (roadmap item 12). */
+                          * Keep LOW (released) at boot; toggled ~500 Hz for 500 ms
+                          * after the /HALT release when rom_cart_wanted() (main.c). */
 #define PIN_LED     23   /* LED2, a plain GPIO; not brought out, so no carrier net. LED1 is on the
                           * radio's WL_GPIO0 (needs the CYW43 driver, unused). Never GP25: that is
                           * SCS_BUF on the pad grid. Source: Zephyr rp2350b_plus_w.dtsi led0 and

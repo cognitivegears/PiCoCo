@@ -1,5 +1,6 @@
 cmake_minimum_required(VERSION 3.20)
 option(PICOCO_HOST "Build host library, tests and picoco-host instead of Pico firmware" OFF)
+option(PICOCO_BENCH "Register tools/bench.py as a ctest. It drives the bus pins: only with the board unplugged from the CoCo." OFF)
 set(PICOCO_VERSION "1.1")
 # PiCoCo board: "pico2" (Pico 2 / RP2350A, default) or "plusw" (Waveshare
 # RP2350B-Plus-W). Picks both the PiCoCo pin header (boards/<x>.h) and, for
@@ -114,8 +115,10 @@ if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/host/picoco_host.c)
   target_link_libraries(picoco-host picoco_core)
 endif()
 
-find_package(Python3 COMPONENTS Interpreter)
-if(Python3_FOUND)
-  add_test(NAME bench COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tools/bench.py --skip-if-absent)
-  set_tests_properties(bench PROPERTIES SKIP_RETURN_CODE 77)
+if(PICOCO_BENCH)
+  find_package(Python3 COMPONENTS Interpreter)
+  if(Python3_FOUND)
+    add_test(NAME bench COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tools/bench.py --skip-if-absent)
+    set_tests_properties(bench PROPERTIES SKIP_RETURN_CODE 77)
+  endif()
 endif()

@@ -144,6 +144,7 @@ TEST(fw_decode_mask) {
     ASSERT_EQ(bus_fw_enable(0xFF5F), -1);      /* /SCS territory: hardware decodes it */
     ASSERT_EQ(bus_fw_enable(0xFF80), -1);
     ASSERT_EQ(bus_fw_enable(0xC000), -1);
+    ASSERT_EQ(bus_fw_enable(0xBF7E), -1);
     ASSERT_EQ(bus_fw_mask, (1u << 0x1E) | (1u << 0x0E));
     ASSERT(bus_fw_selected(0xFF7E, bus_fw_mask));
     ASSERT(bus_fw_selected(0xFF6E, bus_fw_mask));
