@@ -89,8 +89,8 @@ Two loops selected at compile time:
   takes effect on the next cycle with no handshake.
 
 The Plus-W loop also honours `bus_drive` exactly as today: when false it
-never drives D0-7 or pulls `OE_FW` low, so capture-only bring-up still
-works.
+never drives D0-7 nor enables U10 outward; writes still enable U10 inward so
+capture-only bring-up records write data.
 
 Timing budget: with the address decoded during E low, the work between E
 rising and data valid is one branch, one table load and one `gpio_put`

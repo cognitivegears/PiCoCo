@@ -62,6 +62,14 @@ BUS_HOT void bus_core1_main(void) {
 #define A14_MASK   (1u << PIN_A14)
 #define A15_MASK   (1u << PIN_A15)
 #define OEFW_MASK  (1u << PIN_OE_FW)
+#define DECODE_MASK ((0x3FFFu << PIN_A0) | RW_MASK | CTS_MASK | SCS_MASK | A14_MASK | A15_MASK)
+
+/* Selected = /CTS or /SCS asserted, or the full 16-bit address is in bus_fw_mask. */
+static inline __attribute__((always_inline)) bool plusw_selected(uint32_t in) {
+    if ((in & (CTS_MASK | SCS_MASK)) != (CTS_MASK | SCS_MASK)) return true;
+    uint16_t addr = ((in >> PIN_A0) & 0x3FFF) | ((in & A14_MASK) ? 0x4000 : 0) | ((in & A15_MASK) ? 0x8000 : 0);
+    return bus_fw_selected(addr, bus_fw_mask);
+}
 
 /* Plus-W: decode during E low, act during E high. Works with JP2 in either
  * position (1-2: U15 also enables U10 for hardware-selected cycles, which is
@@ -73,18 +81,23 @@ BUS_HOT void bus_core1_main(void) {
         while (sio_hw->gpio_in & E_MASK) { }            /* wait E low */
         while (!(sio_hw->gpio_in & Q_MASK)) { }         /* wait Q high: address valid */
         uint32_t in = sio_hw->gpio_in;
-        uint16_t idx = (in >> PIN_A0) & 0x3FFF;
-        bool sel;
-        if ((in & (CTS_MASK | SCS_MASK)) != (CTS_MASK | SCS_MASK)) {
-            sel = true;
-            bus_stats.hw_selected++;
-        } else {
-            uint16_t addr = idx | ((in & A14_MASK) ? 0x4000 : 0) | ((in & A15_MASK) ? 0x8000 : 0);
-            sel = bus_fw_selected(addr, bus_fw_mask);
-            if (sel) bus_stats.fw_selected++;
-        }
+        bool sel = plusw_selected(in);                  /* head start from the Q-time sample */
         while (!(sio_hw->gpio_in & E_MASK)) { }         /* wait E high */
+        /* /CTS and /SCS are decoded downstream of the address (SAM/GIME) and need only
+         * meet setup before E rises, so re-check them now; the Pico 2 bench needed the
+         * same resample. */
+        uint32_t in2 = sio_hw->gpio_in;
+        uint32_t dif = (in ^ in2) & DECODE_MASK;
+        if (dif) {
+            bus_stats.addr_resample++;
+            bus_stats.addr_resample_bits |= (dif >> PIN_A0) & 0x3FFF;
+            in = in2;
+            sel = plusw_selected(in);
+        }
         if (!sel) continue;                             /* loop top waits for E low: the end of this cycle */
+        uint16_t idx = (in >> PIN_A0) & 0x3FFF;
+        if ((in & (CTS_MASK | SCS_MASK)) != (CTS_MASK | SCS_MASK)) bus_stats.hw_selected++;
+        else bus_stats.fw_selected++;
         if (in & RW_MASK) {                             /* CoCo read */
             if (bus_drive) {
                 sio_hw->gpio_clr = D_MASK;
@@ -99,6 +112,8 @@ BUS_HOT void bus_core1_main(void) {
             }
             bus_on_read_done(idx, time_us_32());
         } else {                                        /* CoCo write: last sample while E was high */
+            /* Also in capture-only mode: U10's direction is RW_BUF (hardware), so enabling
+             * it here only lets the CoCo's write data in. */
             sio_hw->gpio_clr = OEFW_MASK;               /* U10 inward */
             uint32_t d, prev = sio_hw->gpio_in;
             for (;;) {
