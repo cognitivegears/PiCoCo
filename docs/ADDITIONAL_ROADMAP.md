@@ -220,8 +220,12 @@ wider antenna keepout) or deferred to v2.4 (see hardware-design §9).
 10. SPDX headers on every firmware source; `console_exec` should reject >6 tokens / >135
     chars instead of truncating silently; note that `bus_stats` counters are non-atomic.
 11. Sound firmware (PWM on GP34/header 34) does not exist yet; the analog stage is populated.
-12. A firmware-pulsed /CART (JP5 1-2 on a Pico 2, GP33 on a Plus-W): assert for the first
-    cycles after reset for autostart ROM images, release for DK-signature DOS ROMs.
+12. **DONE (2026-09-27).** A firmware-pulsed /CART on a Plus-W's `CART_DRV` pad (GP33):
+    toggled ~500 Hz for 500 ms after `/HALT` release when `rom_cart_wanted()` is true.
+    `cart auto` (the default, saved by `save`) wants the pulse when a loaded ROM's first
+    two bytes are not `DK` (i.e. not a DOS ROM); `cart on`/`cart off` override it. The
+    JP5-on-a-Pico-2 path from the original item text is still unbuilt — no Pico 2 board
+    header defines `PIN_CART_DRV`, so `cart` is accepted there but has no effect.
 
 ### Docs
 - README: on a CoCo 3 a BASIC `PEEK(&HC000)` never reaches the cart, use $FF41/$FF42; the

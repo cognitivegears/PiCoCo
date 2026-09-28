@@ -221,9 +221,9 @@ captures all seven at once.
 | GP28 | SLENB_BUF | capture |
 | GP29 | A14_BUF | capture |
 | GP30 | A15_BUF | capture |
-| GP31 | OE_FW | JP2 alternate (2-3): firmware-driven U10 /OE |
-| GP32 | NMI_DRV | Q3 gate (DNP stage — needs R15/R17 fitted too); also reachable from a Pico 2 via JP5 2-3 |
-| GP33 | CART_DRV | Q4 gate (populated); also reachable from a Pico 2 via JP5 1-2 |
+| GP31 | OE_FW | Firmware-driven U10 /OE, every selected cycle (bus-engine spec, `firmware-architecture.md` §3.2.2); JP2 2-3 needed only for `$FF60-$FF7F` |
+| GP32 | NMI_DRV | Q3 gate (DNP stage — needs R15/R17 fitted too); also reachable from a Pico 2 via JP5 2-3; no firmware drive yet |
+| GP33 | CART_DRV | Firmware-driven /CART pulse, ~500 Hz for 500 ms after /HALT release (bus-engine spec, `firmware-architecture.md` §3.2.4); Q4 gate (populated); also reachable from a Pico 2 via JP5 1-2 but not driven there today |
 | GP34 | AUDIO_PWM | sound output stage (§4.6) |
 | GP35 | EXP_GP35 → J1 pin 1 | Only meaningful on a Plus-W; a flat-mounted Pico 2 lands its SWDIO pad here instead (see §7) |
 | GP43 | EXP_GP43 → J1 pin 2 | Plus-W only |
@@ -261,6 +261,13 @@ module through its own castellations/pads, or the test points in §7.
   unprogrammed or not-yet-booted module, an undriven GPIO could
   otherwise float `U10_OE` low and drive the CoCo bus; R25 keeps it
   tri-stated until firmware actively asserts it.
+- **As built (bus-engine spec), the Plus-W firmware drives `OE_FW` for
+  every selected cycle regardless of which JP2 position is fitted** — it
+  is not conditional on 2-3, it just doesn't matter in 1-2 because U15
+  is already enabling U10 for the same hardware-selected cycles. JP2 2-3
+  only becomes necessary for `$FF60-$FF7F` firmware-decoded addresses,
+  which assert neither `/CTS` nor `/SCS` and so are never enabled by
+  U15 at all; see `docs/firmware-architecture.md` §3.2.2/§3.2.3.
 
 Because direction is hardwired to the buffered `/R/W`, the Pico never
 has to drive a DIR pin. It only controls its own pindirs to decide when
@@ -702,17 +709,28 @@ hand debug.
 - No fuse / TVS / reverse‑polarity protection on the +5 V cart input.
   Matches CoCo convention (original Tandy carts have no such
   protection; users know to power off before inserting carts).
-- Driving `/NMI`, `/OE` from firmware, and reading A14/A15 and `Q`,
-  stay provisioned in hardware (Q3 DNP stage, JP2, and the full U13
-  channel set) but reachable only from the Plus-W pad grid — a Pico 2
-  build has no spare GPIO to use them. Firmware support for the pad
-  grid is itself out of scope for this spin (spec §1,
-  `docs/superpowers/specs/2026-09-17-main-board-v2.3-design.md`); see
-  `docs/firmware-architecture.md`'s Plus-W pin plan. **`/CART` is the
-  exception as of v2.3.1**: JP5 1-2 plus the now-populated Q4/R16/R18
-  stage (§4.4a) lets a Pico 2 pulse `/CART` from firmware over header
-  pin 34, no spare GPIO needed — asserted for autostart on plain ROM
-  images, released for DK-signature DOS ROMs. **v2.3.1** also kept the
+- Driving `/NMI` from firmware, and reading `Q`, stay provisioned in
+  hardware (Q3 DNP stage, the full U13 channel set) but reachable only
+  from the Plus-W pad grid — a Pico 2 build has no spare GPIO to use
+  them, and no firmware drives `/NMI` yet. Firmware support for the
+  rest of the Plus-W pad grid — `/OE` from firmware (`OE_FW`/JP2),
+  reading A14/A15/`/CTS`/`/SCS`/`E`/`Q` to decode `$FF60-$FF7F`
+  addresses outside `/CTS` and `/SCS`, write hooks, and banked ROM — was
+  out of scope for the v2.3 board spin itself but has since been built
+  as firmware (the bus-engine spec,
+  `docs/superpowers/specs/2026-09-27-plusw-bus-engine-design.md`); see
+  `docs/firmware-architecture.md` §3.2.2-§3.2.5. **`/CART` is the
+  exception among the Pico-2-reachable pins as of v2.3.1 hardware**:
+  JP5 1-2 plus the now-populated Q4/R16/R18 stage (§4.4a) lets a Pico 2
+  pulse `/CART` from firmware over header pin 34 with no spare GPIO
+  needed, but as built the firmware only drives this pulse on the
+  Plus-W's own `CART_DRV` pad (GP33) — toggled ~500 Hz for 500 ms after
+  `/HALT` release when `rom_cart_wanted()` is true (`cart auto`, the
+  default, wants it for a loaded ROM that isn't DK-signature DOS; `cart
+  on`/`cart off` override), not the JP5/Pico-2 path. A Pico 2 board
+  header defines no `PIN_CART_DRV`, so the console's `cart` command is
+  accepted there but has no effect until firmware adds the JP5 path.
+  **v2.3.1** also kept the
   passive-only alternative: JP4 (open by default) ties `Q_CART` to
   `CART_CART`, the classic Program Pak autostart trick, for a build
   that doesn't want to give up header pin 34 to JP5.

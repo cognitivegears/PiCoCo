@@ -143,6 +143,40 @@ python3 firmware/tools/pconsole.py /dev/cu.usbmodemXXXX2 \
     'fs format' 'fs ls' 'dw selftest'
 ```
 
+Bus-engine-specific commands: `bus selftest` runs the on-chip fake 6809
+self-test (see "Self-test without a CoCo" below); `cart on|off|auto`
+sets the firmware `/CART` pulse policy (`auto`, the default, pulses for
+500 ms after `/HALT` release when a loaded ROM is not DK-signature DOS;
+Plus-W only today — a Pico 2 build accepts the command but has no
+`PIN_CART_DRV`, so it has no effect); `rom load <file>` accepts a plain
+8 KB/16 KB image or a banked Games Master Cartridge image (32 KB, 64 KB
+or 128 KB, switched by writes to `$FF40`), refusing any other size with
+`err rom load: size must be 8K, 16K, or banked 32K/64K/128K`.
+
+#### Self-test without a CoCo
+
+`bus selftest` drives the real core1 bus loop from an on-chip PIO1 state
+machine at 6809 timing — no CoCo needed, and safe to run on an unplugged
+board (see `docs/firmware-architecture.md` §3.2.5 for why). **Unplug the
+Pico from the CoCo cart edge first**; the command refuses if it sees
+live bus cycles in the 100 ms before it takes over any pins, but don't
+rely on that as your only safeguard.
+
+```
+python3 firmware/tools/bench.py [--port /dev/cu.usbmodemXXXX2] [--skip-if-absent]
+```
+
+`bench.py` runs `version` then `bus selftest` over the console (auto-
+detecting the second `/dev/cu.usbmodem*`/`/dev/ttyACM*` node if
+`--port` is omitted), prints every line, and exits 0 on `selftest pass`,
+1 on any failure or timeout, or 77 with `--skip-if-absent` when no Pico
+console is found at all — this is also registered as the `bench` ctest
+target (`SKIP_RETURN_CODE 77`), so `ctest --test-dir build-host` skips
+it cleanly on a machine with no Pico attached. The self-test clears
+whatever ROM was loaded (`rom off`) as part of running, so `bench.py`
+sends `reboot` at the end to replay a saved `rom load` from
+`picoco.cfg`.
+
 ### Filesystem
 
 The on-flash FAT filesystem (`fs_flash.c`/`dw_store_fatfs.c`) lives at
