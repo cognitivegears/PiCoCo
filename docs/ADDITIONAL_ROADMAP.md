@@ -227,7 +227,8 @@ wider antenna keepout) or deferred to v2.4 (see hardware-design §9).
     off` override it and are the only two settings `save` writes to `picoco.cfg` (`auto`
     is the unwritten default, so a saved config with no `cart` line means auto). The
     JP5-on-a-Pico-2 path from the original item text is still unbuilt — no Pico 2 board
-    header defines `PIN_CART_DRV`, so `cart` is accepted there but has no effect. No
+    header defines `PIN_CART_DRV`, so `cart on`/`cart off` are refused there (`auto` and
+    the bare query still work everywhere). No
     real-CoCo bench check has run yet, and the fake-6809 self-test does not exercise
     `/CART` at all (it drives only the bus pins, not this GPIO). Bench check still open:
     a GMC image autostarts on a CoCo 3 with `cart auto`, and HDB-DOS still reaches BASIC

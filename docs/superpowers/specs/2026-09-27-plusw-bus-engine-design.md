@@ -134,13 +134,19 @@ flash-free check the way read hooks are.
 
 ### 4.5 Firmware `/CART` pulse (Plus-W only)
 
-When a ROM is loaded and is *not* a DOS ROM (no `DK` signature at its
-first two bytes), core0 asserts `CART_DRV` high for the duration of the
-existing reset `/HALT` hold and releases it with the hold. When the ROM
-has the `DK` signature or no ROM is loaded, `CART_DRV` stays low. This is
-a one-liner in the existing reset sequence plus a console `cart on|off|auto`
-override saved by `save` (default `auto`). A Pico 2 has no pin for this;
-the command errors there and the README points at JP5.
+As built: right after the existing `/HALT` release, core0 toggles
+`CART_DRV` at about 500 Hz for 500 ms when a ROM is loaded and is *not*
+a DOS ROM (no `DK` signature at its first two bytes). When the ROM has
+the `DK` signature or no ROM is loaded, `CART_DRV` stays low. A console
+`cart on|off|auto` override (default `auto`) forces the pulse on or off
+regardless of the loaded ROM's signature, and is saved by `save`. A
+Pico 2 has no pin for this; `cart on`/`cart off` are refused there and
+the README points at JP5.
+
+This pulses after the hold, not during it, unlike the original plan:
+Color BASIC clears the PIA's cartridge-interrupt flag during its own
+init, which runs after `/HALT` releases, so a pulse asserted only during
+the hold would be cleared before BASIC ever samples it.
 
 ### 4.6 On-chip fake 6809 (`firmware/src/bus/fake6809.c`, `fake6809.pio`)
 

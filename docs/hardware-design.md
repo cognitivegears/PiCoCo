@@ -390,9 +390,10 @@ both at once ties two drivers together. Silk says so; never bridge both.
   Right after the `/HALT` release, firmware toggles `/CART` at about
   500 Hz for 500 ms when `cart` is `on`, or `auto` (the default) with a
   non-DK-signature ROM loaded; a DK-signature ROM (HDB-DOS etc.) never
-  gets the pulse. This only happens at power-on or a Pico reboot — a
-  CoCo reset-button press alone is invisible to the firmware (it resets
-  the Pico too, but by then any earlier pulse has already finished).
+  gets the pulse. This runs on every boot of the firmware — power-on, a
+  Pico reboot, or a CoCo reset-button press — since `/RESET` drives the
+  Pico's RUN pin through U13/R9 (§4.5) and so reboots the Pico too,
+  repeating this whole boot sequence, pulse included.
   **JP5 1-2** is this same Q4 stage wired out to a Pico 2's header pin
   34 instead of the Plus-W pad grid, and as of v2.3.1 **Q4/R16/R18 are
   populated** so the hardware path needs no rework — but no Pico 2 board
@@ -737,8 +738,9 @@ hand debug.
   `/HALT` release when `rom_cart_wanted()` is true (`cart auto`, the
   default, wants it for a loaded ROM that isn't DK-signature DOS; `cart
   on`/`cart off` override), not the JP5/Pico-2 path. A Pico 2 board
-  header defines no `PIN_CART_DRV`, so the console's `cart` command is
-  accepted there but has no effect until firmware adds the JP5 path.
+  header defines no `PIN_CART_DRV`, so the console refuses `cart on`/
+  `cart off` there (`auto` and the bare query still work) until
+  firmware adds the JP5 path.
   **v2.3.1** also kept the
   passive-only alternative: JP4 (open by default) ties `Q_CART` to
   `CART_CART`, the classic Program Pak autostart trick, for a build
