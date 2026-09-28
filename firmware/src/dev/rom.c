@@ -118,7 +118,7 @@ int rom_load_file(dw_store *st, const char *name) {
             uint32_t got = 0;
             while (got < ROM_BANK_SIZE) {
                 int r = st->ops->read(&f, (uint32_t)b * ROM_BANK_SIZE + got, dst + got, ROM_BANK_SIZE - got);
-                if (r <= 0) { st->ops->close(&f); return -1; }   /* ROM left off: rom_banks_begin() already unbanked it */
+                if (r <= 0) { st->ops->close(&f); rom_off(); return -1; }   /* ROM left off: no stale bytes in bus_table either */
                 got += (uint32_t)r;
             }
         }

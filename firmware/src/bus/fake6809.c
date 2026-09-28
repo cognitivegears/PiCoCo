@@ -176,6 +176,7 @@ int fake6809_selftest(fake_result_t *r, void (*line)(const char *s)) {
     char buf[96];
     memset(r, 0, sizeof *r);
     r->first_ok_delay = -1;
+    r->burst_first_ok_delay = -1;
 
     uint32_t c0 = bus_stats.cycles;
     sleep_ms(100);
@@ -208,9 +209,11 @@ int fake6809_selftest(fake_result_t *r, void (*line)(const char *s)) {
     CHECK("bank_switch_back", cycle(0xC001, true, true, 0, SAMPLE_LATE) == 0x00);
     CHECK("becker_status_read", cycle(0xFF41, true, true, 0, SAMPLE_LATE) == 0x00);
     for (int i = 0; i < 10; i++) cycle(0xFF42, false, true, (uint8_t)i, SAMPLE_LATE);
+    busy_wait_us(2);   /* core1 finishes bus_on_* a few hundred ns after the PIO has already pushed the cycle's result */
     CHECK("writes_counted", bus_stats.writes - wr0 == 10 + 2);
     uint32_t before = bus_stats.cycles;
     cycle(0xC001, true, false, 0, SAMPLE_LATE);            /* unselected: core1 must not see it */
+    busy_wait_us(2);
     CHECK("unselected_ignored", bus_stats.cycles == before);
 #ifdef PICOCO_BOARD_PLUSW
     uint32_t fw0 = bus_stats.fw_selected, cyc_fw = bus_stats.cycles;
@@ -221,6 +224,7 @@ int fake6809_selftest(fake_result_t *r, void (*line)(const char *s)) {
     CHECK("fw_read", cycle(0xFF7E, true, false, 0, SAMPLE_LATE) == 0x9F);
     uint32_t wr_fw = bus_stats.writes;
     cycle(0xFF7E, false, false, 0x42, SAMPLE_LATE);
+    busy_wait_us(2);
     CHECK("fw_write_queued", bus_stats.writes == wr_fw + 1 && bus_stats.fw_selected == fw0 + 2);
     CHECK("fw_other_page_ignored", (cycle(0xBF7E, true, false, 0, SAMPLE_LATE), bus_stats.fw_selected == fw0 + 2));
     bus_fw_disable(0xFF7E);
@@ -243,6 +247,7 @@ int fake6809_selftest(fake_result_t *r, void (*line)(const char *s)) {
             0x42,
 #endif
         };
+        busy_wait_us(2);
         bool ok = true;
         for (size_t i = 0; i < sizeof(exp_idx) / sizeof(exp_idx[0]); i++) {
             uint16_t widx; uint8_t wdata;
@@ -250,23 +255,41 @@ int fake6809_selftest(fake_result_t *r, void (*line)(const char *s)) {
         }
         CHECK("write_data_captured", ok);
     }
+    busy_wait_us(2);
     CHECK("no_ring_overrun", bus_stats.write_overrun == ov0);
 #ifdef PICOCO_BOARD_PLUSW
 #define CYCLES_EXPECTED (8 + 10 + 2)   /* + fw_read + fw_write_queued */
 #else
 #define CYCLES_EXPECTED (8 + 10)
 #endif
+    busy_wait_us(2);
     CHECK("cycles_counted", bus_stats.cycles - cyc0 == CYCLES_EXPECTED);   /* 6 reads + 2 bank writes + 10 $FF42 writes; the unselected cycle is not seen */
 #undef CYCLES_EXPECTED
+    float ns_per = 1e9f * CLKDIV / (float)clock_get_hz(clk_sys);
 #ifdef PICOCO_BOARD_PLUSW
     {
         /* Eight back-to-back reads, no gap: bank 0 is still selected (the
          * last switch above was back to bank 0), so C000/C001 alternate
-         * the bank-0 marker/fill bytes 0xA5/0x00. */
+         * the bank-0 marker/fill bytes 0xA5/0x00. Sweep the sample delay:
+         * the smallest one with zero mismatches over the whole burst is how
+         * late core1's post-cycle work (hook scan, trace record, stats) can
+         * run before back-to-back reads start missing data. */
         static const uint16_t baddrs[8]  = { 0xC000, 0xC001, 0xC000, 0xC001, 0xC000, 0xC001, 0xC000, 0xC001 };
         static const uint8_t  bexpect[8] = { 0xA5, 0x00, 0xA5, 0x00, 0xA5, 0x00, 0xA5, 0x00 };
-        uint32_t cburst = bus_stats.cycles;
-        CHECK("burst_back_to_back", burst_reads(baddrs, bexpect, 8, SAMPLE_LATE) == 0);
+        uint32_t cburst = 0;
+        for (int d = 0; d <= 120; d += 2) {
+            cburst = bus_stats.cycles;
+            if (burst_reads(baddrs, bexpect, 8, (uint8_t)d) == 0) { r->burst_first_ok_delay = d; break; }
+        }
+        r->burst_delay_ns = r->burst_first_ok_delay < 0 ? 0 : (uint32_t)((r->burst_first_ok_delay + 4) * ns_per);
+        snprintf(buf, sizeof buf, "selftest burst first_ok_delay %d (~%u ns after E rose)", r->burst_first_ok_delay, (unsigned)r->burst_delay_ns);
+        line(buf);
+        CHECK("burst_back_to_back", r->burst_first_ok_delay >= 0);
+        /* A CoCo 3 gives about 560 ns of E high and the 6809 wants data ~80 ns
+         * before E falls; 480 ns is the initial budget, to be revisited
+         * against a scope. */
+        CHECK("burst_within_480ns", r->burst_first_ok_delay >= 0 && r->burst_delay_ns <= 480);
+        busy_wait_us(2);
         CHECK("burst_cycles_counted", bus_stats.cycles - cburst == 8);
     }
 #endif
@@ -278,7 +301,6 @@ int fake6809_selftest(fake_result_t *r, void (*line)(const char *s)) {
             break;
         }
     }
-    float ns_per = 1e9f * CLKDIV / (float)clock_get_hz(clk_sys);
 #ifdef PICOCO_BOARD_PLUSW
     r->delay_ns = r->first_ok_delay < 0 ? 0 : (uint32_t)((r->first_ok_delay + 4) * ns_per);   /* +4: out pins(P2) + pull + out y + first jmp before the sample, measured from E rising */
     snprintf(buf, sizeof buf, "selftest response first_ok_delay %d (~%u ns after E rose)", r->first_ok_delay, (unsigned)r->delay_ns);

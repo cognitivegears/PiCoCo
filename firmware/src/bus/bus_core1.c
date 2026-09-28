@@ -101,13 +101,15 @@ BUS_HOT void bus_core1_main(void) {
             in = in2;
             sel = plusw_selected(in);
         }
+        bool hw = ((in & (CTS_MASK | SCS_MASK)) != (CTS_MASK | SCS_MASK));
         /* OE_BUS is U15's own E-qualified hardware decode (readable on GP40
          * in either JP2 position); catches a /CTS or /SCS that asserts too
-         * late for the resample above to see. */
-        if (!sel) sel = !OE_HIGH();
+         * late for the resample above to see. A cycle rescued this way is
+         * hardware-selected by definition, even though `in`'s /CTS,/SCS
+         * bits read high. */
+        if (!sel) { sel = !OE_HIGH(); if (sel) hw = true; }
         if (!sel) { while (sio_hw->gpio_in & E_MASK) { } continue; }   /* not selected: still wait out E low before the next cycle */
         uint16_t idx = (in >> PIN_A0) & 0x3FFF;
-        bool hw = ((in & (CTS_MASK | SCS_MASK)) != (CTS_MASK | SCS_MASK));
         if (in & RW_MASK) {                             /* CoCo read */
             if (bus_drive) {
                 sio_hw->gpio_clr = D_MASK;
