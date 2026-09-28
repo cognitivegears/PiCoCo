@@ -17,7 +17,12 @@
 #endif
 
 typedef struct { uint32_t t_us; uint16_t idx; uint8_t rw; uint8_t data; } bus_trace_entry;
-typedef struct { uint32_t cycles, reads, writes, write_overrun, addr_resample, addr_resample_bits; } bus_stats_t;   /* ponytail: addr_resample* = diagnostic, address changed between two samples after OE_BUS fell */
+typedef struct {
+    uint32_t cycles, reads, writes, write_overrun, addr_resample, addr_resample_bits;
+    uint32_t whooks_run;     /* write hooks executed on core1 */
+    uint32_t hw_selected;    /* Plus-W loop: cycles selected by /CTS or /SCS */
+    uint32_t fw_selected;    /* Plus-W loop: cycles selected by bus_fw_mask ($FF60-$FF7F) */
+} bus_stats_t;   /* ponytail: addr_resample* = diagnostic, address changed between two samples after OE_BUS fell */
 
 extern uint8_t bus_table[BUS_TABLE_SIZE];
 extern volatile bus_stats_t bus_stats;
@@ -31,6 +36,7 @@ void bus_init(void);                                   /* table = 0xFF, rings em
 void bus_set_read(uint16_t idx, uint8_t v);
 void bus_set_read_range(uint16_t idx, const uint8_t *p, size_t n);   /* clipped at table end */
 int  bus_add_read_hook(uint16_t idx, void (*fn)(void));             /* 0 ok, -1 full */
+int  bus_add_write_hook(uint16_t idx, void (*fn)(uint8_t data));   /* 0 ok, -1 full; fn is BUS_HOT, runs on core1 before the event is queued */
 bool bus_pop_write(uint16_t *idx, uint8_t *data);                   /* core0 consumer */
 void bus_trace_freeze(bool freeze);
 size_t bus_trace_copy(bus_trace_entry *out, size_t max);            /* oldest first, newest last */
