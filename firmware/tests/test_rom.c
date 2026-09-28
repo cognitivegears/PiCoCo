@@ -129,6 +129,12 @@ TEST(cart_autostart_decision) {
     rom_cart_set(CART_AUTO);
 }
 
+TEST(bank_buf_bounds) {
+    setup();
+    ASSERT_EQ(rom_publish_banks(3), -2);
+    ASSERT(rom_bank_buf(ROM_MAX_BANKS) == NULL);
+}
+
 int main(void) {
     const char *tmpdir = getenv("TMPDIR");
     if (!tmpdir) tmpdir = "/tmp";
@@ -142,6 +148,7 @@ int main(void) {
     RUN(dos_signature);
     RUN(file_load_banked);
     RUN(cart_autostart_decision);
+    RUN(bank_buf_bounds);
     snprintf(cmd, sizeof(cmd), "rm -rf %s", g_dir); system(cmd);
     TEST_MAIN_END
 }

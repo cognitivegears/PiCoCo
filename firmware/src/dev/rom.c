@@ -36,6 +36,30 @@ static void unbank(void) {
     bus_rom_base = bus_table;
 }
 
+void rom_banks_begin(void) {
+    unbank();
+    rom_have = false;
+    rom_dos = false;
+}
+
+uint8_t *rom_bank_buf(int b) {
+    if (b < 0 || b >= ROM_MAX_BANKS) return NULL;
+    return rom_banks[b];
+}
+
+int rom_publish_banks(int nb) {
+    if (nb != 2 && nb != 4 && nb != 8) return -2;
+    /* Order matters for core1: base at bank 0, then mask, then the count
+     * that lets the $FF40 hook start switching (same order as the old
+     * rom_load_mem banked path). */
+    bus_rom_base = rom_banks[0];
+    rom_bank_mask = (uint8_t)(nb - 1);
+    rom_nbanks = (uint8_t)nb;
+    rom_have = true;
+    rom_dos = (rom_banks[0][0] == 'D' && rom_banks[0][1] == 'K');
+    return 0;
+}
+
 void rom_pattern(void) {
     unbank();
     for (uint32_t i = 0; i < 0x2000; i++) bus_table[i] = (uint8_t)(i & 0xFF);
@@ -58,12 +82,10 @@ int rom_load_mem(const uint8_t *p, size_t n) {
     if (n != 8192 && n != 16384 && nb == 0) return -2;
     if (nb) {
         /* Order matters for core1: fill banks, point the base at bank 0, then
-         * publish the count so the hook can start switching. */
+         * publish the count so the hook can start switching (rom_publish_banks). */
         rom_nbanks = 0;
         for (int b = 0; b < nb; b++) memcpy(rom_banks[b], p + (size_t)b * ROM_BANK_SIZE, ROM_BANK_SIZE);
-        bus_rom_base = rom_banks[0];
-        rom_bank_mask = (uint8_t)(nb - 1);
-        rom_nbanks = (uint8_t)nb;
+        rom_publish_banks(nb);   /* nb is always 2/4/8 here: bank_count_for only returns those */
     } else {
         unbank();
         if (n == 8192) {
@@ -74,28 +96,44 @@ int rom_load_mem(const uint8_t *p, size_t n) {
             memcpy(&bus_table[0], p, 0x3F41);
             memcpy(&bus_table[0x3F43], p + 0x3F43, n - 0x3F43);
         }
+        rom_have = true;
+        rom_dos = (p[0] == 'D' && p[1] == 'K');
     }
-    rom_have = true;
-    rom_dos = (p[0] == 'D' && p[1] == 'K');
     return 0;
 }
 
-static uint8_t rom_file_buf[ROM_MAX_BANKS * ROM_BANK_SIZE];   /* ponytail: 128 KB staging; could read bank by bank into rom_banks */
+static uint8_t rom_chunk_buf[ROM_BANK_SIZE];   /* staging for 8 K/16 K loads only; banked loads read straight into rom_banks */
 
 int rom_load_file(dw_store *st, const char *name) {
     dw_file f;
     if (st->ops->open(st->ctx, name, false, &f) < 0) return -1;
     uint32_t size;
     if (st->ops->size(&f, &size) < 0) { st->ops->close(&f); return -1; }
-    if (size != 8192 && size != 16384 && bank_count_for(size) == 0) { st->ops->close(&f); return -2; }
+    int nb = bank_count_for(size);
+    if (size != 8192 && size != 16384 && nb == 0) { st->ops->close(&f); return -2; }
+    if (nb) {
+        rom_banks_begin();
+        for (int b = 0; b < nb; b++) {
+            uint8_t *dst = rom_bank_buf(b);
+            uint32_t got = 0;
+            while (got < ROM_BANK_SIZE) {
+                int r = st->ops->read(&f, (uint32_t)b * ROM_BANK_SIZE + got, dst + got, ROM_BANK_SIZE - got);
+                if (r <= 0) { st->ops->close(&f); return -1; }   /* ROM left off: rom_banks_begin() already unbanked it */
+                got += (uint32_t)r;
+            }
+        }
+        st->ops->close(&f);
+        rom_publish_banks(nb);
+        return 0;
+    }
     uint32_t got = 0;
     while (got < size) {
-        int r = st->ops->read(&f, got, rom_file_buf + got, size - got);
+        int r = st->ops->read(&f, got, rom_chunk_buf + got, size - got);
         if (r <= 0) { st->ops->close(&f); return -1; }
         got += (uint32_t)r;
     }
     st->ops->close(&f);
-    return rom_load_mem(rom_file_buf, size);
+    return rom_load_mem(rom_chunk_buf, size);
 }
 
 int  rom_bank_count(void) { return rom_nbanks; }

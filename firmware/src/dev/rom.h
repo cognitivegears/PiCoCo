@@ -14,10 +14,22 @@ void rom_off(void);       /* 0xFF for 0x0000..0x3EFF; unbanked; rom_loaded() fal
  * banks selected by a write to $FF40 (value & (banks-1)). Returns -2 for any
  * other size and leaves the current ROM in place. */
 int  rom_load_mem(const uint8_t *p, size_t n);
-int  rom_load_file(dw_store *st, const char *name);   /* -1 not found/read error, -2 bad size */
+/* -1 not found/read error, -2 bad size. A read error on a banked (32/64/128 K)
+ * file can happen after rom_banks_begin() has already unbanked the ROM and
+ * partially overwritten rom_banks; on that path the ROM is simply left off
+ * (rom_loaded() false), not restored to whatever was loaded before. */
+int  rom_load_file(dw_store *st, const char *name);
 int  rom_bank_count(void);   /* 0 = unbanked */
 bool rom_loaded(void);       /* true after a successful load until rom_off/rom_pattern */
 bool rom_is_dos(void);       /* loaded and bytes 0,1 == "DK" (HDB-DOS / RS-DOS style ROM) */
+
+/* Bank-fill primitives: build a banked image straight into rom_banks with no
+ * separate staging buffer (used by rom_load_file's banked path and by
+ * fake6809.c's synthetic self-test image). */
+void     rom_banks_begin(void);      /* unbank: count 0, base = bus_table, rom_have/rom_dos false */
+uint8_t *rom_bank_buf(int b);        /* pointer to rom_banks[b]; NULL if b >= ROM_MAX_BANKS */
+int      rom_publish_banks(int nb);  /* nb must be 2, 4 or 8 (else -2); sets base = bank 0, mask,
+                                       * count, rom_have, rom_dos (from bank 0 bytes 0-1); 0 ok */
 
 typedef enum { CART_AUTO = 0, CART_ON, CART_OFF } cart_mode_t;
 void        rom_cart_set(cart_mode_t m);
