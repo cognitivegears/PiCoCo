@@ -307,6 +307,14 @@ static int cmd_becker(int argc, char **argv) {
     return 0;
 }
 
+static int cmd_cart(int argc, char **argv) {
+    if (argc < 2) { outf("cart %s\n", rom_cart_get() == CART_ON ? "on" : rom_cart_get() == CART_OFF ? "off" : "auto"); return 0; }
+    if (strcasecmp(argv[1], "on") == 0)   { rom_cart_set(CART_ON);   return 0; }
+    if (strcasecmp(argv[1], "off") == 0)  { rom_cart_set(CART_OFF);  return 0; }
+    if (strcasecmp(argv[1], "auto") == 0) { rom_cart_set(CART_AUTO); return 0; }
+    return cerr("usage: cart on|off|auto");
+}
+
 static int cmd_dw(int argc, char **argv) {
     if (argc < 2) return cerr("usage: dw mount|eject|hdbdos|stats|capture|selftest ...");
     if (plat_fs_exporting()) return cerr("fs export active; run fs import first");
@@ -465,6 +473,8 @@ static int cmd_save(void) {
         return cerr("config too large");
     if (rom_cmd[0] && !cfg_append(cfg, sizeof(cfg), &len, "rom %s\n", rom_cmd))
         return cerr("config too large");
+    if (rom_cart_get() != CART_AUTO && !cfg_append(cfg, sizeof(cfg), &len, "cart %s\n", rom_cart_get() == CART_ON ? "on" : "off"))
+        return cerr("config too large");
     if (bus_drive_get() && !cfg_append(cfg, sizeof(cfg), &len, "bus drive on\n"))
         return cerr("config too large");
     if (!cfg_append(cfg, sizeof(cfg), &len, "dw hdbdos %s\n", g_dw->hdbdos ? "on" : "off"))
@@ -491,7 +501,7 @@ static int cmd_save(void) {
 static int dispatch(int argc, char **argv) {
     const char *v = argv[0];
     if (strcasecmp(v, "help") == 0) {
-        outf("commands: help status version smoke halt trace rom becker bus crash dw fs time log stats save reboot bootsel\n");
+        outf("commands: help status version smoke halt trace rom becker cart bus crash dw fs time log stats save reboot bootsel\n");
         return 0;
     }
     if (strcasecmp(v, "status") == 0) return cmd_status();
@@ -512,6 +522,7 @@ static int dispatch(int argc, char **argv) {
     if (strcasecmp(v, "trace") == 0) return cmd_trace(argc, argv);
     if (strcasecmp(v, "rom") == 0) return cmd_rom(argc, argv);
     if (strcasecmp(v, "becker") == 0) return cmd_becker(argc, argv);
+    if (strcasecmp(v, "cart") == 0) return cmd_cart(argc, argv);
     if (strcasecmp(v, "dw") == 0) return cmd_dw(argc, argv);
     if (strcasecmp(v, "fs") == 0) return cmd_fs(argc, argv);
     if (strcasecmp(v, "time") == 0) return cmd_time(argc, argv);

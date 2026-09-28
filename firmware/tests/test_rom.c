@@ -110,6 +110,25 @@ TEST(file_load_banked) {
     ASSERT_EQ(rom_load_file(&store, "missing.rom"), -1);
 }
 
+TEST(cart_autostart_decision) {
+    setup();
+    ASSERT_EQ(rom_cart_get(), CART_AUTO);
+    ASSERT(!rom_cart_wanted());                 /* no ROM */
+    fill_banks(1);
+    ASSERT_EQ(rom_load_mem(img, 8192), 0);
+    ASSERT(rom_cart_wanted());                  /* plain pak */
+    img[0] = 'D'; img[1] = 'K';
+    ASSERT_EQ(rom_load_mem(img, 8192), 0);
+    ASSERT(!rom_cart_wanted());                 /* DOS ROM: never pulse, it would jump to $C000 as code */
+    rom_cart_set(CART_ON);
+    ASSERT(rom_cart_wanted());
+    rom_cart_set(CART_OFF);
+    img[0] = 'X';
+    ASSERT_EQ(rom_load_mem(img, 8192), 0);
+    ASSERT(!rom_cart_wanted());
+    rom_cart_set(CART_AUTO);
+}
+
 int main(void) {
     const char *tmpdir = getenv("TMPDIR");
     if (!tmpdir) tmpdir = "/tmp";
@@ -122,6 +141,7 @@ int main(void) {
     RUN(bad_sizes_refused_previous_kept);
     RUN(dos_signature);
     RUN(file_load_banked);
+    RUN(cart_autostart_decision);
     snprintf(cmd, sizeof(cmd), "rm -rf %s", g_dir); system(cmd);
     TEST_MAIN_END
 }

@@ -14,6 +14,7 @@ static volatile uint8_t rom_nbanks;     /* 0 = unbanked; written by core0 (loade
 static volatile uint8_t rom_bank_mask;
 static bool rom_have;
 static bool rom_dos;
+static cart_mode_t cart_mode;           /* initialized to CART_AUTO (0) by default */
 
 /* core1: swap the ROM window on a $FF40 write. Inert while unbanked, so it
  * stays registered for the life of the firmware (no remove API needed). */
@@ -22,6 +23,9 @@ static BUS_HOT void rom_bank_hook(uint8_t data) {
 }
 
 void rom_init(void) {
+    cart_mode = CART_AUTO;
+    rom_have = false;
+    rom_dos = false;
     device_register(&rom_device);
     bus_add_write_hook(0x3F40, rom_bank_hook);
 }
@@ -97,3 +101,11 @@ int rom_load_file(dw_store *st, const char *name) {
 int  rom_bank_count(void) { return rom_nbanks; }
 bool rom_loaded(void)     { return rom_have; }
 bool rom_is_dos(void)     { return rom_have && rom_dos; }
+
+void        rom_cart_set(cart_mode_t m) { cart_mode = m; }
+cart_mode_t rom_cart_get(void)          { return cart_mode; }
+bool rom_cart_wanted(void) {
+    if (cart_mode == CART_ON)  return true;
+    if (cart_mode == CART_OFF) return false;
+    return rom_have && !rom_dos;
+}

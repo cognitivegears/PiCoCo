@@ -18,3 +18,8 @@ int  rom_load_file(dw_store *st, const char *name);   /* -1 not found/read error
 int  rom_bank_count(void);   /* 0 = unbanked */
 bool rom_loaded(void);       /* true after a successful load until rom_off/rom_pattern */
 bool rom_is_dos(void);       /* loaded and bytes 0,1 == "DK" (HDB-DOS / RS-DOS style ROM) */
+
+typedef enum { CART_AUTO = 0, CART_ON, CART_OFF } cart_mode_t;
+void        rom_cart_set(cart_mode_t m);
+cart_mode_t rom_cart_get(void);
+bool        rom_cart_wanted(void);   /* pulse /CART after reset? ON: yes; OFF: no; AUTO: a non-DOS ROM is loaded */

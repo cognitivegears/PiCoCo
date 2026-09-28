@@ -82,6 +82,14 @@ int main(void) {
     multicore_launch_core1(bus_core1_main);
     gpio_put(PIN_HALT, 0);   /* release /HALT: spec 8.1 */
     LOG_I(LOG_M_MAIN, "core1 up, halt released");
+#ifdef PIN_CART_DRV
+    /* Autostart paks expect /CART pulsing after reset (a real pak ties it to
+     * Q). Toggle Q4 for 500 ms after the /HALT release so Color BASIC's
+     * cart check sees an edge after it has initialised the PIA; DOS ROMs
+     * ("DK") never get this, they would jump to $C000 as code. Power-on and
+     * Pico reboot only: a CoCo reset button press is not visible to us. */
+    uint32_t cart_until = rom_cart_wanted() ? plat_now_ms() + 500 : 0;
+#endif
 #ifdef PIN_LED
     uint32_t last_blink = 0; bool led = false;
 #endif
@@ -89,6 +97,12 @@ int main(void) {
         tud_task();
         uint32_t now = plat_now_ms();
         mode_pump(&g_dw, now);
+#ifdef PIN_CART_DRV
+        if (cart_until) {
+            if (now < cart_until) gpio_put(PIN_CART_DRV, now & 1);
+            else { gpio_put(PIN_CART_DRV, 0); cart_until = 0; }
+        }
+#endif
         if (tud_cdc_n_available(1)) { uint8_t b[64]; uint32_t n = tud_cdc_n_read(1, b, sizeof b); console_feed(b, n); }
         if (tud_cdc_n_connected(1)) {
             /* Only drain (i.e. pop) log lines with a host attached, so boot
