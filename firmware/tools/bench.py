@@ -42,7 +42,7 @@ def run(fd, cmd):
 
 def find_port():
     nodes = sorted(glob.glob("/dev/cu.usbmodem*") + glob.glob("/dev/ttyACM*"))
-    return nodes[1] if len(nodes) >= 2 else (nodes[0] if nodes else None)
+    return nodes[1] if len(nodes) >= 2 else None
 
 
 def main():
@@ -66,8 +66,8 @@ def main():
     if not any(l == "selftest pass" for l in out):
         ok = False
     # A saved config may have loaded a ROM the self-test cleared; replay it.
-    for line in run(fd, "reboot"):
-        print(line)
+    # Fire-and-forget: a reboot drops the USB connection before replying "ok".
+    os.write(fd, b"reboot\r\n")
     return 0 if ok else 1
 
 

@@ -42,11 +42,17 @@ if(NOT PICOCO_HOST)
   add_executable(picoco ${CORE_SRC} ${FATFS_SRC}
     src/fs_flash.c src/dw/dw_store_fatfs.c
     src/plat_pico.c src/usb/usb_descriptors.c src/main.c
-    src/crash.c src/bus/bus_core1.c src/bus/fake6809.c)
+    src/crash.c src/bus/bus_core1.c)
   if(PICOCO_BOARD STREQUAL "plusw")
     set(PICOCO_PIN_HEADER plusw)
   else()
     set(PICOCO_PIN_HEADER pico2_breadboard)
+    # fake6809 (on-chip PIO selftest) needs pio1 on PIN_OE_BUS/PIN_A0..RW,
+    # which only lines up on a Pico 2 — on a Plus-W, PIN_OE_BUS is GP40,
+    # unreachable from pio1 and unrepresentable in its 32-bit pin masks.
+    target_sources(picoco PRIVATE src/bus/fake6809.c)
+    target_compile_definitions(picoco PRIVATE PICOCO_HAVE_FAKE6809=1)
+    pico_generate_pio_header(picoco ${CMAKE_CURRENT_LIST_DIR}/src/bus/fake6809.pio)
   endif()
   target_include_directories(picoco PRIVATE src src/usb src/dw src/bus src/dev src/console boards third_party/fatfs)
   target_compile_options(picoco PRIVATE -Wall -Wextra)
@@ -65,7 +71,6 @@ if(NOT PICOCO_HOST)
     pico_stdlib pico_unique_id pico_multicore
     hardware_flash hardware_sync hardware_watchdog hardware_pio
     tinyusb_device tinyusb_board)
-  pico_generate_pio_header(picoco ${CMAKE_CURRENT_LIST_DIR}/src/bus/fake6809.pio)
   pico_add_extra_outputs(picoco)
   find_package(Python3 COMPONENTS Interpreter)
   if(Python3_FOUND)

@@ -18,7 +18,7 @@
 #define PICOCO_VERSION "dev"
 #endif
 
-#ifndef PICOCO_HOST
+#ifdef PICOCO_HAVE_FAKE6809
 #include "fake6809.h"
 #endif
 
@@ -180,7 +180,7 @@ static int cmd_dw_selftest(void) {
     return 0;
 }
 
-#ifndef PICOCO_HOST
+#ifdef PICOCO_HAVE_FAKE6809
 static void selftest_line(const char *s) { outf("%s\n", s); }
 #endif
 
@@ -193,13 +193,13 @@ static int cmd_bus(int argc, char **argv) {
         return cerr("usage: bus drive on|off");
     }
     if (strcasecmp(argv[1], "selftest") == 0) {
-#ifdef PICOCO_HOST
-        return cerr("bus selftest: pico only");
+#ifndef PICOCO_HAVE_FAKE6809
+        return cerr("bus selftest: pico only (needs a Pico 2 board, not Plus-W or host)");
 #else
         fake_result_t r;
         int rc = fake6809_selftest(&r, selftest_line);
         if (rc == -2) return cerr("bus selftest: bus is live (CoCo attached), refused");
-        outf("selftest cycles %u mismatches %u ring_overrun %u\n", r.cycles, r.mismatches, r.ring_overrun);
+        outf("selftest checks %u mismatches %u ring_overrun %u\n", r.cycles, r.mismatches, r.ring_overrun);
         if (rc != 0) return cerr("selftest FAIL");
         outf("selftest pass\n");
         return 0;

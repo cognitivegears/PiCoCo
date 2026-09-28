@@ -2,11 +2,15 @@
 ;   word 0: bits 0-13 = A0..A13, bit 14 = R/W (1 = read)         -> GP8..GP22 (out pins, 15)
 ;   word 1: bit 0 = selected (pull OE_BUS low while "E is high"), bits 1-8 = data sample delay
 ; Side-set pin = OE_BUS (GP26). One RX word per cycle: D0..D7 sampled during OE low (or 0 if unselected).
-; At clkdiv 1.1 on a 150 MHz system clock: ~1.1 us per cycle, OE low ~ (52 + delay) PIO cycles.
-; Each former single-instruction [31] delay (32 cycles) is now a pair of [15]
-; instructions at the same side value (2x16 = 32 cycles): a 1-bit side-set
-; only leaves 4 delay bits (max 15), so pairing is how the original 6809
-; cycle timing is kept without changing the delay-sweep logic under test.
+; At clkdiv 1.1 on a 150 MHz system clock: ~1.1 us per cycle, OE low ~ (67 +
+; delay) PIO cycles (~490 ns + delay). Each former single-instruction [31]
+; delay (32 cycles) is a pair of [15] instructions at the same side value
+; (2x16 = 32 cycles): a 1-bit side-set only leaves 4 delay bits (max 15).
+; push happens after OE_BUS has returned high (side 1, at `done`), not while
+; it is still low: pushing mid-cycle let core0 start the next cycle (drive
+; new write data or flip OE) while core1 was still in the read branch of the
+; cycle core1 just serviced, since gpio_oe_clr on the shared SIO OE_BUS
+; register also released the write data core0 was driving.
 .program fake6809_p2
 .side_set 1
 .wrap_target
@@ -21,9 +25,10 @@
 dly:
     jmp y-- dly         side 0        ; delay+1 cycles
     in pins, 8          side 0        ; sample D0..D7 (what core1 drives on a read)
-    push block          side 0 [15]
     nop                 side 0 [15]
     nop                 side 0 [15]
+    nop                 side 0 [15]
+    nop                 side 0 [15]   ; (the missing pair: the brief had push[31] + nop[31] here)
     jmp done            side 1        ; OE_BUS high: E falling
 nosel:
     nop                 side 1 [15]
@@ -31,8 +36,8 @@ nosel:
     nop                 side 1 [15]
     nop                 side 1 [15]
     in null, 8          side 1
-    push block          side 1
 done:
     nop                 side 1 [15]   ; E low
     nop                 side 1 [15]
+    push block          side 1        ; cycle over: core1 has released D0-7 before cycle() returns
 .wrap
