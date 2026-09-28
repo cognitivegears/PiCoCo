@@ -18,7 +18,6 @@ static int hook_count;
 typedef struct { uint16_t idx; void (*fn)(uint8_t); } bus_whook_t;
 static bus_whook_t whooks[BUS_MAX_HOOKS];
 static int whook_count;
-static bool in_whook;   /* ponytail: true while a write hook is executing; makes bus_pop_write non-destructive */
 
 static bus_trace_entry trace[BUS_TRACE_SIZE];
 static uint32_t trace_pos;
@@ -30,7 +29,6 @@ void bus_init(void) {
     wev_tail = 0;
     hook_count = 0;
     whook_count = 0;
-    in_whook = false;
     trace_pos = 0;
     trace_frozen = false;
     bus_stats.cycles = 0;
@@ -79,7 +77,7 @@ bool bus_pop_write(uint16_t *idx, uint8_t *data) {
     if (__atomic_load_n(&wev_head, __ATOMIC_ACQUIRE) == t) return false;
     *idx = wev[t].idx;
     *data = wev[t].data;
-    if (!in_whook) __atomic_store_n(&wev_tail, (t + 1) & WEV_MASK, __ATOMIC_RELEASE);
+    __atomic_store_n(&wev_tail, (t + 1) & WEV_MASK, __ATOMIC_RELEASE);
     return true;
 }
 
@@ -113,12 +111,7 @@ BUS_HOT void bus_on_read_done(uint16_t idx, uint32_t t_us) {
 
 BUS_HOT void bus_on_write(uint16_t idx, uint8_t data, uint32_t t_us) {
     for (int i = 0; i < whook_count; i++) {
-        if (whooks[i].idx == idx) {
-            in_whook = true;
-            whooks[i].fn(data);
-            in_whook = false;
-            bus_stats.whooks_run++;
-        }
+        if (whooks[i].idx == idx) { whooks[i].fn(data); bus_stats.whooks_run++; }
     }
     uint32_t h = wev_head, n = (h + 1) & WEV_MASK;
     if (n == wev_tail) {
