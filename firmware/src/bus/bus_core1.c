@@ -77,8 +77,15 @@ static inline __attribute__((always_inline)) bool plusw_selected(uint32_t in) {
  * lets $FF60-$FF7F respond). */
 BUS_HOT void bus_core1_main(void) {
     (void)save_and_disable_interrupts();
+    /* E-low wait lives here, once, not at the top of the loop: post-cycle
+     * work (a write hook, bus_on_read_done) that overruns E low must not
+     * drop the next real cycle. The Pico 2 loop already serves a late
+     * cycle instead of skipping it (its top just waits for OE_BUS low,
+     * which is still true if E stayed high the whole time core1 was
+     * busy); this loop matches that by starting each iteration at the
+     * Q-high wait instead of re-checking E low first. */
+    while (sio_hw->gpio_in & E_MASK) { }
     for (;;) {
-        while (sio_hw->gpio_in & E_MASK) { }            /* wait E low */
         while (!(sio_hw->gpio_in & Q_MASK)) { }         /* wait Q high: address valid */
         uint32_t in = sio_hw->gpio_in;
         bool sel = plusw_selected(in);                  /* head start from the Q-time sample */
@@ -94,10 +101,13 @@ BUS_HOT void bus_core1_main(void) {
             in = in2;
             sel = plusw_selected(in);
         }
-        if (!sel) continue;                             /* loop top waits for E low: the end of this cycle */
+        /* OE_BUS is U15's own E-qualified hardware decode (readable on GP40
+         * in either JP2 position); catches a /CTS or /SCS that asserts too
+         * late for the resample above to see. */
+        if (!sel) sel = !OE_HIGH();
+        if (!sel) { while (sio_hw->gpio_in & E_MASK) { } continue; }   /* not selected: still wait out E low before the next cycle */
         uint16_t idx = (in >> PIN_A0) & 0x3FFF;
-        if ((in & (CTS_MASK | SCS_MASK)) != (CTS_MASK | SCS_MASK)) bus_stats.hw_selected++;
-        else bus_stats.fw_selected++;
+        bool hw = ((in & (CTS_MASK | SCS_MASK)) != (CTS_MASK | SCS_MASK));
         if (in & RW_MASK) {                             /* CoCo read */
             if (bus_drive) {
                 sio_hw->gpio_clr = D_MASK;
@@ -124,6 +134,9 @@ BUS_HOT void bus_core1_main(void) {
             sio_hw->gpio_set = OEFW_MASK;
             bus_on_write(idx, (uint8_t)((prev >> PIN_D0) & 0xFF), time_us_32());
         }
+        /* Counted after servicing, not in the E-rise-to-data window: keeps
+         * that window free of anything but the transfer itself. */
+        if (hw) bus_stats.hw_selected++; else bus_stats.fw_selected++;
     }
 }
 #endif
