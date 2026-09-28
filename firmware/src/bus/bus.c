@@ -2,6 +2,7 @@
 #include <string.h>
 
 uint8_t bus_table[BUS_TABLE_SIZE];
+const uint8_t *volatile bus_rom_base = bus_table;
 volatile bus_stats_t bus_stats;
 volatile bool bus_drive;
 
@@ -25,6 +26,7 @@ static bool trace_frozen;
 
 void bus_init(void) {
     memset(bus_table, 0xFF, sizeof(bus_table));
+    bus_rom_base = bus_table;
     wev_head = 0;
     wev_tail = 0;
     hook_count = 0;
@@ -100,7 +102,7 @@ static BUS_HOT void trace_record(uint16_t idx, uint8_t rw, uint8_t data, uint32_
 }
 
 BUS_HOT void bus_on_read_done(uint16_t idx, uint32_t t_us) {
-    uint8_t data = bus_table[idx];   /* what the table holds, i.e. what would have been driven, even with bus drive off */
+    uint8_t data = bus_peek(idx);   /* what the table holds, i.e. what would have been driven, even with bus drive off */
     for (int i = 0; i < hook_count; i++) {
         if (hooks[i].idx == idx) hooks[i].fn();
     }

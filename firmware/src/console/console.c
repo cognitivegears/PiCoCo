@@ -266,6 +266,7 @@ static int cmd_rom(int argc, char **argv) {
     if (strcasecmp(argv[1], "load") == 0) {
         if (argc < 3) return cerr("usage: rom load <file>");
         int r = rom_load_file(g_store, argv[2]);
+        if (r == -2) return cerr("rom load: size must be 8K, 16K, or banked 32K/64K/128K");
         if (r != 0) return cerr("rom load failed");
         snprintf(rom_cmd, sizeof(rom_cmd), "load %s", argv[2]);
         return 0;

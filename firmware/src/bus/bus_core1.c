@@ -30,7 +30,7 @@ BUS_HOT void bus_core1_main(void) {
         if (in & RW_MASK) {                       /* CoCo read */
             if (bus_drive) {
                 sio_hw->gpio_clr = D_MASK;
-                sio_hw->gpio_set = (uint32_t)bus_table[idx] << PIN_D0;
+                sio_hw->gpio_set = (uint32_t)bus_peek(idx) << PIN_D0;
                 sio_hw->gpio_oe_set = D_MASK;
                 while (!OE_HIGH()) { }
                 sio_hw->gpio_oe_clr = D_MASK;

@@ -5,7 +5,7 @@
 
 uint8_t sim_read(uint16_t addr) {
     uint16_t idx = addr & 0x3FFF;
-    uint8_t v = bus_table[idx];
+    uint8_t v = bus_peek(idx);
     bus_on_read_done(idx, plat_now_us());
     return v;
 }

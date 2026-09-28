@@ -25,6 +25,18 @@ typedef struct {
 } bus_stats_t;   /* ponytail: addr_resample* = diagnostic, address changed between two samples after OE_BUS fell */
 
 extern uint8_t bus_table[BUS_TABLE_SIZE];
+
+/* ROM window source: bus_table by default, a 16 KB bank when a banked image
+ * is loaded (rom.c). Swapped by the $FF40 write hook on core1; a pointer
+ * store is atomic so a read in flight sees the old or the new bank whole. */
+extern const uint8_t *volatile bus_rom_base;
+
+/* What a CoCo read of idx returns: ROM window from bus_rom_base, I/O page
+ * ($FF00-$FFFF, idx >= 0x3F00) from bus_table. always_inline: used by core1. */
+static inline __attribute__((always_inline)) uint8_t bus_peek(uint16_t idx) {
+    return idx < 0x3F00 ? bus_rom_base[idx] : bus_table[idx];
+}
+
 extern volatile bus_stats_t bus_stats;
 extern volatile bool bus_drive;   /* false = never drive D0..D7 (capture-only, milestone 0.4); read by core1 each cycle */
 
