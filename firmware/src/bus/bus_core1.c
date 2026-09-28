@@ -74,7 +74,12 @@ static inline __attribute__((always_inline)) bool plusw_selected(uint32_t in) {
 /* Plus-W: decode during E low, act during E high. Works with JP2 in either
  * position (1-2: U15 also enables U10 for hardware-selected cycles, which is
  * consistent with what we do; 2-3: only PIN_OE_FW enables it, which is what
- * lets $FF60-$FF7F respond). */
+ * lets $FF60-$FF7F respond). Reads take a fast path: the response (index,
+ * data byte, hw/fw stat bucket) is precomputed from the Q-time sample while
+ * E is still low, so the work after E rises is one compare and four pin
+ * writes. Any decode-bit change caught at the E-rise resample falls through
+ * to the full path below, which recomputes everything from the fresh
+ * sample. */
 BUS_HOT void bus_core1_main(void) {
     (void)save_and_disable_interrupts();
     /* E-low wait lives here, once, not at the top of the loop: post-cycle
@@ -89,11 +94,30 @@ BUS_HOT void bus_core1_main(void) {
         while (!(sio_hw->gpio_in & Q_MASK)) { }         /* wait Q high: address valid */
         uint32_t in = sio_hw->gpio_in;
         bool sel = plusw_selected(in);                  /* head start from the Q-time sample */
+        /* Precompute the read response during E low: after E rises the fast path
+         * below is one compare and four pin writes. Any change in the decode
+         * bits at E rise (late /CTS, address settling) falls through to the
+         * full path, which recomputes everything from the fresh sample. */
+        uint16_t idx = (in >> PIN_A0) & 0x3FFF;
+        uint32_t dset = (uint32_t)bus_peek(idx) << PIN_D0;
+        bool fast_read = sel && (in & RW_MASK) && bus_drive;
         while (!(sio_hw->gpio_in & E_MASK)) { }         /* wait E high */
         /* /CTS and /SCS are decoded downstream of the address (SAM/GIME) and need only
          * meet setup before E rises, so re-check them now; the Pico 2 bench needed the
          * same resample. */
         uint32_t in2 = sio_hw->gpio_in;
+        if (fast_read && !((in ^ in2) & DECODE_MASK)) {
+            sio_hw->gpio_clr = D_MASK;
+            sio_hw->gpio_set = dset;
+            sio_hw->gpio_oe_set = D_MASK;
+            sio_hw->gpio_clr = OEFW_MASK;               /* U10 outward */
+            while (sio_hw->gpio_in & E_MASK) { }
+            sio_hw->gpio_set = OEFW_MASK;
+            sio_hw->gpio_oe_clr = D_MASK;
+            bus_on_read_done(idx, time_us_32());
+            if ((in & (CTS_MASK | SCS_MASK)) != (CTS_MASK | SCS_MASK)) bus_stats.hw_selected++; else bus_stats.fw_selected++;
+            continue;
+        }
         uint32_t dif = (in ^ in2) & DECODE_MASK;
         if (dif) {
             bus_stats.addr_resample++;
@@ -109,7 +133,7 @@ BUS_HOT void bus_core1_main(void) {
          * bits read high. */
         if (!sel) { sel = !OE_HIGH(); if (sel) hw = true; }
         if (!sel) { while (sio_hw->gpio_in & E_MASK) { } continue; }   /* not selected: still wait out E low before the next cycle */
-        uint16_t idx = (in >> PIN_A0) & 0x3FFF;
+        idx = (in >> PIN_A0) & 0x3FFF;                  /* declared above; `in` may now be in2 */
         if (in & RW_MASK) {                             /* CoCo read */
             if (bus_drive) {
                 sio_hw->gpio_clr = D_MASK;
