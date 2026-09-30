@@ -210,7 +210,7 @@ Firmware 1.3, Plus-W build. Server: `picoco-host` on the Mac unless noted.
 | G.1 bad SSID / closed port / bad DNS name | `no such network` / `refused` / `dns failed`, ~10 retries in 22 s each | 2026-09-30 |
 | G.1 server down at boot | `net failed (refused), native fallback` after 10 s; `becker net` re-arms | 2026-09-30 |
 | G.1 `net scan` | 21 networks | 2026-09-30 |
-| G.1 cold-boot SNTP seeding | not yet run (needs a power cycle) | |
+| G.1 cold-boot SNTP seeding | pass 2026-09-30: after a USB power cycle the boot log shows `net: sntp seeded 1790778946`, `time` reports it with `clock kept`, `net up in 8329 ms` | |
 | G.2 boot hold with CoCo | | |
 | G.2 DIR/LOADM from DW4 | | |
 | G.2 DIR/LOADM from FujiNet-PC | | |
