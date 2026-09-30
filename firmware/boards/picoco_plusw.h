@@ -60,4 +60,41 @@ pico_board_cmake_set_default(PICO_RP2350_A2_SUPPORTED, 1)
 #define PICO_RP2350_A2_SUPPORTED 1
 #endif
 
+// --- CYW43 (Raspberry Pi RM2 on the Waveshare module; pins from the
+// Waveshare schematic, verified with a live scan 2026-09-29) ---
+pico_board_cmake_set(PICO_CYW43_SUPPORTED, 1)
+#ifndef CYW43_DEFAULT_PIN_WL_REG_ON
+#define CYW43_DEFAULT_PIN_WL_REG_ON 36
+#endif
+#ifndef CYW43_DEFAULT_PIN_WL_DATA_OUT
+#define CYW43_DEFAULT_PIN_WL_DATA_OUT 37
+#endif
+#ifndef CYW43_DEFAULT_PIN_WL_DATA_IN
+#define CYW43_DEFAULT_PIN_WL_DATA_IN 37
+#endif
+#ifndef CYW43_DEFAULT_PIN_WL_HOST_WAKE
+#define CYW43_DEFAULT_PIN_WL_HOST_WAKE 37
+#endif
+#ifndef CYW43_DEFAULT_PIN_WL_CLOCK
+#define CYW43_DEFAULT_PIN_WL_CLOCK 39
+#endif
+#ifndef CYW43_DEFAULT_PIN_WL_CS
+#define CYW43_DEFAULT_PIN_WL_CS 38
+#endif
+#ifndef CYW43_WL_GPIO_COUNT
+#define CYW43_WL_GPIO_COUNT 3
+#endif
+#ifndef CYW43_WL_GPIO_LED_PIN
+#define CYW43_WL_GPIO_LED_PIN 0
+#endif
+#ifndef CYW43_WL_GPIO_VBUS_PIN
+#define CYW43_WL_GPIO_VBUS_PIN 2
+#endif
+#ifndef CYW43_USES_VSYS_PIN
+#define CYW43_USES_VSYS_PIN 0
+#endif
+#ifndef PICO_VSYS_PIN
+#define PICO_VSYS_PIN 46
+#endif
+
 #endif

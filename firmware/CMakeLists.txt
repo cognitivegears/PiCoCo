@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.20)
 option(PICOCO_HOST "Build host library, tests and picoco-host instead of Pico firmware" OFF)
 option(PICOCO_BENCH "Register tools/bench.py as a ctest. It drives the bus pins: only with the board unplugged from the CoCo." OFF)
-set(PICOCO_VERSION "1.2")
+set(PICOCO_VERSION "1.3")
 # PiCoCo board: "pico2" (Pico 2 / RP2350A, default) or "plusw" (Waveshare
 # RP2350B-Plus-W). Picks both the PiCoCo pin header (boards/<x>.h) and, for
 # plusw, the SDK's PICO_BOARD (boards/picoco_plusw.h, below).
@@ -15,6 +15,7 @@ set(CORE_SRC
 # collides with newlib's own posix_close() declaration under arm-none-eabi.
 # Host-only: added to picoco_core below, never to the picoco (Pico) target.
 set(HOST_ONLY_SRC src/dw/dw_store_posix.c)
+set(NET_STUB_SRC src/net/net_stub.c)
 
 if(NOT PICOCO_HOST)
   if(PICOCO_BOARD STREQUAL "pico2_breadboard")
@@ -45,6 +46,12 @@ if(NOT PICOCO_HOST)
     src/plat_pico.c src/usb/usb_descriptors.c src/main.c
     src/crash.c src/bus/bus_core1.c)
   if(PICOCO_BOARD STREQUAL "plusw")
+    target_sources(picoco PRIVATE src/net/net.c)
+    target_link_libraries(picoco pico_cyw43_arch_lwip_poll pico_lwip_sntp)
+  else()
+    target_sources(picoco PRIVATE ${NET_STUB_SRC})
+  endif()
+  if(PICOCO_BOARD STREQUAL "plusw")
     set(PICOCO_PIN_HEADER plusw)
   else()
     set(PICOCO_PIN_HEADER pico2_breadboard)
@@ -56,7 +63,7 @@ if(NOT PICOCO_HOST)
   target_sources(picoco PRIVATE src/bus/fake6809.c)
   target_compile_definitions(picoco PRIVATE PICOCO_HAVE_FAKE6809=1)
   pico_generate_pio_header(picoco ${CMAKE_CURRENT_LIST_DIR}/src/bus/fake6809.pio)
-  target_include_directories(picoco PRIVATE src src/usb src/dw src/bus src/dev src/console boards third_party/fatfs)
+  target_include_directories(picoco PRIVATE src src/usb src/dw src/bus src/dev src/console src/net boards third_party/fatfs)
   target_compile_options(picoco PRIVATE -Wall -Wextra)
   set_source_files_properties(${FATFS_SRC} PROPERTIES COMPILE_OPTIONS -w)
   target_compile_definitions(picoco PRIVATE
@@ -93,8 +100,8 @@ add_compile_options(-Wall -Wextra -g -fsanitize=address,undefined -fno-omit-fram
 add_link_options(-fsanitize=address,undefined)
 add_compile_definitions(PICOCO_HOST=1 PICOCO_LOG_LEVEL=3 PICOCO_VERSION="${PICOCO_VERSION}")
 
-add_library(picoco_core STATIC ${CORE_SRC} ${HOST_ONLY_SRC} host/plat_host.c)
-target_include_directories(picoco_core PUBLIC src src/dw src/bus src/dev src/console host)
+add_library(picoco_core STATIC ${CORE_SRC} ${HOST_ONLY_SRC} ${NET_STUB_SRC} host/plat_host.c)
+target_include_directories(picoco_core PUBLIC src src/dw src/bus src/dev src/console src/net host)
 
 enable_testing()
 file(GLOB TEST_SRCS tests/test_*.c)

@@ -19,6 +19,7 @@
                           * arduino-pico issue #3297 (Waveshare schematic, continuity-checked). */
 
 #define PICOCO_BOARD_PLUSW 1
+#define PICOCO_HAVE_NET 1   /* RM2 radio: firmware/src/net/net.c is compiled in */
 /* Pad-grid signals (all in sio_hw->gpio_in, bits < 32). The Plus-W core1
  * loop (bus_core1.c) samples the address on Q and drives U10 /OE itself
  * from PIN_OE_FW when JP2 is in the 2-3 position. GP34/GP42 (audio) are
