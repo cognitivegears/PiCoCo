@@ -1,5 +1,6 @@
 #include "plat.h"
 #include "pico/stdlib.h"
+#include "pico/aon_timer.h"
 #include "pico/bootrom.h"
 #include "hardware/watchdog.h"
 #include "tusb.h"
@@ -125,5 +126,15 @@ int plat_cfg_write(const char *b, size_t n) {
 const char *plat_fs_dir(void) { return ""; }
 void plat_host_set_dir(const char *d) { (void)d; }
 
-bool plat_rtc_get(int64_t *unix_secs) { (void)unix_secs; return false; }
-void plat_rtc_set(int64_t unix_secs) { (void)unix_secs; }
+/* RP2350 always-on timer: survives a watchdog/RUN reset, not a power cycle. */
+bool plat_rtc_get(int64_t *unix_secs) {
+    struct timespec ts;
+    if (!aon_timer_is_running() || !aon_timer_get_time(&ts)) return false;
+    *unix_secs = ts.tv_sec;
+    return true;
+}
+void plat_rtc_set(int64_t unix_secs) {
+    struct timespec ts = { .tv_sec = (time_t)unix_secs, .tv_nsec = 0 };
+    if (aon_timer_is_running()) aon_timer_set_time(&ts);
+    else aon_timer_start(&ts);
+}

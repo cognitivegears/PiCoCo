@@ -193,6 +193,39 @@ heading.
 
 ## Results
 
+### 2026-09-29, breadboard: bridge mode, latency, clock, CoCo manager (firmware 1.2)
+Firmware 1.2 (branch coco-manager) on the Pico 2 breadboard rig, CoCo 3.
+- **Bridge mode (breadboard step 10) passes** against two servers: `picoco-host`
+  over `firmware/tools/becker_relay.py` (CDC0 to TCP), and DriveWire 4.3.6p
+  (Maven build, `DriveWireServer --noui`, serial device on CDC0, `SerialDTR`
+  true, `HDBDOSMode` true). DIR, LOADM+EXEC of DINORUN, SAVE, DIR, all
+  correct; `becker underrun 0 overrun 0` over 76 k Becker reads. Timings with
+  no added delay: DIR 1 KB in 0.10 s, LOADM 23 KB (90 sectors) in 2.16 s.
+- **Latency limit (WiFi stand-in, relay `--delay/--jitter`):** 25 ms one-way
+  is fine (DIR 0.59 s, LOADM 14.3 s: two round trips per sector, purely
+  latency-bound). 100 ms one-way is fine (boot's 3 sectors 1.17 s, DIR 1.64 s).
+  150 ms one-way hangs the CoCo at the HDB-DOS banner: the server's
+  `DW_PAYLOAD_TIMEOUT_MS` (250 ms) expires before the CoCo's READEX checksum
+  bytes arrive (~305 ms after the data went out), the op is dropped, no status
+  byte is sent, and the CoCo's Becker loop waits forever (`timeouts=1` in
+  picoco-host stats). DW4 has the same class of limit (`ReadByteWait`, 200 ms).
+  So a remote server needs a round trip under ~200 ms; the Pico is not the
+  limit.
+- **Clock (plan Task 8):** `pico_aon_timer` keeps time across a watchdog
+  `reboot` and a BOOTSEL reflash (`clock kept`). A CoCo reset or power-cycle
+  does not reboot the Pico on the breadboard (no RUN tie); the RUN-pin path
+  is a PCB check.
+- **CoCo manager (plan Task 15):** `DRIVE 3:RUN"PICOCO"` runs; list, jump,
+  mount, already-mounted message, eject, new image, settings (ROM pick,
+  HDB-DOS toggle, clock set, bad date), save, DIR after exit, boot picker
+  and HELLO.BAS all pass; `reply_overflow 0`, `becker overrun 0`;
+  `dw mount 1 picoco.cfg` and `dw disk insert 1 picoco.cfg` refused.
+  Found: the SHIFT+letter chords never arrived as lowercase on the real
+  CoCo 3 (XRoar's `-type` injects ASCII, so it never exercised a real
+  SHIFT). Rebound to plain letters with `G` for goto. Also: mounting an
+  image already open read-write in another drive fails on FatFS
+  (`FF_FS_LOCK`); the firmware now reports `already mounted`.
+
 ### 2026-09-16, HDB-DOS boot + native DriveWire on the CoCo 3
 Root cause of the 09-15 HDB-DOS garbage: core1 sampled the address ~20 ns
 after OE_BUS fell and A8/A10 (sometimes A0/A2) read high on ~3% of cart

@@ -259,18 +259,20 @@ the board to `becker native`) or `BREAK` to give up and return to BASIC.
 
 Main screen keys:
 - `0`-`3`: mount the selected image in that drive.
-- `SHIFT+E` then `0`-`3`: eject that drive.
-- `SHIFT+N`: prompt for a name (`.DSK` appended if there's no extension),
+- `E` then `0`-`3`: eject that drive.
+- `N`: prompt for a name (`.DSK` appended if there's no extension),
   `fs new` a blank image. Refused (with the firmware's error text) if the
   name already exists, is 32 characters or longer, is `picoco.cfg`, or
   holds a `/`, `\`, `:` or control byte.
-- `SHIFT+B`: boot the selected image (see Boot below).
-- `SHIFT+S`: settings screen.
-- `SHIFT+V`: save (`save`) — persists mounts, next-boot ROM choice, and
+- `B`: boot the selected image (see Boot below).
+- `S`: settings screen.
+- `V`: save (`save`) — persists mounts, next-boot ROM choice, and
   HDB-DOS drive mode.
 - Up/Down arrows: move the selection; `SHIFT`+arrows: page up/down.
-- Letters: jump to the first file name starting with that letter (type
-  several quickly to narrow further, SDC Explorer style).
+- `G` then a letter: jump to the first file name starting with that
+  letter (`G`+letter again within a second narrows to the two-letter
+  prefix, up to four). Letters are case-folded, so the bindings work in
+  either keyboard mode.
 - `BREAK`: exit to BASIC (warm start, no hardware reset). If anything
   changed since the last save, offers save-then-exit or stay.
 
@@ -279,14 +281,14 @@ was too big to fit (its `...` truncation marker) or the flash holds more
 than 128 matching files, the program shows `LIST TRUNCATED` once after
 loading — not every file may be listed.
 
-A CoCo reset after `SHIFT+V` (save) keeps the mounts; a reset without
+A CoCo reset after `V` (save) keeps the mounts; a reset without
 saving drops them, since every `/RESET` reboots the Pico, which replays
 `picoco.cfg` from scratch. `save` writes a `dw disk insert <n> <file>`
 line for each read-write mount (so a name with spaces, e.g. "my
 disk.dsk", survives the round trip — `dw mount` only takes one token) and
 a `dw mount <n> <file> ro` line for each read-only mount.
 
-### Settings screen (SHIFT+S)
+### Settings screen (S)
 
 - `R`: pick a `.ROM` file for the *next* boot (`rom boot`) — does not
   swap the ROM currently driving `/CTS`. Shows `SAVE, THEN RESET`
@@ -300,7 +302,7 @@ a `dw mount <n> <file> ro` line for each read-only mount.
   AON bench check is still pending).
 - `V`: save. `BREAK`: back to the main screen.
 
-### Boot (SHIFT+B)
+### Boot (B)
 
 1. Mounts the selected image to drive 0.
 2. Reads track 34 sector 1 (LSN 612).

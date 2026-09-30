@@ -289,9 +289,21 @@ TEST(write_bad_checksum_is_crc_and_untouched) {
     ASSERT_EQ(out[3], 3); /* sector 3's original marker byte, untouched */
 }
 
+TEST(mount_same_image_twice_is_refused) {
+    setup();
+    ASSERT_EQ(dw_mount(&s, 0, "raw.dsk", false), 0);
+    ASSERT_EQ(dw_mount(&s, 1, "RAW.DSK", false), -3);  /* rw already open: FatFS FS_LOCK would refuse */
+    ASSERT_EQ(dw_mount(&s, 1, "raw.dsk", true), -3);
+    ASSERT_EQ(dw_mount(&s, 0, "raw.dsk", true), 0);    /* same drive: remount is fine */
+    ASSERT_EQ(dw_mount(&s, 1, "raw.dsk", true), 0);    /* both read-only: shared open is fine */
+    dw_eject(&s, 0);
+    dw_eject(&s, 1);
+}
+
 TEST(write_readonly_is_wrprot) {
     setup();
-    ASSERT_EQ(dw_mount(&s, 3, "raw.dsk", true), 0);
+    mk("ro.dsk", NULL, 0, 630);   /* raw.dsk is already open rw on drive 0 */
+    ASSERT_EQ(dw_mount(&s, 3, "ro.dsk", true), 0);
     uint8_t d[256];
     memset(d, 0, sizeof(d));
     uint16_t sum = dw_checksum(d, 256);
@@ -627,6 +639,7 @@ int main(void) {
     RUN(write_syncs_after_success);
     RUN(write_sync_failure_reports_write_err);
     RUN(write_bad_checksum_is_crc_and_untouched);
+    RUN(mount_same_image_twice_is_refused);
     RUN(write_readonly_is_wrprot);
     RUN(payload_split_across_feeds);
     RUN(payload_timeout_resets);

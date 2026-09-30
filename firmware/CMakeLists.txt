@@ -62,7 +62,7 @@ if(NOT PICOCO_HOST)
     PICO_PANIC_FUNCTION_DOES_NOT_RETURN=1
     CFG_TUSB_CONFIG_FILE="tusb_config.h")
   target_link_libraries(picoco
-    pico_stdlib pico_unique_id pico_multicore
+    pico_stdlib pico_unique_id pico_multicore pico_aon_timer
     hardware_flash hardware_sync hardware_watchdog
     tinyusb_device tinyusb_board)
   pico_add_extra_outputs(picoco)

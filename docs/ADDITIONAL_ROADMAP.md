@@ -157,7 +157,15 @@ which is where SDC-DOS's ROM-bank features come from.
 4. PiCoCo-DOS sequential file I/O only if people ask.
 5. Bridge mode (§5) when a host-side DW4 feature is actually wanted.
 
-## 5. Bridge mode: Becker port to a host DriveWire server (deferred 2026-09-17)
+## 5. Bridge mode: Becker port to a host DriveWire server (DONE 2026-09-29)
+
+Passed on the breadboard against picoco-host (via `firmware/tools/becker_relay.py`)
+and DriveWire 4.3.6p on the CDC0 serial device; see `firmware/TEST_PLAN.md`
+results. Limit found: the server-side op timeout (250 ms here, DW4's
+`ReadByteWait` 200 ms) means a remote server must answer within ~200 ms round
+trip or the CoCo hangs waiting for the READEX status byte. Relevant to any
+future WiFi (Plus-W) transport. Original notes follow.
+
 
 Breadboard plan step 10. The firmware already has `becker bridge`, which
 forwards Becker bytes to CDC0 so a DriveWire server on the Mac

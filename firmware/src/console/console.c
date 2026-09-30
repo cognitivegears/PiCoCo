@@ -351,7 +351,9 @@ static int cmd_dw_disk(int argc, char **argv) {
         if (argc < 5) return cerr(usage);
         int n = parse_drive(argv[3]);
         if (n < 0) return cerr("bad drive");
-        if (dw_mount(g_dw, n, raw_tail(4), false) != 0) return cerr("mount failed");
+        int mr = dw_mount(g_dw, n, raw_tail(4), false);
+        if (mr == -3) return cerr("already mounted");
+        if (mr != 0) return cerr("mount failed");
         outf("Disk inserted in drive %d.", n);
         return 0;
     }
@@ -376,7 +378,9 @@ static int cmd_dw(int argc, char **argv) {
         if (argc < 4) return cerr("usage: dw mount <n> <file> [ro]");
         int n = atoi(argv[2]);
         bool ro = argc >= 5 && strcasecmp(argv[4], "ro") == 0;
-        if (dw_mount(g_dw, n, argv[3], ro) != 0) return cerr("mount failed");
+        int mr = dw_mount(g_dw, n, argv[3], ro);
+        if (mr == -3) return cerr("already mounted");
+        if (mr != 0) return cerr("mount failed");
         return 0;
     }
     if (strcasecmp(argv[1], "eject") == 0) {

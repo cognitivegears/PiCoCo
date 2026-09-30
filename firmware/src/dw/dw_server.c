@@ -1,5 +1,6 @@
 #include "dw.h"
 #include <string.h>
+#include <strings.h>
 #include <time.h>
 
 /* 2026-01-01 00:00:00 UTC */
@@ -384,6 +385,11 @@ void dw_tick(dw_server *s, uint32_t now_ms) {
 
 int dw_mount(dw_server *s, int drive, const char *name, bool read_only) {
     if (drive < 0 || drive >= DW_MAX_DRIVES) return -1;
+    /* FatFS refuses a second writable open of the same file (FS_LOCK), which
+     * the console used to report as a bare "mount failed". Name it instead. */
+    for (int i = 0; i < DW_MAX_DRIVES; i++)
+        if (i != drive && s->drives[i].mounted && !(read_only && s->drives[i].read_only) &&
+            strcasecmp(s->drives[i].name, name) == 0) return -3;
     dw_disk_close(&s->drives[drive]); /* no-op if not mounted; avoids leaking the old fd on remount */
     return dw_disk_open(s->store, name, read_only, &s->drives[drive]);
 }

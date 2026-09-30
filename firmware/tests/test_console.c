@@ -301,11 +301,12 @@ TEST(time_reports_clock_lost_on_host) {
 
 TEST(disk_show_format) {
     setup();
-    ASSERT_EQ(console_exec("dw mount 0 raw.dsk"), 0);
+    mk("b.dsk", 630);
+    ASSERT_EQ(console_exec("dw mount 0 b.dsk"), 0);
     ASSERT_EQ(console_exec("dw mount 2 raw.dsk ro"), 0);
     outn = 0; out[0] = 0;
     ASSERT_EQ(console_exec("dw disk show"), 0);
-    ASSERT(strstr(out, "\r\nCurrent DriveWire disks:\r\n\r\nX0   raw.dsk\r\nX2  *raw.dsk\r\n"));
+    ASSERT(strstr(out, "\r\nCurrent DriveWire disks:\r\n\r\nX0   b.dsk\r\nX2  *raw.dsk\r\n"));
     outn = 0; out[0] = 0;
     ASSERT_EQ(console_exec("dw disk show 2"), 0);
     ASSERT(strstr(out, "Details for disk in drive #2:\r\n\r\nraw.dsk\r\n"));

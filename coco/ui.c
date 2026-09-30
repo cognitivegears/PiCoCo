@@ -56,6 +56,13 @@ u8 key(void)
     return k;
 }
 
+/* Letters arrive as $61-$7A in the CoCo's lowercase mode (SHIFT+0); fold
+ * them so every key binding works in either mode. */
+static u8 upcase(u8 k)
+{
+    return (k >= 'a' && k <= 'z') ? (u8)(k - 32) : k;
+}
+
 void msg(const char *s)
 {
     clear_row(MSG_ROW);
@@ -189,7 +196,7 @@ static void draw_header(void)
 static void draw_help(void)
 {
     clear_row(14); clear_row(15);
-    put_at(14, 0, "0-3:MOUNT SHIFT+ E:EJECT B:BOOT", 0);
+    put_at(14, 0, "0-3:MOUNT E:EJECT B:BOOT G:GOTO", 0);
     put_at(15, 0, "N:NEW S:SET V:SAVE BREAK:EXIT", 0);
 }
 
@@ -307,19 +314,24 @@ void ui_run(void)
     load_files();
     for (;;) {
         draw_all();
-        k = key();
+        k = upcase(key());
         if (k == 3) { if (confirm_exit()) { clear_screen(); return; } continue; }
         if (k == 94 && sel > 0) sel--;
         else if (k == 10 && sel < nfiles - 1) sel++;
         else if (k == 95) sel = sel > LIST_ROWS ? sel - LIST_ROWS : 0;           /* SHIFT+UP */
         else if (k == 91) sel = sel + LIST_ROWS < nfiles ? sel + LIST_ROWS : (nfiles ? nfiles - 1 : 0); /* SHIFT+DOWN */
         else if (k >= '0' && k <= '3') do_mount((u8)(k - '0'));
-        else if (k == 'e') do_eject();
-        else if (k == 'n') do_new();
-        else if (k == 'v') do_save();
-        else if (k == 's') { settings_run(); load_drives(); load_files(); }
-        else if (k == 'b' && nfiles) { if (boot_image(files[sel].name)) return; load_drives(); }
-        else if (k >= 'A' && k <= 'Z') do_jump((char)k);
+        else if (k == 'E') do_eject();
+        else if (k == 'N') do_new();
+        else if (k == 'V') do_save();
+        else if (k == 'S') { settings_run(); load_drives(); load_files(); }
+        else if (k == 'B' && nfiles) { if (boot_image(files[sel].name)) return; load_drives(); }
+        else if (k == 'G') {              /* G then a letter: jump to that name */
+            clear_row(MSG_ROW);
+            put_at(MSG_ROW, 0, "GOTO: TYPE A LETTER", 1);
+            k = upcase(key());
+            if (k >= 'A' && k <= 'Z') do_jump((char)k);
+        }
     }
 }
 

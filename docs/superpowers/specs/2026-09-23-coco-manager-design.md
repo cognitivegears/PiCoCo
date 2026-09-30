@@ -280,7 +280,7 @@ PICOCO MANAGER        FW 1.2
  GAMES1.VDK              161K
  ...
 --------------------------------
-0-3:MOUNT SHIFT+ E:EJECT B:BOOT
+0-3:MOUNT E:EJECT B:BOOT G:GOTO
 N:NEW S:SET V:SAVE BREAK:EXIT
 ```
 
@@ -291,11 +291,12 @@ N:NEW S:SET V:SAVE BREAK:EXIT
   shows `LIST TRUNCATED` once after loading.
 - Up/Down move, Shift+Up/Down page, letters jump to the first matching
   name (SDC Explorer style).
-- 0-3 mount the selection (`dw disk insert`). Commands take SHIFT, as in
-  SDC Explorer, so plain letters stay free for jumping: SHIFT+E then 0-3
-  ejects; SHIFT+N asks for a name (`.DSK` appended when there is no
-  extension) and runs `fs new`; SHIFT+B boots; SHIFT+S opens settings;
-  SHIFT+V saves; BREAK returns to BASIC.
+- 0-3 mount the selection (`dw disk insert`). Commands are plain letters
+  (case-folded, so they work in either keyboard mode; bench 2026-09-29
+  showed the SHIFT chords never arrive as lowercase on a real CoCo 3):
+  E then 0-3 ejects; N asks for a name (`.DSK` appended when there is no
+  extension) and runs `fs new`; B boots; S opens settings; V saves; G then
+  a letter jumps to the first matching name; BREAK returns to BASIC.
 - Drive names come from `dw disk show`. The header refreshes after every
   change.
 - FAIL messages show on the bottom line until the next key.
