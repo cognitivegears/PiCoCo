@@ -34,6 +34,7 @@ const char *net_ssid(void) { return s_ssid; }
 const char *net_host(void) { return s_host; }
 uint16_t net_port(void) { return s_port; }
 bool net_psk_set(void) { return s_psk[0] != 0; }
+const char *net_psk_plain(void) { return s_psk; }
 const char *net_ip(void) { return "0.0.0.0"; }
 size_t net_read(uint8_t *buf, size_t n) { (void)buf; (void)n; return 0; }
 size_t net_write(const uint8_t *buf, size_t n) { (void)buf; return n; }

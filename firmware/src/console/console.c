@@ -6,6 +6,7 @@
 #include "log.h"
 #include "plat.h"
 #include "dw_disk.h"
+#include "net.h"
 #include <ctype.h>
 #include <stdarg.h>
 #include <stdio.h>
@@ -265,6 +266,7 @@ static int cmd_status(void) {
     outf("rom next %s\n", rom_cmd[0] ? rom_cmd : "none");
     outf("becker reads %u writes %u underrun %u overrun %u\n",
          becker_stats.reads, becker_stats.writes, becker_stats.underrun, becker_stats.overrun);
+    if (net_available()) outf("net %s %s\n", net_state_name(net_state()), net_ip());
     outf("log_dropped %u\n", log_dropped);
     if (plat_usb_ejected()) outf("usb ejected\n");
     for (int i = 0; i < DW_MAX_DRIVES; i++) {
@@ -335,15 +337,76 @@ static int cmd_rom(int argc, char **argv) {
 }
 
 static int cmd_becker(int argc, char **argv) {
-    if (argc < 2) return cerr("usage: becker off|loop|bridge|native");
+    if (argc < 2) return cerr("usage: becker off|loop|bridge|native|net");
     picoco_mode m;
     if (strcasecmp(argv[1], "off") == 0) m = MODE_DIAG;
     else if (strcasecmp(argv[1], "loop") == 0) m = MODE_LOOP;
     else if (strcasecmp(argv[1], "bridge") == 0) m = MODE_BRIDGE;
     else if (strcasecmp(argv[1], "native") == 0) m = MODE_NATIVE;
-    else return cerr("usage: becker off|loop|bridge|native");
+    else if (strcasecmp(argv[1], "net") == 0) {
+        if (!net_available()) return cerr("net: needs Plus-W");
+        if (!net_configured()) return cerr("net: set ssid and server first");
+        if (net_start() != 0) return cerr("net: start failed");
+        m = MODE_NET;
+    }
+    else return cerr("usage: becker off|loop|bridge|native|net");
+    if (mode_get() == MODE_NET && m != MODE_NET) net_stop();
     mode_set(m);
     return 0;
+}
+
+static void scan_line(const char *ssid, int rssi, int chan, void *ctx) {
+    (void)ctx;
+    outf("ssid %s rssi %d chan %d\n", ssid, rssi, chan);
+}
+/* Drop out of net mode before touching its config so a live socket is
+ * never reconfigured underneath the mode pump. */
+static void net_leave_if_active(void) {
+    if (mode_get() == MODE_NET) { net_stop(); mode_set(MODE_NATIVE); }
+}
+static int cmd_net(int argc, char **argv) {
+    const char *usage = "usage: net [status]|join <ssid>|psk [<psk>]|server <host> [port]|forget|scan|mode net|native";
+    if (argc < 2 || strcasecmp(argv[1], "status") == 0) {
+        outf("net state %s\n", net_state_name(net_state()));
+        if (net_last_error()[0]) outf("net error %s\n", net_last_error());
+        outf("net ssid %s\n", net_ssid());
+        outf("net psk %s\n", net_psk_set() ? "set" : "unset");
+        outf("net server %s %u\n", net_host(), net_port());
+        outf("net ip %s\n", net_ip());
+        outf("net bytes up %u down %u overrun %u retries %u\n",
+             net_stats.bytes_up, net_stats.bytes_down, net_stats.overrun, net_stats.retries);
+        outf("net radio %s\n", net_available() ? "yes" : "no");
+        return 0;
+    }
+    if (strcasecmp(argv[1], "join") == 0) {
+        if (argc < 3) return cerr(usage);
+        net_leave_if_active();
+        return net_set_ssid(raw_tail(2)) == 0 ? 0 : cerr("net: ssid too long");
+    }
+    if (strcasecmp(argv[1], "psk") == 0) {
+        net_leave_if_active();
+        return net_set_psk(argc < 3 ? "" : raw_tail(2)) == 0 ? 0 : cerr("net: psk too long");
+    }
+    if (strcasecmp(argv[1], "server") == 0) {
+        if (argc < 3) return cerr(usage);
+        long port = argc >= 4 ? atol(argv[3]) : NET_DEFAULT_PORT;
+        if (port < 1 || port > 65535) return cerr("net: bad port");
+        net_leave_if_active();
+        return net_set_server(argv[2], (uint16_t)port) == 0 ? 0 : cerr("net: host too long");
+    }
+    if (strcasecmp(argv[1], "forget") == 0) { net_leave_if_active(); net_forget(); return 0; }
+    if (strcasecmp(argv[1], "scan") == 0) {
+        if (!net_available()) return cerr("net: needs Plus-W");
+        if (net_scan(scan_line, NULL) != 0) return cerr("net: scan failed");
+        return 0;
+    }
+    if (strcasecmp(argv[1], "mode") == 0) {
+        if (argc < 3) return cerr(usage);
+        if (strcasecmp(argv[2], "net") == 0) { char *bv[] = { "becker", "net" }; return cmd_becker(2, bv); }
+        if (strcasecmp(argv[2], "native") == 0) { char *bv[] = { "becker", "native" }; return cmd_becker(2, bv); }
+        return cerr(usage);
+    }
+    return cerr(usage);
 }
 
 /* -1 unless s is a single digit naming a drive. */
@@ -622,6 +685,9 @@ static bool cfg_append(char *cfg, size_t cap, size_t *len, const char *fmt, ...)
 static int cmd_save(void) {
     static char cfg[1024]; /* static: Pico core0 stack is 4 KB */
     size_t len = 0;
+    if (net_ssid()[0] && !cfg_append(cfg, sizeof(cfg), &len, "net join %s\n", net_ssid())) return cerr("config too large");
+    if (net_psk_set() && !cfg_append(cfg, sizeof(cfg), &len, "net psk %s\n", net_psk_plain())) return cerr("config too large");
+    if (net_host()[0] && !cfg_append(cfg, sizeof(cfg), &len, "net server %s %u\n", net_host(), net_port())) return cerr("config too large");
     if (!cfg_append(cfg, sizeof(cfg), &len, "becker %s\n", mode_name(mode_get())))
         return cerr("config too large");
     if (rom_cmd[0] && !cfg_append(cfg, sizeof(cfg), &len, "rom %s\n", rom_cmd))
@@ -660,7 +726,7 @@ static int cmd_save(void) {
 static int dispatch(int argc, char **argv) {
     const char *v = argv[0];
     if (strcasecmp(v, "help") == 0) {
-        outf("commands: help status version smoke halt trace rom becker cart bus crash dw fs time log stats save reboot bootsel\n");
+        outf("commands: help status version smoke halt trace rom becker net cart bus crash dw fs time log stats save reboot bootsel\n");
         return 0;
     }
     if (strcasecmp(v, "status") == 0) return cmd_status();
@@ -681,6 +747,7 @@ static int dispatch(int argc, char **argv) {
     if (strcasecmp(v, "trace") == 0) return cmd_trace(argc, argv);
     if (strcasecmp(v, "rom") == 0) return cmd_rom(argc, argv);
     if (strcasecmp(v, "becker") == 0) return cmd_becker(argc, argv);
+    if (strcasecmp(v, "net") == 0) return cmd_net(argc, argv);
     if (strcasecmp(v, "cart") == 0) return cmd_cart(argc, argv);
     if (strcasecmp(v, "dw") == 0) return cmd_dw(argc, argv);
     if (strcasecmp(v, "fs") == 0) return cmd_fs(argc, argv);
@@ -733,7 +800,7 @@ int console_exec(const char *line) {
 /* DriveWire virtual-serial front end (spec 2026-09-23 §4.3). Deny by
  * default: a new console command is USB-only until it is listed here. */
 static const char *const remote_allow[] = {
-    "status", "version", "help", "time", "save",
+    "status", "version", "help", "time", "save", "net",
     "fs ls", "fs new", "dw mount", "dw eject", "dw hdbdos", "dw disk", "rom boot",
 };
 

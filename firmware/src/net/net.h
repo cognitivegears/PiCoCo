@@ -37,6 +37,7 @@ const char *net_ssid(void);
 const char *net_host(void);
 uint16_t net_port(void);
 bool   net_psk_set(void);
+const char *net_psk_plain(void);               /* ONLY cmd_save (picoco.cfg) may call this */
 const char *net_ip(void);                      /* dotted quad while up, else "0.0.0.0" */
 size_t net_read(uint8_t *buf, size_t n);       /* from-server ring */
 size_t net_write(const uint8_t *buf, size_t n);/* to-server ring; returns n when not up */

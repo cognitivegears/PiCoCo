@@ -9,6 +9,7 @@
 #include "becker.h"
 #include "log.h"
 #include "plat.h"
+#include "net.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -58,6 +59,7 @@ static uint32_t file_size(const char *name) {
 }
 
 static void setup(void) {
+    net_forget();
     memset(out, 0, sizeof(out));
     outn = 0;
     bus_init();
@@ -366,7 +368,7 @@ TEST(remote_allowed_commands_run) {
 
 TEST(remote_refuses_console_only) {
     setup();
-    const char *deny[] = { "smoke", "halt on", "bus drive off", "becker off", "fs rm raw.dsk",
+    const char *deny[] = { "smoke", "halt on", "bus drive off", "becker off", "becker net", "fs rm raw.dsk",
                            "fs format", "fs export", "rom load x.rom", "rom pattern", "trace dump",
                            "crash", "log dw debug", "stats reset", "dw capture off", "dw selftest",
                            "reboot", "bootsel", "frob",
@@ -588,6 +590,76 @@ TEST(cart_command_and_save) {
     ASSERT(!strstr(cfg, "cart "));              /* default is omitted */
 }
 
+TEST(net_join_keeps_spaces) {
+    setup();
+    ASSERT_EQ(console_exec("net join My Home Net  "), 0);
+    ASSERT(strcmp(net_ssid(), "My Home Net") == 0);
+    ASSERT_EQ(console_exec("net psk pass word 1"), 0);
+    ASSERT(net_psk_set());
+    ASSERT_EQ(console_exec("net server dw.local 65505"), 0);
+    ASSERT(strcmp(net_host(), "dw.local") == 0);
+    ASSERT_EQ(net_port(), 65505);
+    ASSERT_EQ(console_exec("net server 10.0.0.5"), 0);
+    ASSERT_EQ(net_port(), 65504);
+    ASSERT_EQ(console_exec("net join"), -1);          /* usage */
+    ASSERT_EQ(console_exec("net server"), -1);
+    ASSERT_EQ(console_exec("net server x 70000"), -1);  /* bad port */
+}
+
+TEST(becker_net_refused_without_config) {
+    setup();
+    outn = 0;
+    ASSERT_EQ(console_exec("becker net"), -1);
+    ASSERT(strstr(out, "set ssid and server first") || strstr(out, "needs Plus-W"));
+    ASSERT_EQ(mode_get(), MODE_DIAG);
+    console_exec("net join a"); console_exec("net server b");
+    outn = 0;
+    ASSERT_EQ(console_exec("becker net"), -1);          /* host stub: no radio */
+    ASSERT(strstr(out, "needs Plus-W"));
+    ASSERT_EQ(mode_get(), MODE_DIAG);
+    ASSERT_EQ(console_exec("net mode native"), 0);
+    ASSERT_EQ(mode_get(), MODE_NATIVE);
+}
+
+TEST(net_status_hides_psk_and_save_order) {
+    setup();
+    console_exec("net join Lab"); console_exec("net psk s3cret"); console_exec("net server 10.0.0.9 65504");
+    outn = 0;
+    ASSERT_EQ(console_exec("net status"), 0);
+    ASSERT(strstr(out, "net state off\n"));
+    ASSERT(strstr(out, "net ssid Lab\n"));
+    ASSERT(strstr(out, "net psk set\n"));
+    ASSERT(!strstr(out, "s3cret"));
+    ASSERT(strstr(out, "net server 10.0.0.9 65504\n"));
+    outn = 0;
+    ASSERT_EQ(console_exec("net"), 0);                  /* alias of status */
+    ASSERT(strstr(out, "net state off\n"));
+    ASSERT_EQ(console_exec("save"), 0);
+    char cfg[1024]; int n = plat_cfg_read(cfg, sizeof cfg - 1); ASSERT(n > 0); cfg[n] = 0;
+    const char *j = strstr(cfg, "net join Lab\n"), *p = strstr(cfg, "net psk s3cret\n"),
+               *s = strstr(cfg, "net server 10.0.0.9 65504\n"), *b = strstr(cfg, "becker ");
+    ASSERT(j && p && s && b);
+    ASSERT(j < p && p < s && s < b);
+    console_exec("net forget");
+    ASSERT(!net_configured());
+    console_exec("save");
+    n = plat_cfg_read(cfg, sizeof cfg - 1); cfg[n] = 0;
+    ASSERT(!strstr(cfg, "net join"));
+}
+
+TEST(net_remote_allowed) {
+    setup();
+    ASSERT_EQ(remote("net status"), 0);
+    ASSERT(strstr(rbuf, "net state off\n"));
+    ASSERT_EQ(remote("net join Lab"), 0);
+    ASSERT_EQ(remote("net psk x"), 0);
+    ASSERT_EQ(remote("net server 1.2.3.4"), 0);
+    ASSERT_EQ(remote("net mode native"), 0);
+    ASSERT_EQ(remote("becker net"), 255);               /* becker stays console-only */
+    ASSERT_EQ(remote("net scan"), 255);                 /* stub: refused as "no radio" -> err */
+    ASSERT(strcmp(rbuf, "net: needs Plus-W") == 0);
+}
+
 int main(void) {
     char tmpl[300];
     const char *tmpdir = getenv("TMPDIR");
@@ -638,5 +710,9 @@ int main(void) {
     RUN(version_is_1_3);
     RUN(bus_selftest_is_pico_only_on_host);
     RUN(cart_command_and_save);
+    RUN(net_join_keeps_spaces);
+    RUN(becker_net_refused_without_config);
+    RUN(net_status_hides_psk_and_save_order);
+    RUN(net_remote_allowed);
     TEST_MAIN_END
 }

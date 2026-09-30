@@ -2,6 +2,7 @@
 #include "device.h"
 #include "becker.h"
 #include "plat.h"
+#include "net.h"
 #include <string.h>
 
 mode_stats_t mode_stats;
@@ -41,6 +42,7 @@ const char *mode_name(picoco_mode m) {
         case MODE_LOOP:   return "loop";
         case MODE_BRIDGE: return "bridge";
         case MODE_NATIVE: return "native";
+        case MODE_NET:    return "net";
         default:          return "off";
     }
 }
@@ -70,6 +72,18 @@ void mode_pump(dw_server *dw, uint32_t now_ms) {
             if (want > sizeof(buf)) want = sizeof(buf);
             if (want) {
                 size_t got = plat_bridge_read(buf, want);
+                if (got) becker_write(buf, got);
+            }
+            break;
+        }
+        case MODE_NET: {
+            uint8_t buf[64];
+            size_t n = becker_read(buf, sizeof(buf));
+            if (n) net_write(buf, n);
+            size_t want = becker_tx_free();
+            if (want > sizeof(buf)) want = sizeof(buf);
+            if (want) {
+                size_t got = net_read(buf, want);
                 if (got) becker_write(buf, got);
             }
             break;
