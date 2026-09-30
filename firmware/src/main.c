@@ -16,6 +16,7 @@
 #include "plat.h"
 #include "fs_flash.h"
 #include "crash.h"
+#include "net.h"
 
 static dw_server g_dw;
 static dw_store  g_store;
@@ -67,6 +68,7 @@ int main(void) {
     dw_store_fatfs_init(&g_store);
     dw_init(&g_dw, &g_store, mode_dw_send, NULL);
     console_init(console_out, NULL, &g_dw, &g_store);
+    net_init();
     crash_init();
     crash_mode_hook = mode_get_u32;
     plat_reset_latch();   /* before watchdog_enable() below clobbers the marker it reads */
@@ -78,6 +80,24 @@ int main(void) {
         else LOG_I(LOG_M_MAIN, "fs ok, config lines %d", n);
     } else {
         LOG_E(LOG_M_FS, "fs mount failed");
+    }
+    /* becker net in the config: hold /HALT (already asserted by the boot
+     * pull-up) until the server socket is up, at most NET_BOOT_HOLD_MS, so a
+     * CoCo never sees a half-connected board. Fall back to native otherwise:
+     * the saved config still says net and the next boot tries again. */
+    if (mode_get() == MODE_NET) {
+        uint32_t t0 = plat_now_ms();
+        while (net_state() != NET_UP && plat_now_ms() - t0 < NET_BOOT_HOLD_MS) {
+            tud_task();
+            net_poll(plat_now_ms());
+            watchdog_update();
+        }
+        if (net_state() == NET_UP) {
+            LOG_I(LOG_M_MAIN, "net up in %u ms", plat_now_ms() - t0);
+        } else {
+            LOG_I(LOG_M_MAIN, "net failed (%s), native fallback", net_last_error()[0] ? net_last_error() : "timeout");
+            mode_set(MODE_NATIVE);
+        }
     }
     int64_t rtc;
     if (plat_rtc_get(&rtc)) dw_time_set(&g_dw, rtc, plat_now_ms());
@@ -101,6 +121,7 @@ int main(void) {
         tud_task();
         uint32_t now = plat_now_ms();
         mode_pump(&g_dw, now);
+        net_poll(now);
 #ifdef PIN_CART_DRV
         if (cart_until) {
             if (now < cart_until) gpio_put(PIN_CART_DRV, now & 1);
@@ -118,7 +139,7 @@ int main(void) {
         if (fs_flash_exporting()) {
             gpio_put(PIN_LED, 1);   /* solid while the USB drive is exported */
         } else {
-            uint32_t period = mode_get() == MODE_NATIVE ? 250 : 500;  /* 2 Hz native, 1 Hz otherwise */
+            uint32_t period = mode_get() == MODE_NATIVE || mode_get() == MODE_NET ? 250 : 500;  /* 2 Hz native, 1 Hz otherwise */
             if (now - last_blink >= period) { last_blink = now; led = !led; gpio_put(PIN_LED, led); }
         }
 #endif
