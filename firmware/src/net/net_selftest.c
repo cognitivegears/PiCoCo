@@ -38,6 +38,7 @@ int net_selftest(void (*line)(const char *s)) {
     if (b != 0) return b;
     int fails = 0;
     uint8_t rep[8]; uint32_t rtt;
+    for (int i = 0; i < 300 && fake6809_cycle(0xFF41, true, 0) == 0x02; i++) (void)fake6809_cycle(0xFF42, true, 0);   /* stale reply from an earlier timed-out run */
     const uint8_t dwinit[2] = { 0x5A, 0xFF };   /* DWINIT takes a driver-id byte; >= 0x80 leaves HDB-DOS mode alone */
     if (transact(dwinit, 2, rep, 1, &rtt) == 0) { snprintf(buf, sizeof buf, "selftest net dwinit -> %02x in %u ms", rep[0], (unsigned)rtt); line(buf); }
     else { line("selftest net dwinit FAIL (no reply)"); fails++; }

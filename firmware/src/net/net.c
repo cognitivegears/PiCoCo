@@ -64,8 +64,6 @@ static err_t on_connected(void *arg, struct tcp_pcb *pcb, err_t err) {
     (void)arg; (void)pcb;
     if (err != ERR_OK) { fail(4, plat_now_ms()); return ERR_OK; }
     s_state = NET_UP;
-    static bool sntp_started;   /* once per boot; lwIP keeps polling on its own */
-    if (!sntp_started) { sntp_started = true; sntp_setoperatingmode(SNTP_OPMODE_POLL); sntp_setservername(0, SNTP_SERVER_ADDRESS); sntp_init(); }
     s_err = "";
     LOG_I(LOG_M_NET, "net up %s -> %s:%u", s_ip, s_host, s_port);
     return ERR_OK;
@@ -77,8 +75,13 @@ static void on_dns(const char *name, const ip_addr_t *addr, void *arg) {
     if (addr) { s_addr = *addr; s_addr_ok = true; } else fail(3, plat_now_ms());
 }
 
+/* Every entry into CONNECTING: link is up. Fresh rings so bytes queued before a drop
+ * never open the next connection; SNTP starts once per boot, on the link, not the socket. */
 static void ip_refresh(void) {
     snprintf(s_ip, sizeof s_ip, "%s", ip4addr_ntoa(netif_ip4_addr(&cyw43_state.netif[CYW43_ITF_STA])));
+    ring_init(&up, up_buf, 1024); ring_init(&down, down_buf, 1024);
+    static bool sntp_started;
+    if (!sntp_started) { sntp_started = true; sntp_setoperatingmode(SNTP_OPMODE_POLL); sntp_setservername(0, SNTP_SERVER_ADDRESS); sntp_init(); }
 }
 
 static void connect_start(uint32_t now_ms) {
@@ -232,8 +235,13 @@ int net_scan(void (*cb)(const char *, int, int, void *), void *ctx) {
 
 extern dw_server *net_dw;   /* set by main.c: the server whose clock SNTP updates */
 dw_server *net_dw;
+static bool s_sntp_applied;
+/* SNTP only seeds a stopped clock, once per boot: it is UTC, and must never undo a local-time `time set`. */
 void net_sntp_set(uint32_t sec) {
+    int64_t cur;
+    if (s_sntp_applied || plat_rtc_get(&cur)) return;
     plat_rtc_set((int64_t)sec);
     if (net_dw) dw_time_set(net_dw, (int64_t)sec, plat_now_ms());
-    LOG_I(LOG_M_NET, "net: sntp set %u", sec);
+    s_sntp_applied = true;
+    LOG_I(LOG_M_NET, "net: sntp seeded %u", (unsigned)sec);
 }
