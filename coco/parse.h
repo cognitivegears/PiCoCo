@@ -36,6 +36,7 @@ void parse_disks(const char *text, char names[4][32]);
 /* 1 if a line starts with key; copies the rest of that line into out. */
 int  line_value(const char *text, const char *key, char *out, int cap);
 u32  dec_to_u32(const char *s);
+int  parse_scan(char *text, file_ent *out, int max);
 void u32_to_dec(u32 v, char *out);
 u32  civil_to_unix(int y, int mo, int d, int h, int mi);
 void unix_to_civil(u32 t, int *y, int *mo, int *d, int *h, int *mi);

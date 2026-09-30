@@ -368,6 +368,62 @@ static void pick_rom(void)
     if (ui_cmd(line, &body) == 0) { ui_dirty = 1; msg("SAVE, THEN RESET"); }
 }
 
+static void nrow(u8 r, const char *lab, const char *val)
+{
+    put_at(r, 0, lab, 0);
+    put_at(r, 9, val[0] ? val : "(NONE)", 0);
+}
+
+static const char *const nkey[] = { "net ssid ", "net psk ", "net server ", "net state ", "net ip ", "net error " };
+
+static void net_screen(void)
+{
+    char v[7][24], *body;   /* ssid psk server state ip error mode; 23 chars is all the screen shows */
+    u8 k;
+    int n, i;
+    for (;;) {
+        v[6][0] = '\0';
+        if (ui_cmd("status", &body) != 0) return;
+        line_value(body, "mode ", v[6], 24);
+        if (ui_cmd("net status", &body) != 0) { msg("NO RADIO ON THIS BOARD"); return; }
+        for (i = 0; i < 6; i++) { v[i][0] = '\0'; line_value(body, nkey[i], v[i], 24); }
+        clear_screen();
+        put_at(0, 0, "WIFI", 0);
+        nrow(2, "S:SSID", v[0]);
+        nrow(3, "P:PSK", strcmp(v[1], "set") == 0 ? "********" : "");
+        nrow(4, "H:SERVER", v[2]);
+        nrow(5, "M:MODE", strcmp(v[6], "net") == 0 ? "NET" : "NATIVE");
+        nrow(7, "STATE", v[3]);
+        nrow(8, "IP", v[4]);
+        if (v[5][0]) put_at(9, 0, v[5], 0);
+        put_at(11, 0, "SHIFT+0 TOGGLES LOWERCASE", 0);
+        put_at(12, 0, "V:SAVE   BREAK:BACK", 0);
+        k = upcase(key());
+        if (k == 3) return;
+        if (k == 'S') {
+            if (picoco_cmd("net scan", LSBUF, LSBUF_SIZE, &body) != 0) { msg("SCAN FAILED"); continue; }
+            n = parse_scan(body, files, MAX_FILES);
+            if (n == 0) { msg("NO NETWORKS FOUND"); continue; }
+            i = pick_list("NETWORK", files, n);
+            if (i < 0) continue;
+            strcpy(line, "net join "); strcat(line, files[i].name);
+            if (ui_cmd(line, &body) != 0) continue;
+            if (input_line("PSK: ", line + 8, 63) >= 0) { memmove(line, "net psk ", 8); ui_cmd(line, &body); }
+            ui_dirty = 1;
+        } else if (k == 'P') {
+            if (input_line("PSK: ", line + 8, 63) >= 0) { memmove(line, "net psk ", 8); if (ui_cmd(line, &body) == 0) ui_dirty = 1; }
+        } else if (k == 'H') {
+            char port[6];
+            strcpy(line, "net server ");
+            if (input_line("HOST: ", line + 11, 63) <= 0) continue;
+            if (input_line("PORT (65504): ", port, 5) > 0) { strcat(line, " "); strcat(line, port); }
+            if (ui_cmd(line, &body) == 0) ui_dirty = 1;
+        } else if (k == 'M') {
+            if (ui_cmd(strcmp(v[6], "net") == 0 ? "net mode native" : "net mode net", &body) == 0) ui_dirty = 1;
+        } else if (k == 'V') do_save();
+    }
+}
+
 void settings_run(void)
 {
     char now[40], next[40], hdb[8], tv[16], clk[8], ts[20], *body;
@@ -394,6 +450,7 @@ void settings_run(void)
         put_at(6, 0, "H:HDB-DOS DRIVE MODE ", 0); put_at(6, 21, hdb, 0);
         put_at(7, 0, "T:CLOCK ", 0);   put_at(7, 8, ts, 0);
         if (strcmp(clk, "kept") != 0) put_at(8, 2, "(LOST AT RESET)", 0);
+        put_at(9, 0, "W:WIFI", 0);
         put_at(10, 0, "V:SAVE   BREAK:BACK", 0);
         k = key();
         if (k >= 'a' && k <= 'z') k = (u8)(k - 32);
@@ -411,6 +468,7 @@ void settings_run(void)
                     ui_cmd(line, &body);
                 }
             }
-        } else if (k == 'V') do_save();
+        } else if (k == 'W') net_screen();
+        else if (k == 'V') do_save();
     }
 }

@@ -225,3 +225,31 @@ int rsdos_dir(const u8 *sec, rs_ent *out, int max, int *end)
     }
     return n;
 }
+
+/* "ssid <name> rssi <-n> chan <c>" lines from `net scan`; name may hold
+ * spaces, so cut at the last " rssi ". kb carries -rssi (a small positive
+ * number the list shows next to the name); a positive rssi gives 0. */
+int parse_scan(char *text, file_ent *out, int max)
+{
+    int n = 0;
+    char *p = text;
+    while (*p && n < max) {
+        char *eol = p;
+        char save;
+        while (*eol && *eol != '\n') eol++;
+        save = *eol; *eol = '\0';
+        if (strncmp(p, "ssid ", 5) == 0) {
+            char *r = NULL, *q = p;
+            for (; q < eol; q++) if (strncmp(q, " rssi ", 6) == 0) r = q;
+            if (r) {
+                *r = '\0';
+                out[n].name = p + 5;
+                out[n].kb = (r[6] == '-') ? (u16)dec_to_u32(r + 7) : (u16)0;
+                n++;
+            }
+        }
+        *eol = save;
+        p = *eol ? eol + 1 : eol;
+    }
+    return n;
+}

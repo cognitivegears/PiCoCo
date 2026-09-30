@@ -300,7 +300,24 @@ a `dw mount <n> <file> ro` line for each read-only mount.
   the firmware reports `clock lost` (see
   `docs/superpowers/specs/2026-09-23-coco-manager-design.md` §4.5; the
   AON bench check is still pending).
+- `W`: WiFi screen (below).
 - `V`: save. `BREAK`: back to the main screen.
+
+#### WiFi screen (W)
+
+Rows: SSID, PSK (shown as `********` when set), SERVER, MODE (`NET` or
+`NATIVE`), then the link STATE, IP and any error.
+
+- `S`: scan and pick a network, then type its passphrase (empty for an
+  open network).
+- `P`: set the passphrase.
+- `H`: server host, then port (empty keeps the default 65504).
+- `M`: toggle the DriveWire transport between net and native.
+- `V`: save. Settings do not survive a reset until saved.
+- `BREAK`: back.
+
+`SHIFT+0` toggles lowercase, which SSIDs and passphrases need. On a
+Pico 2 board the screen shows `NO RADIO ON THIS BOARD` and returns.
 
 ### Boot (B)
 

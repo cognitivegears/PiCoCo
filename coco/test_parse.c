@@ -100,8 +100,24 @@ static void t_disk_detect(void) {
     CHECK(strcmp(e[1].name, "GAME.BIN") == 0 && e[1].type == 2);
 }
 
+static void t_scan(void) {
+    char text[] = "ssid Oar5 rssi -36 chan 1\nssid My Net rssi -70 chan 9\nssid Pos rssi 12 chan 3\nbad line\n";
+    file_ent f[4];
+    int n = parse_scan(text, f, 4);
+    CHECK(n == 3);
+    CHECK(strcmp(f[0].name, "Oar5") == 0 && f[0].kb == 36);
+    CHECK(strcmp(f[1].name, "My Net") == 0 && f[1].kb == 70);
+    CHECK(strcmp(f[2].name, "Pos") == 0 && f[2].kb == 0);
+}
+static void t_net_status_refused(void) {
+    char fail[] = "FAIL 255 net: needs Plus-W\n\r";
+    char *b;
+    CHECK(parse_reply(fail, &b) == 255 && strcmp(b, "net: needs Plus-W") == 0);
+}
+
 int main(void) {
     t_reply(); t_ls(); t_ls_truncated_tail(); t_disks(); t_line_value(); t_time(); t_disk_detect();
+    t_scan(); t_net_status_refused();
     printf("%s\n", fails ? "FAILED" : "all passed");
     return fails != 0;
 }
