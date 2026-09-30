@@ -205,8 +205,12 @@ wider antenna keepout) or deferred to v2.4 (see hardware-design §9).
    last `gpio_in` sample taken while OE_BUS was still low (`prev`) and uses its data bits,
    instead of the first sample with OE_BUS high.
 6. **Read-path margin.** Ten nops (67 ns at 150 MHz) before the address read; real
-   OE-to-data ~180-200 ns, not the documented 70 ns. On the first PCB read `bus
-   addr_resample`; if zero, drop the nops. Then `set_sys_clock_khz(200000)`.
+   OE-to-data ~180-200 ns, not the documented 70 ns. Levers in order (decided
+   2026-09-28, see §7): (a) on the first PCB read `bus addr_resample`; if zero, drop
+   the nops (~130 ns serve path); (b) if CoCo 3 at 1.79 MHz behind an MPI still fails,
+   the PIO/DMA engine in firmware-architecture §3.3 (~100 ns, no CPU in the path);
+   (c) only then raise `clk_sys`. The clock is last, not next: the sound PWM carrier
+   maths, USB and flash dividers all assume 150 MHz and the RP2350 is rated for 150.
 7. **/HALT flow-control holds** longer than a GIME tick (16.7 ms) cost NitrOS-9 clock ticks;
    bound runtime holds to a few hundred us (the 1.2 s boot hold is fine).
 8. **DONE (2026-09-22).** Flash-free core1 build check: `firmware/tools/check_core1_flash_free.py`
@@ -239,6 +243,21 @@ wider antenna keepout) or deferred to v2.4 (see hardware-design §9).
   variant that moves the address bus.
 
 ### Hardware deferred to v2.4
+- **CoCo /RESET drive** (from §7): one more 2N7002 + gate resistor on cart pin 5, like
+  Q2 on /HALT, so firmware can cold-boot the CoCo into a newly selected ROM. Today the
+  Pico can only *be* reset by /RESET (RESET_BUF -> RUN); it cannot assert it. Pairs with
+  the JP5 /CART pulse (backlog item 12) to give "pick a ROM, machine reboots into it".
+
+### Long term (v3)
+- **Evaluate dropping U11, U12 and U13** (the three input-only LVC245s on address and
+  control). §7: RP2350 GP0-25 are 5 V tolerant with IOVDD powered, and LVC00 inputs
+  are 5 V tolerant, so A0-A13, R/W, CTS, SCS, E and RESET could go straight to the
+  Pico and U15. Before deciding, check: (a) what a powered CoCo does to an unpowered
+  Pico (VSYS is diode-fed from cart 5 V, so IOVDD rises with the bus; the window is
+  the regulator ramp only); (b) edge quality and the `addr_resample` count on the
+  buffered PCB vs a bufferless breadboard; (c) the Plus-W, where RESET_BUF drives
+  RUN and Q/SLENB reach the pad grid; (d) whether the freed board area pays for the
+  8 x 33 R data-bus termination above. U10 and U15 are not candidates.
 - 8 x 33 R series termination on D0-D7_CART (R11/R12 terminate the two quietest nets while
   the data bus has none); no room without a re-place.
 - /SLENB drive for Multi-Pak writes (CocoFLASH asserts SLENB on cart-space writes because
@@ -246,3 +265,65 @@ wider antenna keepout) or deferred to v2.4 (see hardware-design §9).
   behind a jumper. Unverified; needs a bench MPI first.
 - C3 as a 10 V 1206 (a 22 uF 6.3 V X5R 0805 at 3.3 V bias delivers about half its value).
 - Real 2.4 GHz clearance (5 mm) around the Plus-W antenna, not a 1-2 mm rule area.
+
+## 7. Learnings from sbelectronics multicart/videocart (reviewed 2026-09-28)
+
+Scott Baker's <https://github.com/sbelectronics/coco/tree/master/multicart-videocart>:
+a Pico 2 W ROM multicart (OLED + encoder menu, WiFi web UI/OTA, banked ROMs to 128 KB,
+cold-boot into the selected ROM) and a videocart variant that snoops every bus write
+into a RAM mirror and renders VDG modes over HSTX to HDMI. CoCo 1/2, no disk or
+DriveWire, Apache 2.0, through-hole, months of use. Read its `HOW-IT-WORKS.md` before
+touching `bus_core1.c` again; the timing census there is the best public one.
+
+### Decisions confirmed
+- **Keep the buffered bus (U10 + U15).** He proved RP2350 GP0-25 5 V input tolerance is
+  real and usable, so U11/U12/U13 (address/control *in*) are belt and braces: LVC Ioff
+  and clean edges, nothing more. A cost-down v3 could feed CTS/SCS/E straight into
+  U15 (LVC00 inputs are 5 V tolerant) and drop them. U10/U15 stay for reasons he does
+  not have: we take Becker *writes* (U10 DIR follows R/W in hardware, so a wrong
+  pindir never reaches the 5 V bus), hardware /OE gated on E releases the bus even if
+  core1 is late (his safety depends on a 224 ns lap that does nothing else; ours runs
+  hooks and will run sound), and 24 mA drive vs his 8 mA. Neither design puts 5 V
+  levels on the bus; both drive 3.3 V into TTL thresholds.
+- **No overclock by default.** He needs 250 MHz because his loop is continuous-refresh
+  polling: worst-case detect latency is a full lap (374 ns at 150 MHz vs a ~318 ns
+  budget, 85 % hit rate, exposed behind an MPI). Ours spins on the OE_BUS edge, so
+  detect latency is tens of ns and the serve path is ~200 ns straight-line. See
+  backlog item 6 for the lever order.
+
+### Numbers to design against (his measurements, CoCo 1/2, 1117 ns cycle)
+- CoCo latches read data ~478 ns after !CTS asserts; his loop drives ~160 ns after
+  the sample that sees !CTS low.
+- An MPI adds ~40 ns to !CTS through its '367 and '139. For us that lands on OE_BUS
+  via U12 -> U15 (~50 ns total) and comes straight out of the 280 ns CoCo 3 fast
+  window. CoCo 3 + MPI + 1.79 MHz is our worst case (TEST_PLAN F.4).
+- 6809E data setup before E falls: ~80 ns at 0.89 MHz; the write data is valid from
+  ~E-rise + 225 ns.
+
+### Rules to carry into the bus-engine and Plus-W radio work
+- **Nothing on core1 touches the APB per lap.** His banked ROMs glitched whenever the
+  radio was on: the hot loop polled a PIO RX FIFO (an APB read), CYW43 DMA bursts
+  stalled it, and the CoCo latched mid-transition. Fix was a DREQ-paced DMA draining
+  the FIFO into SRAM, with the DMA as the FIFO's *only* consumer. SIO GPIO reads are
+  fine; PIO FIFO polls are not. Add to the bus-engine spec invariants before the
+  Plus-W radio comes up.
+- Erratum E9 (reset pull-down on every pad) bit him too; he `gpio_disable_pulls()`
+  every bus pin. Same lesson as our R7 100 k -> 10 k.
+- A change-driven consumer needs a sequence bit: two identical back-to-back writes
+  are otherwise one. Relevant if the $FF40 bank hook ever moves to a PIO capture.
+
+### Worth adopting
+- `tools/bas2rom.py` (Apache 2.0, stdlib Python): .cas/.bas/.bin -> autostart ROM,
+  banked layouts for >16 KB, one ROM runs on CoCo 1/2/3. Works with any ROM cart.
+- The 6809 warm-start stub (clears BASIC's `$0071` flag for one boot so a selected ROM
+  gets a true cold start) and "insertion-style" start (stay invisible until READY,
+  then raise FIRQ) for cassette conversions. Both need the /RESET drive above.
+- His host-side `make audit` is the same idea as `check_core1_flash_free.py`;
+  his `make test` suite includes a sampler-timing test that recomputes PIO dividers
+  from the clock constant, which is what we would want before any clock change.
+
+### Not worth chasing
+- HDMI video: his renderer is VDG-only, whole-frame, CoCo 1/2, and cannot sit behind
+  an MPI. Our HDMI corner stays a keepout for a variant that moves the address bus.
+- OLED + encoder: PICOCO.BIN on the CoCo and the USB console cover selection; WiFi
+  (Plus-W) is the eventual remote UI.

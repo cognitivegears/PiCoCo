@@ -210,7 +210,9 @@ interrupt latency stay sane.
 
 **Paged RAM cart still worth having** as the no-DMA fallback and for
 NitrOS-9 RAM disk use: 520 KB on-chip SRAM makes a 256..384 KB paged
-cart, and /HALT hides the page-copy time.
+cart, and /HALT hides the page-copy time. The pointer-and-port variant
+in §14 needs neither /HALT nor the /CTS window and runs on the Pico 2
+build as it stands.
 
 **Open question — verify at the `fw-0.4-bus-capture` milestone:**
 whether /CTS asserts on write cycles. My recollection is the SAM routes
@@ -495,7 +497,7 @@ decode those addresses itself. That is exactly what Pico-controlled
   on the PIAs, not the cart bus.
 - **Coprocessor tricks.** The CoCo writes a command into the RAM
   window, the Pico computes and writes results back. Niche, but free
-  once the RAM cart exists.
+  once the RAM cart exists. §14 makes it concrete.
 
 Not possible from the slot, for the record: CPU acceleration,
 keyboard/joystick injection, capturing the real video signal.
@@ -818,7 +820,10 @@ SCSI (Glenside IDE covers the HDB-DOS/NitrOS-9 need), CoCoIO Ethernet
 
 **Not cart-port, out of scope:** CoCoVGA, coco-hdmi, GIME-X (VDG/GIME
 sockets), Hi-Res Joystick Interface and Color Mouse (joystick port),
-SmartWatch DS1315 (ROM socket), CocoMEM (GIME/CPU sockets).
+SmartWatch DS1315 (ROM socket), CocoMEM (GIME/CPU sockets). GIME-X
+checked feature by feature on 2026-09-27: its video modes, VGA out,
+2.86 MHz clock and 2 MB MMU all need the GIME socket; the one item a
+cart can echo is its flat "DMA" memory port, which is §14.
 
 ### 12.3 What this implies for the design
 
@@ -972,3 +977,75 @@ images); RM2 datasheet RP-008943; Pico 2 datasheet RP-008299; Pico 2 W
 datasheet RP-008304; CoCo 1 Technical Reference Manual (archive.org);
 CoCo 2 NTSC Service Manual, Multi-Pak Interface Service Manual
 (colorcomputerarchive.com); CoCo 3 Service Manual (archive.org).
+
+---
+
+## 14. Flat cart-RAM port — works on the Pico 2 build (2026-09-27)
+
+A pointer register plus a data port that gives the 6809 flat access to
+a few hundred KB of RP2350 SRAM. No bank switching, no MMU, no DOS: a
+very large, very fast I/O buffer the CoCo reads and writes one byte per
+instruction. Prompted by the GIME-X comparison in §12.2; GIME-X's
+"DMA" mode does the same for CoCo RAM from inside the GIME socket, this
+does it for cart RAM from the slot. Firmware only, no board change,
+Pico 2 and Plus-W alike.
+
+**Registers.** $FF44..$FF47 is free in the §12.1 map.
+
+| Address | Function |
+|---|---|
+| $FF44/$FF45 | 16-bit pointer, written with one STD |
+| $FF46 | bank byte (pointer bits 16..) |
+| $FF47 | data port; auto-increments the pointer on every read or write |
+
+A second adjacent data port would let LDD/STD move two bytes per
+instruction (the 6809 issues two consecutive bus cycles, each one
+increments). The only free neighbour is $FF43, which the CoCo SDC
+profile uses as its flash bank register, so the two-port variant is a
+profile decision, not a blocker.
+
+**Capacity and speed**, from the current firmware image (2026-09-27):
+
+| Item | Figure |
+|---|---|
+| SRAM used by the current build | 142 KB static (151 KB on the coco-manager branch) |
+| Cart RAM available | ~256 KB safely; ~320 KB if SD/FatFS buffers stay small |
+| `LDA $FF47 / STA ,X+` loop, 0.89 MHz | ~80 KB/s (11 cycles/byte) |
+| Same loop, CoCo 3 fast clock | ~160 KB/s |
+| LDD/STD with two ports | roughly double |
+| 256-byte sector | ~3 ms, vs 6..10 ms through Becker (poll + data + server round trip) |
+
+**What it buys**
+
+- **A big RAM disk on a 64 KB machine.** A NitrOS-9 or DECB driver
+  treats it as a ~256 KB drive with no DriveWire round trip. Survives
+  CoCo resets via a magic word + CRC in SRAM (§4.5 pattern); flush to
+  Pico flash at idle for power-off persistence. Core0 can write flash
+  freely because core1 never touches flash.
+- **Asset streaming for games and demos.** Levels, music and sprite
+  sheets live in cart RAM and stream into CoCo RAM on demand, faster
+  than any disk and with no DOS in the way.
+- **Shared-memory mailbox to the Pico.** CoCo writes a request block,
+  taps a doorbell register; the Pico decompresses, does 3D math,
+  decodes audio, or on a Plus-W talks to Wi-Fi and drops the packet
+  back in cart RAM. This is §6's coprocessor item made concrete and
+  how a FujiNet-style network device would deliver data.
+- **Sample buffer for the cart synth (§5).** The CoCo dumps PCM or
+  instrument data into cart RAM; the Pico plays it on SND with no
+  real-time push from the 6809.
+- **CoCo-side ROM loader.** Fill cart RAM with a ROM image, hit a
+  select register, the Pico maps it into the $C000 window.
+
+**What it does not buy.** The CPU cannot execute from it and the GIME
+does not know it exists. On a 512 KB CoCo 3 the RAM-disk case is weak;
+value shifts to the mailbox, persistence and asset streaming.
+
+**The one firmware change beyond the device.** Device writes today land
+on core0 through the write ring (`bus_on_write` → `wev`). A program that
+does `STD $FF44` then `LDA $FF47` would race that ring. The pointer and
+data writes need a **core1 write hook**, next to the existing read
+hooks in `bus.c`, so the handler runs before the next bus cycle
+(~20 CPU cycles of work against a ~560 ns cycle budget at 1.79 MHz).
+It stays `BUS_HOT` and flash-free because cart RAM is SRAM, and core1
+then owns the port's table entries, which keeps the single-writer rule
+intact.

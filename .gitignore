@@ -57,3 +57,6 @@ fab/main/*.drl
 
 # finish_route.py backup of the pre-finish board
 *-pre-finish.kicad_pcb
+
+# case/: uv venv for the build123d script
+case/.venv/
