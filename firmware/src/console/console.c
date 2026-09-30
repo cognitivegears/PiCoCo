@@ -351,6 +351,7 @@ static int cmd_rom(int argc, char **argv) {
 }
 
 static int g_boot_mode = -1; /* pending next-boot mode from "net mode", -1 = none */
+void console_set_boot_mode(picoco_mode m) { g_boot_mode = (int)m; }
 
 static int cmd_becker(int argc, char **argv) {
     if (argc < 2) return cerr("usage: becker off|loop|bridge|native|net");
@@ -362,7 +363,13 @@ static int cmd_becker(int argc, char **argv) {
     else if (strcasecmp(argv[1], "net") == 0) {
         if (!net_available()) return cerr("net: needs Plus-W");
         if (!net_configured()) return cerr("net: set ssid and server first");
-        if (net_start() != 0) return cerr("net: start failed");
+        if (net_start() != 0) {   /* keep the saved intent, run native meanwhile */
+            if (mode_get() == MODE_NET) net_stop();
+            mode_set(MODE_NATIVE);
+            console_set_boot_mode(MODE_NET);
+            outf("net: start failed, running native\n");
+            return 0;
+        }
         m = MODE_NET;
     }
     else return cerr("usage: becker off|loop|bridge|native|net");
@@ -415,6 +422,7 @@ static int cmd_net(int argc, char **argv) {
     }
     if (strcasecmp(argv[1], "forget") == 0) { net_leave_if_active(); net_forget(); g_boot_mode = -1; return 0; }
     if (strcasecmp(argv[1], "scan") == 0) {
+        if (mode_get() == MODE_NET) return cerr("net: leave net mode first (becker native)");
         if (!net_available()) return cerr("net: needs Plus-W");
         if (net_scan(scan_line, NULL) != 0) return cerr("net: scan failed");
         return 0;

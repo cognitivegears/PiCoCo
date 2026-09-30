@@ -96,10 +96,11 @@ int main(void) {
             watchdog_update();
         }
         if (net_state() == NET_UP) {
-            LOG_I(LOG_M_MAIN, "net up in %u ms", plat_now_ms() - t0);
+            LOG_I(LOG_M_MAIN, "net up in %u ms", (unsigned)(plat_now_ms() - t0));
         } else {
             LOG_I(LOG_M_MAIN, "net failed (%s), native fallback", net_last_error()[0] ? net_last_error() : "timeout");
             mode_set(MODE_NATIVE);
+            console_set_boot_mode(MODE_NET);   /* keep the saved intent */
         }
     }
     int64_t rtc;

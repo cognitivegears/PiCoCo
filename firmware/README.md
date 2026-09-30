@@ -305,9 +305,13 @@ redacts `net psk` lines. The remote allowlist has the bare `net` verb.
 **Boot.** With `becker net` saved, /HALT stays held until the socket is up
 or 10 s pass. Then the board falls back to native mode
 (`net failed (<reason>), native fallback`); the saved config still says net
-and retries continue every 2 s. `becker net` re-arms after a fallback.
+and retries continue every 2 s. `becker net` re-arms after a fallback. After a fallback the link keeps
+retrying in the background; `net status` can show `up` while the board is
+running native, and `becker net` switches over immediately. A saved
+`becker net` on firmware 1.2 is a usage error there and leaves Becker off,
+so clear it before downgrading.
 Reasons: `no such network`, `bad password`, `dhcp timeout`, `dns failed`,
-`refused`, `link lost`, `not configured`. Rings are cleared on every
+`refused`, `link lost`, `not configured`, `join rejected`. Rings are cleared on every
 reconnect. After joining, WiFi power save is off. Once per boot, on link-up,
 SNTP seeds the clock only if none is running (`clock lost`); it never
 overwrites a `time set` (SNTP is UTC, `time set` is local).

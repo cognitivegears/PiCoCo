@@ -29,7 +29,7 @@ static char s_ip[16] = "0.0.0.0";
 static uint32_t s_dns_gen;                /* bumped on teardown: lwIP cannot cancel a lookup */
 static uint8_t s_err_kind;                /* first-failure-of-a-kind logging: bit per reason index */
 
-static const char *const reasons[] = { "no such network", "bad password", "dhcp timeout", "dns failed", "refused", "link lost", "not configured" };
+static const char *const reasons[] = { "no such network", "bad password", "dhcp timeout", "dns failed", "refused", "link lost", "not configured", "join rejected" };
 static void fail(int reason_idx, uint32_t now_ms) {
     s_err = reasons[reason_idx];
     if (!(s_err_kind & (1u << reason_idx))) { s_err_kind |= (1u << reason_idx); LOG_I(LOG_M_NET, "net: %s", s_err); }
@@ -39,8 +39,11 @@ static void fail(int reason_idx, uint32_t now_ms) {
     s_retry_at_ms = now_ms + NET_RETRY_MS;
 }
 
-static void pcb_drop(void) {
-    if (s_pcb) { tcp_arg(s_pcb, NULL); tcp_recv(s_pcb, NULL); tcp_err(s_pcb, NULL); if (tcp_close(s_pcb) != ERR_OK) tcp_abort(s_pcb); s_pcb = NULL; }
+/* true when it had to tcp_abort (pcb freed; a callback must then return ERR_ABRT) */
+static bool pcb_drop(void) {
+    bool aborted = false;
+    if (s_pcb) { tcp_arg(s_pcb, NULL); tcp_recv(s_pcb, NULL); tcp_err(s_pcb, NULL); if (tcp_close(s_pcb) != ERR_OK) { tcp_abort(s_pcb); aborted = true; } s_pcb = NULL; }
+    return aborted;
 }
 
 static void on_err(void *arg, err_t err) {
@@ -51,7 +54,7 @@ static void on_err(void *arg, err_t err) {
 
 static err_t on_recv(void *arg, struct tcp_pcb *pcb, struct pbuf *p, err_t err) {
     (void)arg; (void)err;
-    if (!p) { pcb_drop(); fail(5, plat_now_ms()); return ERR_OK; }   /* server closed */
+    if (!p) { bool ab = pcb_drop(); fail(5, plat_now_ms()); return ab ? ERR_ABRT : ERR_OK; }   /* server closed */
     for (struct pbuf *q = p; q; q = q->next)
         for (uint16_t i = 0; i < q->len; i++)
             if (ring_push(&down, ((uint8_t *)q->payload)[i])) net_stats.bytes_down++; else net_stats.overrun++;
@@ -99,7 +102,7 @@ static void join_start(uint32_t now_ms) {
     s_since_ms = now_ms;
     s_addr_ok = false;
     uint32_t auth = s_psk[0] ? CYW43_AUTH_WPA2_AES_PSK : CYW43_AUTH_OPEN;
-    if (cyw43_arch_wifi_connect_async(s_ssid, s_psk[0] ? s_psk : NULL, auth) != 0) fail(0, now_ms);
+    if (cyw43_arch_wifi_connect_async(s_ssid, s_psk[0] ? s_psk : NULL, auth) != 0) fail(7, now_ms);   /* SDK argument error */
 }
 
 /* Socket, association and rings; the state is left to the caller. */

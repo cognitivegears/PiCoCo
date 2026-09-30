@@ -675,6 +675,22 @@ TEST(net_remote_allowed) {
     ASSERT_EQ(remote("becker net"), 255);               /* becker stays console-only */
     ASSERT_EQ(remote("net scan"), 255);                 /* stub: refused as "no radio" -> err */
     ASSERT(strcmp(rbuf, "net: needs Plus-W") == 0);
+    mode_set(MODE_NET);
+    ASSERT_EQ(remote("net scan"), 255);
+    ASSERT(strcmp(rbuf, "net: leave net mode first (becker native)") == 0);
+    mode_set(MODE_NATIVE);
+}
+
+TEST(fallback_keeps_net_on_save) {
+    setup();
+    console_set_boot_mode(MODE_NET);
+    ASSERT_EQ(console_exec("save"), 0);
+    char cfg[1024]; int n = plat_cfg_read(cfg, sizeof cfg - 1); ASSERT(n > 0); cfg[n] = 0;
+    ASSERT(strstr(cfg, "becker net\n"));
+    ASSERT_EQ(console_exec("becker native"), 0);
+    ASSERT_EQ(console_exec("save"), 0);
+    n = plat_cfg_read(cfg, sizeof cfg - 1); cfg[n] = 0;
+    ASSERT(strstr(cfg, "becker native\n"));
 }
 
 int main(void) {
@@ -732,5 +748,6 @@ int main(void) {
     RUN(net_mode_net_refused_on_host);
     RUN(net_status_hides_psk_and_save_order);
     RUN(net_remote_allowed);
+    RUN(fallback_keeps_net_on_save);
     TEST_MAIN_END
 }
