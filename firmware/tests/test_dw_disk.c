@@ -177,6 +177,37 @@ TEST(missing_file) {
     ASSERT_EQ(dw_disk_open(&st, "nope.dsk", false, &d), -1);
 }
 
+/* dw_disk_is_config_name splits the name on '/', ':' and '\\' and matches
+ * the LAST component, so a name ending in a separator (empty last
+ * component) or holding a control byte that FatFS's create_name would
+ * truncate on doesn't match it -- but dw_disk_name_ok must still refuse
+ * all of these at the choke point, since the POSIX store used on host
+ * treats these bytes literally where FatFS on the Pico would not. */
+TEST(name_ok_refuses_bypass_bytes) {
+    ASSERT_EQ(dw_disk_name_ok("picoco.cfg\\"), false);
+    ASSERT_EQ(dw_disk_name_ok("picoco.cfg\\\\"), false);
+    ASSERT_EQ(dw_disk_name_ok("picoco.cfg\x01"), false);
+    ASSERT_EQ(dw_disk_name_ok("picoco.cfg\x1fjunk"), false);
+    ASSERT_EQ(dw_disk_name_ok("a\x01b.dsk"), false);
+    ASSERT_EQ(dw_disk_name_ok("0:x.dsk"), false);
+    ASSERT_EQ(dw_disk_name_ok(""), false);
+    ASSERT_EQ(dw_disk_name_ok("PICOCO.CFG. "), false);
+}
+
+TEST(name_ok_allows_ordinary_names) {
+    ASSERT_EQ(dw_disk_name_ok("ok name.dsk"), true);
+    ASSERT_EQ(dw_disk_name_ok("xpicoco.cfg"), true);
+}
+
+/* FatFS's CP437 short-name upcase table (ff.c TBL_CT437) folds several
+ * bytes >= 0x80 onto plain ASCII letters (e.g. 0xA2 -> 'O'), so
+ * "pic\xA2co.cfg" would open picoco.cfg on the Pico even though it isn't
+ * a byte-for-byte match. Refuse every byte >= 0x80 outright. */
+TEST(name_ok_refuses_high_bytes) {
+    ASSERT_EQ(dw_disk_name_ok("pic\xA2""co.cfg"), false);
+    ASSERT_EQ(dw_disk_name_ok("p\x8A" "co.dsk"), false);
+}
+
 int main(void) {
     char tmpl[300];
     const char *tmpdir = getenv("TMPDIR");
@@ -199,5 +230,8 @@ int main(void) {
     RUN(write_extends_and_wrprot);
     RUN(checksum);
     RUN(missing_file);
+    RUN(name_ok_refuses_bypass_bytes);
+    RUN(name_ok_allows_ordinary_names);
+    RUN(name_ok_refuses_high_bytes);
     TEST_MAIN_END
 }

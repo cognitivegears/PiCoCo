@@ -511,7 +511,24 @@ sync/close` — with a POSIX implementation (`dw_store_posix.c`, used by
 both `ctest` and `picoco-host`) today and a FatFS implementation
 (`dw_store_fatfs.c`) as Plan B for the Pico's flash partition.
 
-### 7.3 Host build and test tools
+### 7.3 Virtual-serial command channel (v1.2)
+
+`dw_vser.c` implements DW4 virtual-serial command mode (channels 1-13,
+one session at a time) on top of the same `dw_server` opcode parser
+(SERINIT/SERTERM/SERSETSTAT/SERWRITE/SERWRITEM/SERREAD/SERREADM/FASTWRITE,
+previously stubs) — it lives under `dw/`, not `console/`: it takes an
+`exec` callback at init (`console_exec_remote`) rather than calling into
+console code directly, so `dw_vser` stays host-testable with a fake exec.
+It runs entirely on core0, inside the DW server's normal `dw_feed`/poll
+path (no new thread, no core1 involvement); `console_exec_remote` must
+never re-enter `dw_feed` (a remote command triggering another DriveWire
+transaction would reenter the state machine mid-request). It swaps the
+console's output function to a capturing buffer, checks a deny-by-default
+allowlist, dispatches through the same `dispatch()` USB CDC1 uses, and
+restores the output function, so USB console behaviour is unchanged. See
+`firmware/README.md` for the allowlist contents and wire framing.
+
+### 7.4 Host build and test tools
 
 The host build (`cmake -B build-host -DPICOCO_HOST=ON firmware`)
 compiles the entire stack above plus:

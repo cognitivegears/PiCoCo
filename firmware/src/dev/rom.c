@@ -57,3 +57,13 @@ int rom_load_file(dw_store *st, const char *name) {
     if (got < 0 || (uint32_t)got != size) return -1;
     return rom_load_mem(rom_file_buf, size);
 }
+
+int rom_check_file(dw_store *st, const char *name) {
+    dw_file f;
+    if (st->ops->open(st->ctx, name, false, &f) < 0) return -1;
+    uint32_t size;
+    int r = st->ops->size(&f, &size);
+    st->ops->close(&f);
+    if (r < 0) return -1;
+    return (size == 8192 || size == 16384) ? 0 : -2;
+}

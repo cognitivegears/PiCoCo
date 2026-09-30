@@ -57,6 +57,24 @@ class DW:
         self.s.sendall(b'\x23')
         return self.recv(6)
 
+    def vcmd(self, line, ch=1):
+        """DW4 virtual-serial command: SS.Open, SERWRITEM, poll until hangup."""
+        self.s.sendall(bytes([0xC4, ch, 0x29]))
+        data = (line + '\r').encode()
+        self.s.sendall(bytes([0x64, ch, len(data)]) + data)
+        out = b''
+        for _ in range(10000):
+            self.s.sendall(b'\x43')
+            b1, b2 = self.recv(2)
+            if b1 == 0x10 and b2 == ch:
+                return out
+            if b1 == ch + 1:
+                out += bytes([b2])
+            elif b1 == ch + 17:
+                self.s.sendall(bytes([0x63, ch, b2]))
+                out += self.recv(b2)
+        raise RuntimeError('no hangup')
+
 
 def header_offset(path, size):
     """Matches dw_disk_open's header detection for the RAW/JVC/VDK cases
@@ -166,6 +184,17 @@ def check_time(dw):
     return t[0] >= 126
 
 
+def check_vserial(dw):
+    """DW4 virtual-serial command session: version, dw disk show, smoke."""
+    r = dw.vcmd('version')
+    if not (r.startswith(b'OK command successful\n\r') and b'version ' in r):
+        return False
+    r = dw.vcmd('dw disk show')
+    if not r.startswith(b'OK command successful\n\r\r\nCurrent DriveWire disks:'):
+        return False
+    return dw.vcmd('smoke').startswith(b'FAIL 255 console only\n\r')
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--host', default='127.0.0.1')
@@ -204,6 +233,7 @@ def main():
     run(7, 'time', lambda: check_time(dw))
     run(8, 'read of unmounted drive is exactly one byte', lambda: check_read_unmounted_one_byte(dw, args.hdbdos))
     run(9, 'dwinit replies non-zero', lambda: check_dwinit_nonzero(dw))
+    run(10, 'vserial command session', lambda: check_vserial(dw))
 
     sys.exit(1 if fails else 0)
 

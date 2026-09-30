@@ -76,6 +76,8 @@ int main(void) {
     } else {
         LOG_E(LOG_M_FS, "fs mount failed");
     }
+    int64_t rtc;
+    if (plat_rtc_get(&rtc)) dw_time_set(&g_dw, rtc, plat_now_ms());
     multicore_launch_core1(bus_core1_main);
     gpio_put(PIN_HALT, 0);   /* release /HALT: spec 8.1 */
     LOG_I(LOG_M_MAIN, "core1 up, halt released");

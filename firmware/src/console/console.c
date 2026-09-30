@@ -5,6 +5,8 @@
 #include "becker.h"
 #include "log.h"
 #include "plat.h"
+#include "dw_disk.h"
+#include <ctype.h>
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -25,6 +27,7 @@ static dw_store *g_store;
 
 /* Remembered for "save" (rom_cmd empty = off, the default, so omitted). */
 static char rom_cmd[64];
+static char rom_now[64];   /* what is in bus_table now */
 
 /* "dw capture" state. */
 static dw_file cap_file;
@@ -37,6 +40,24 @@ static size_t linelen;
 
 /* Scratch for "trace dump"; too big for a stack frame. */
 static bus_trace_entry trace_buf[BUS_TRACE_SIZE];
+
+/* The line being executed, untokenised: "dw disk insert" re-joins its tail
+ * so image names may contain spaces (DW4 behaviour). */
+static const char *g_raw = "";
+
+static const char *raw_tail(int skip) {
+    static char tail[128];
+    const char *p = g_raw;
+    for (int i = 0; i < skip; i++) {
+        while (*p == ' ') p++;
+        while (*p && *p != ' ') p++;
+    }
+    while (*p == ' ') p++;
+    snprintf(tail, sizeof(tail), "%s", p);
+    size_t n = strlen(tail);
+    while (n && (tail[n - 1] == ' ' || tail[n - 1] == '\r' || tail[n - 1] == '\n')) tail[--n] = '\0';
+    return tail;
+}
 
 static void outf(const char *fmt, ...) {
     char buf[256];
@@ -215,6 +236,8 @@ static int cmd_status(void) {
     outf("bus drive %s\n", bus_drive_get() ? "on" : "off");
     outf("last reset %s\n", plat_last_reset());
     outf("dw hdbdos %s\n", g_dw->hdbdos ? "on" : "off"); /* DWINIT can flip this remotely */
+    outf("rom now %s\n", rom_now[0] ? rom_now : "none");
+    outf("rom next %s\n", rom_cmd[0] ? rom_cmd : "none");
     outf("becker reads %u writes %u underrun %u overrun %u\n",
          becker_stats.reads, becker_stats.writes, becker_stats.underrun, becker_stats.overrun);
     outf("log_dropped %u\n", log_dropped);
@@ -249,17 +272,20 @@ static int cmd_trace(int argc, char **argv) {
 }
 
 static int cmd_rom(int argc, char **argv) {
-    if (argc < 2) return cerr("usage: rom pattern|off|load <file>");
-    if (plat_fs_exporting() && strcasecmp(argv[1], "load") == 0)
+    if (argc < 2) return cerr("usage: rom pattern|off|load <file>|boot <file>");
+    if (plat_fs_exporting() &&
+        (strcasecmp(argv[1], "load") == 0 || strcasecmp(argv[1], "boot") == 0))
         return cerr("fs export active; run fs import first");
     if (strcasecmp(argv[1], "pattern") == 0) {
         rom_pattern();
         snprintf(rom_cmd, sizeof(rom_cmd), "pattern");
+        snprintf(rom_now, sizeof(rom_now), "pattern");
         return 0;
     }
     if (strcasecmp(argv[1], "off") == 0) {
         rom_off();
         rom_cmd[0] = '\0';
+        rom_now[0] = '\0';
         return 0;
     }
     if (strcasecmp(argv[1], "load") == 0) {
@@ -267,9 +293,19 @@ static int cmd_rom(int argc, char **argv) {
         int r = rom_load_file(g_store, argv[2]);
         if (r != 0) return cerr("rom load failed");
         snprintf(rom_cmd, sizeof(rom_cmd), "load %s", argv[2]);
+        snprintf(rom_now, sizeof(rom_now), "load %s", argv[2]);
         return 0;
     }
-    return cerr("usage: rom pattern|off|load <file>");
+    if (strcasecmp(argv[1], "boot") == 0) {
+        /* Next boot only: a live swap would change the DOS under a running CoCo. */
+        if (argc < 3) return cerr("usage: rom boot <file>");
+        int r = rom_check_file(g_store, argv[2]);
+        if (r == -2) return cerr("rom must be 8192 or 16384 bytes");
+        if (r != 0) return cerr("rom not found");
+        snprintf(rom_cmd, sizeof(rom_cmd), "load %s", argv[2]);
+        return 0;
+    }
+    return cerr("usage: rom pattern|off|load <file>|boot <file>");
 }
 
 static int cmd_becker(int argc, char **argv) {
@@ -284,15 +320,67 @@ static int cmd_becker(int argc, char **argv) {
     return 0;
 }
 
+/* -1 unless s is a single digit naming a drive. */
+static int parse_drive(const char *s) {
+    if (!isdigit((unsigned char)s[0]) || s[1] != '\0') return -1;
+    int n = s[0] - '0';
+    return n < DW_MAX_DRIVES ? n : -1;
+}
+
+/* DW4-compatible "dw disk" (spec 2026-09-23 §4.4). Output formats follow DW4
+ * DWCmdDiskShow/Insert/Eject so NitrOS-9's dw utility reads them unchanged. */
+static int cmd_dw_disk(int argc, char **argv) {
+    const char *usage = "usage: dw disk show [n]|insert <n> <file>|eject <n>";
+    if (argc < 3) return cerr(usage);
+    if (strcasecmp(argv[2], "show") == 0) {
+        if (argc >= 4) {
+            int n = parse_drive(argv[3]);
+            if (n < 0) return cerr("bad drive");
+            if (!g_dw->drives[n].mounted) return cerr("drive not loaded");
+            outf("Details for disk in drive #%d:\r\n\r\n%s\r\n", n, g_dw->drives[n].name);
+            return 0;
+        }
+        outf("\r\nCurrent DriveWire disks:\r\n\r\n");
+        for (int i = 0; i < DW_MAX_DRIVES; i++) {
+            dw_disk *d = &g_dw->drives[i];
+            if (d->mounted) outf("X%-3d%c%s\r\n", i, d->read_only ? '*' : ' ', d->name);
+        }
+        return 0;
+    }
+    if (strcasecmp(argv[2], "insert") == 0) {
+        if (argc < 5) return cerr(usage);
+        int n = parse_drive(argv[3]);
+        if (n < 0) return cerr("bad drive");
+        int mr = dw_mount(g_dw, n, raw_tail(4), false);
+        if (mr == -3) return cerr("already mounted");
+        if (mr != 0) return cerr("mount failed");
+        outf("Disk inserted in drive %d.", n);
+        return 0;
+    }
+    if (strcasecmp(argv[2], "eject") == 0) {
+        if (argc < 4) return cerr(usage);
+        int n = parse_drive(argv[3]);
+        if (n < 0) return cerr("bad drive");
+        if (!g_dw->drives[n].mounted) return cerr("drive not loaded");
+        dw_eject(g_dw, n);
+        outf("Disk ejected from drive %d.\r\n", n);
+        return 0;
+    }
+    return cerr(usage);
+}
+
 static int cmd_dw(int argc, char **argv) {
-    if (argc < 2) return cerr("usage: dw mount|eject|hdbdos|stats|capture|selftest ...");
+    if (argc < 2) return cerr("usage: dw mount|disk|eject|hdbdos|stats|capture|selftest ...");
     if (plat_fs_exporting()) return cerr("fs export active; run fs import first");
     if (strcasecmp(argv[1], "selftest") == 0) return cmd_dw_selftest();
+    if (strcasecmp(argv[1], "disk") == 0) return cmd_dw_disk(argc, argv);
     if (strcasecmp(argv[1], "mount") == 0) {
         if (argc < 4) return cerr("usage: dw mount <n> <file> [ro]");
         int n = atoi(argv[2]);
         bool ro = argc >= 5 && strcasecmp(argv[4], "ro") == 0;
-        if (dw_mount(g_dw, n, argv[3], ro) != 0) return cerr("mount failed");
+        int mr = dw_mount(g_dw, n, argv[3], ro);
+        if (mr == -3) return cerr("already mounted");
+        if (mr != 0) return cerr("mount failed");
         return 0;
     }
     if (strcasecmp(argv[1], "eject") == 0) {
@@ -338,7 +426,7 @@ static int cmd_dw(int argc, char **argv) {
         }
         return cerr("usage: dw capture on <file>|off");
     }
-    return cerr("usage: dw mount|eject|hdbdos|stats|capture|selftest ...");
+    return cerr("usage: dw mount|disk|eject|hdbdos|stats|capture|selftest ...");
 }
 
 /* Shared by "fs format" and "fs export": both yank FatFS out from under
@@ -352,11 +440,55 @@ static const char *fs_busy_reason(void) {
     return NULL;
 }
 
+#define RSDOS_35T_BYTES (35u * 18u * 256u)         /* 161280 */
+#define RSDOS_DIR_OFF   (17u * 18u * 256u)         /* track 17 sector 1 = 0x13200 */
+#define RSDOS_FAT_OFF   ((17u * 18u + 1u) * 256u)  /* track 17 sector 2 = 0x13300 */
+
+/* A blank 35-track RS-DOS disk as real DSKINI leaves it (verified against
+ * ToolShed's decb dskini): all $FF, except track 17 sector 1 (unused by
+ * RS-DOS; the directory itself is sectors 3-11) is entirely $00, and the
+ * FAT sector's (track 17 sector 2) bytes 68..255 are $00 (68 free
+ * granules, the rest unused). */
+static int cmd_fs_new(const char *name) {
+    if (strlen(name) >= 32) return cerr("name too long"); /* dw_disk name[32] can't hold it */
+    if (dw_disk_is_config_name(name)) return cerr("reserved name");
+    if (!dw_disk_name_ok(name)) return cerr("bad name");
+    dw_file f;
+    if (g_store->ops->open(g_store->ctx, name, false, &f) >= 0) {
+        g_store->ops->close(&f);
+        return cerr("file exists");
+    }
+    if (!g_store->ops->create || g_store->ops->create(g_store->ctx, name, &f) != 0)
+        return cerr("create failed");
+    static uint8_t blk[4096]; /* static: Pico core0 stack is 4 KB */
+    int rc = 0;
+    for (uint32_t off = 0; off < RSDOS_35T_BYTES && rc == 0; off += sizeof(blk)) {
+        uint32_t n = RSDOS_35T_BYTES - off < sizeof(blk) ? RSDOS_35T_BYTES - off : sizeof(blk);
+        memset(blk, 0xFF, n);
+        if (off <= RSDOS_DIR_OFF && RSDOS_DIR_OFF < off + n)
+            memset(blk + (RSDOS_DIR_OFF - off), 0x00, 256);
+        if (off <= RSDOS_FAT_OFF && RSDOS_FAT_OFF < off + n)
+            memset(blk + (RSDOS_FAT_OFF - off) + 68, 0x00, 256 - 68);
+        if (g_store->ops->write(&f, off, blk, n) != (int)n) rc = -1;
+    }
+    if (rc == 0 && g_store->ops->sync && g_store->ops->sync(&f) != 0) rc = -1;
+    g_store->ops->close(&f);
+    if (rc != 0) {
+        plat_fs_remove(name);
+        return cerr("write failed");
+    }
+    return 0;
+}
+
 static int cmd_fs(int argc, char **argv) {
-    if (argc < 2) return cerr("usage: fs ls|rm|format|export|import");
+    if (argc < 2) return cerr("usage: fs ls|new|rm|format|export|import");
     if (plat_fs_exporting() && strcasecmp(argv[1], "import") != 0)
         return cerr("fs export active; run fs import first");
     if (strcasecmp(argv[1], "ls") == 0) { plat_fs_list(fs_ls_cb, NULL); return 0; }
+    if (strcasecmp(argv[1], "new") == 0) {
+        if (argc < 3) return cerr("usage: fs new <file>");
+        return cmd_fs_new(raw_tail(2)); /* "fs new" is 2 tokens; rest is the name, spaces and all */
+    }
     if (strcasecmp(argv[1], "rm") == 0) {
         if (argc < 3) return cerr("usage: fs rm <file>");
         if (plat_fs_remove(argv[2]) != 0) return cerr("rm failed");
@@ -380,16 +512,20 @@ static int cmd_fs(int argc, char **argv) {
         if (plat_fs_export(false) != 0) return cerr("import unsupported");
         return 0;
     }
-    return cerr("usage: fs ls|rm|format|export|import");
+    return cerr("usage: fs ls|new|rm|format|export|import");
 }
 
 static int cmd_time(int argc, char **argv) {
     if (argc >= 2 && strcasecmp(argv[1], "set") == 0) {
         if (argc < 3) return cerr("usage: time set <unix>");
-        dw_time_set(g_dw, atoll(argv[2]), plat_now_ms());
+        int64_t t = atoll(argv[2]);
+        dw_time_set(g_dw, t, plat_now_ms());
+        plat_rtc_set(t);
         return 0;
     }
+    int64_t dummy;
     outf("time %lld\n", (long long)dw_time_get(g_dw, plat_now_ms()));
+    outf("clock %s\n", plat_rtc_get(&dummy) ? "kept" : "lost");
     return 0;
 }
 
@@ -447,11 +583,17 @@ static int cmd_save(void) {
     if (!cfg_append(cfg, sizeof(cfg), &len, "dw hdbdos %s\n", g_dw->hdbdos ? "on" : "off"))
         return cerr("config too large");
     for (int i = 0; i < DW_MAX_DRIVES; i++) {
-        if (g_dw->drives[i].mounted) {
-            if (!cfg_append(cfg, sizeof(cfg), &len, "dw mount %d %s%s\n", i,
-                             g_dw->drives[i].name, g_dw->drives[i].read_only ? " ro" : ""))
-                return cerr("config too large");
-        }
+        if (!g_dw->drives[i].mounted) continue;
+        /* "dw mount" takes one token, so a read-write name with spaces (e.g.
+         * "my disk.dsk") replays as "dw mount 0 my" and fails. "dw disk
+         * insert" re-joins its raw tail (console_run_config sets g_raw via
+         * console_exec), so use it for rw mounts; ro has no equivalent on
+         * "dw disk", so keep "dw mount ... ro" there (ro names still can't
+         * have spaces, unchanged from before). */
+        bool ok = g_dw->drives[i].read_only
+            ? cfg_append(cfg, sizeof(cfg), &len, "dw mount %d %s ro\n", i, g_dw->drives[i].name)
+            : cfg_append(cfg, sizeof(cfg), &len, "dw disk insert %d %s\n", i, g_dw->drives[i].name);
+        if (!ok) return cerr("config too large");
     }
     for (int m = 0; m < LOG_M_COUNT; m++) {
         int lvl = log_level(m);
@@ -507,26 +649,127 @@ void console_init(console_out_fn out, void *ctx, dw_server *dw, dw_store *store)
     g_store = store;
     linelen = 0;
     rom_cmd[0] = '\0';
+    rom_now[0] = '\0';
     cap_open = false;
     cap_off = 0;
     mode_bind(dw);
+    dw_set_exec(dw, console_exec_remote, NULL);
 }
 
-int console_exec(const char *line) {
-    char copy[136];
-    snprintf(copy, sizeof(copy), "%s", line);
+static int tokenize(char *copy, char **argv) {
     char *save = NULL;
-    char *argv[6];
     int argc = 0;
     char *tok = strtok_r(copy, " ", &save);
     while (tok && argc < 6) {
         argv[argc++] = tok;
         tok = strtok_r(NULL, " ", &save);
     }
+    return argc;
+}
+
+int console_exec(const char *line) {
+    char copy[136];
+    snprintf(copy, sizeof(copy), "%s", line);
+    char *argv[6];
+    int argc = tokenize(copy, argv);
     if (argc == 0) return cerr("empty");
+    g_raw = line;
     int rc = dispatch(argc, argv);
     if (rc == 0) outf("ok\n");
     return rc;
+}
+
+/* DriveWire virtual-serial front end (spec 2026-09-23 §4.3). Deny by
+ * default: a new console command is USB-only until it is listed here. */
+static const char *const remote_allow[] = {
+    "status", "version", "help", "time", "save",
+    "fs ls", "fs new", "dw mount", "dw eject", "dw hdbdos", "dw disk", "rom boot",
+};
+
+static bool remote_allowed(int argc, char **argv) {
+    for (size_t i = 0; i < sizeof(remote_allow) / sizeof(remote_allow[0]); i++) {
+        const char *e = remote_allow[i];
+        const char *sp = strchr(e, ' ');
+        size_t vl = sp ? (size_t)(sp - e) : strlen(e);
+        if (strlen(argv[0]) != vl || strncasecmp(argv[0], e, vl) != 0) continue;
+        if (!sp) return true;
+        if (argc >= 2 && strcasecmp(argv[1], sp + 1) == 0) return true;
+    }
+    return false;
+}
+
+static char *rcap;
+static size_t rcap_cap, rcap_len;
+static bool rcap_trunc;
+
+static void remote_out(void *ctx, const char *s) {
+    (void)ctx;
+    size_t l = strlen(s);
+    if (rcap_len + l > rcap_cap) {
+        l = rcap_cap - rcap_len;
+        rcap_trunc = true;
+    }
+    memcpy(rcap + rcap_len, s, l);
+    rcap_len += l;
+}
+
+/* snprintf() returns the length it would have written, which can exceed
+ * cap - 1 on truncation; outn must never claim more than fits in out. */
+static size_t outn_clamp(int written, size_t cap) {
+    size_t n = written < 0 ? 0 : (size_t)written;
+    return n >= cap ? cap - 1 : n;
+}
+
+int console_exec_remote(void *ctx, const char *line, char *out, size_t cap, size_t *outn) {
+    (void)ctx;
+    if (cap < 5) { *outn = 0; return 255; } /* too small even for "...\n" + NUL */
+    char copy[136];
+    snprintf(copy, sizeof(copy), "%s", line);
+    char *argv[6];
+    int argc = tokenize(copy, argv);
+    if (argc == 0 || !remote_allowed(argc, argv)) {
+        *outn = outn_clamp(snprintf(out, cap, "console only"), cap);
+        return 255;
+    }
+    console_out_fn saved = g_out;
+    void *saved_ctx = g_out_ctx;
+    rcap = out;
+    rcap_cap = cap > 5 ? cap - 5 : 0;   /* room for "...\n" and a NUL */
+    rcap_len = 0;
+    rcap_trunc = false;
+    g_out = remote_out;
+    g_out_ctx = NULL;
+    g_raw = line;
+    int rc = dispatch(argc, argv);
+    g_out = saved;
+    g_out_ctx = saved_ctx;
+    out[rcap_len] = '\0';
+    if (rc != 0) {
+        /* cerr() printed "err <msg>\n"; hand back just <msg>. */
+        const char *msg = "failed";
+        for (char *p = out; p && *p; ) {
+            if (strncmp(p, "err ", 4) == 0) msg = p + 4;
+            p = strchr(p, '\n');
+            if (p) p++;
+        }
+        char m[96];
+        size_t ml = strcspn(msg, "\n");
+        if (ml > 80) ml = 80;
+        memcpy(m, msg, ml);
+        m[ml] = '\0';
+        int code = strncmp(m, "usage", 5) == 0 ? 10 : strcmp(m, "bad drive") == 0 ? 101 : 255;
+        *outn = outn_clamp(snprintf(out, cap, "%s", m), cap);
+        return code;
+    }
+    if (rcap_trunc) {
+        /* spec §4.2: the marker is its own line, so drop the trailing
+         * partial line (if any) rather than splicing "..." onto it. */
+        while (rcap_len > 0 && out[rcap_len - 1] != '\n') rcap_len--;
+        memcpy(out + rcap_len, "...\n", 4);
+        rcap_len += 4;
+    }
+    *outn = rcap_len;
+    return 0;
 }
 
 void console_feed(const uint8_t *buf, size_t n) {

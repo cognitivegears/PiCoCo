@@ -5,6 +5,7 @@
 #include "dw_store.h"
 #include "dw_disk.h"
 #include "dw_util.h"
+#include "dw_vser.h"
 
 #define DW_MAX_DRIVES 4
 #define DW_PAYLOAD_TIMEOUT_MS 250
@@ -76,6 +77,7 @@ typedef struct dw_server {
     int64_t time_base;      /* unix seconds at time_base_ms */
     uint32_t time_base_ms;
     dw_stats stats;
+    dw_vser vser;
 } dw_server;
 
 void dw_init(dw_server *s, dw_store *store, dw_send_fn send, void *ctx);
@@ -86,3 +88,7 @@ void dw_eject(dw_server *s, int drive);
 void dw_time_set(dw_server *s, int64_t unix_secs, uint32_t now_ms);
 int64_t dw_time_get(dw_server *s, uint32_t now_ms);
 void dw_set_capture(dw_server *s, dw_capture_fn fn, void *ctx);
+/* Command handler for vserial lines. Runs inside dw_feed's dispatch (called
+ * synchronously from vser_write/etc.); the callback must not re-enter
+ * dw_feed (e.g. "dw selftest" must never be remote-callable). */
+void dw_set_exec(dw_server *s, vser_exec_fn fn, void *ctx);
