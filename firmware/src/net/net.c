@@ -124,6 +124,9 @@ void net_init(void) {
 int net_set_ssid(const char *s) { if (!s[0] || strlen(s) > NET_SSID_MAX) return -1; strcpy(s_ssid, s); return 0; }
 int net_set_psk(const char *s) { if (strlen(s) > NET_PSK_MAX) return -1; strcpy(s_psk, s); return 0; }
 int net_set_server(const char *h, uint16_t p) { if (!h[0] || strlen(h) > NET_HOST_MAX) return -1; strcpy(s_host, h); s_port = p; return 0; }
+static int s_tz = NET_TZ_OFF;
+int net_set_tz(int m) { if (m != NET_TZ_OFF && (m < -840 || m > 840)) return -1; s_tz = m; return 0; }
+int net_tz(void) { return s_tz; }
 void net_forget(void) { net_stop(); s_ssid[0] = s_psk[0] = s_host[0] = 0; s_port = NET_DEFAULT_PORT; }
 bool net_configured(void) { return s_ssid[0] && s_host[0]; }
 
@@ -239,8 +242,18 @@ int net_scan(void (*cb)(const char *, int, int, void *), void *ctx) {
 extern dw_server *net_dw;   /* set by main.c: the server whose clock SNTP updates */
 dw_server *net_dw;
 static bool s_sntp_applied;
-/* SNTP only seeds a stopped clock, once per boot: it is UTC, and must never undo a local-time `time set`. */
+/* tz off: SNTP only seeds a stopped clock, once per boot (it is UTC, and must never undo a local-time `time set`).
+ * tz set (`net tz`): the user asked for local time, so every SNTP update sets clock + DriveWire time. */
 void net_sntp_set(uint32_t sec) {
+    if (s_tz != NET_TZ_OFF) {
+        int64_t local = (int64_t)sec + (int64_t)s_tz * 60;
+        plat_rtc_set(local);
+        if (net_dw) dw_time_set(net_dw, local, plat_now_ms());
+        if (!s_sntp_applied) LOG_I(LOG_M_NET, "net: sntp set %lld (utc %u tz %d)", (long long)local, (unsigned)sec, s_tz);
+        else LOG_D(LOG_M_NET, "net: sntp set %lld (utc %u tz %d)", (long long)local, (unsigned)sec, s_tz);
+        s_sntp_applied = true;
+        return;
+    }
     int64_t cur;
     if (s_sntp_applied || plat_rtc_get(&cur)) return;
     plat_rtc_set((int64_t)sec);

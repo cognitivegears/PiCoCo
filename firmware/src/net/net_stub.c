@@ -12,6 +12,9 @@ static uint8_t up_buf[1024], down_buf[1024];
 static ring_t up, down; /* up: to server; down: from server */
 static bool rings_ready;
 static void rings(void) { if (!rings_ready) { ring_init(&up, up_buf, 1024); ring_init(&down, down_buf, 1024); rings_ready = true; } }
+static int tz = NET_TZ_OFF;
+int net_set_tz(int m) { if (m != NET_TZ_OFF && (m < -840 || m > 840)) return -1; tz = m; return 0; }
+int net_tz(void) { return tz; }
 bool net_available(void) { return false; }
 void net_init(void) {}
 int net_set_ssid(const char *s) { if (!s[0] || strlen(s) > NET_SSID_MAX) return -1; strcpy(ssid, s); return 0; }

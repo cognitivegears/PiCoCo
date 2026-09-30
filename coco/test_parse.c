@@ -116,9 +116,23 @@ static void t_net_radio(void) {
     CHECK(line_value(no, "net mode ", v, 24) > 0 && strcmp(v, "off boot native") == 0);
 }
 
+static void t_tz(void) {
+    int m = 99; char s[10];
+    CHECK(parse_tz("+5:30", &m) == 0 && m == 330);
+    CHECK(parse_tz("-05:00", &m) == 0 && m == -300);
+    CHECK(parse_tz("-5", &m) == 0 && m == -300);
+    CHECK(parse_tz("+14:00", &m) == 0 && m == 840);
+    CHECK(parse_tz("off", &m) == 1 && parse_tz("OFF", &m) == 1 && parse_tz("", &m) == 1);
+    CHECK(parse_tz("+15:00", &m) == -1 && parse_tz("abc", &m) == -1);
+    CHECK(parse_tz("5:60", &m) == -1 && parse_tz("+", &m) == -1 && parse_tz("5:3", &m) == -1 && parse_tz("5x", &m) == -1);
+    fmt_tz(-300, s); CHECK(strcmp(s, "UTC-05:00") == 0);
+    fmt_tz(330, s); CHECK(strcmp(s, "UTC+05:30") == 0);
+    fmt_tz(0, s); CHECK(strcmp(s, "UTC+00:00") == 0);
+}
+
 int main(void) {
     t_reply(); t_ls(); t_ls_truncated_tail(); t_disks(); t_line_value(); t_time(); t_disk_detect();
-    t_scan(); t_net_radio();
+    t_scan(); t_net_radio(); t_tz();
     printf("%s\n", fails ? "FAILED" : "all passed");
     return fails != 0;
 }

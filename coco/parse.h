@@ -45,5 +45,9 @@ int  is_os9_boot(const u8 *sec);                   /* track 34 sector 1 starts "
 /* One RS-DOS directory sector (8 entries). Adds BASIC/ML entries to out (at
  * most max); sets *end when the $FF end marker is seen. Returns entries added. */
 int  rsdos_dir(const u8 *sec, rs_ent *out, int max, int *end);
+/* "[+-]HH[:MM]" -> *minutes east of UTC and 0; "" or "OFF" -> 1 (clear the zone); else -1.
+ * Range is +-14:00, minutes 00-59. */
+int  parse_tz(const char *s, int *minutes);
+void fmt_tz(int minutes, char *out);               /* "UTC-05:00"; out needs 10 bytes */
 int  ends_with_ci(const char *s, const char *suffix);
 #endif

@@ -111,6 +111,10 @@ Behaviour rules:
   `plat_rtc_set` and `dw_time_set` (pool.ntp.org). Failure is silent.
   *As built:* SNTP starts on link-up and seeds only a stopped clock (never
   overwrites a `time set`; SNTP is UTC). Rings are cleared on every reconnect.
+  *Timezone knob:* `net tz <minutes>|off` (+-840). With a zone set, every SNTP
+  update (link-up and hourly) applies UTC plus the offset to `plat_rtc_set`
+  and `dw_time_set`; `off` keeps the seed-only rule. Saved as `net tz` before
+  `becker`; the manager's Settings screen has a `Z:TIMEZONE` row.
   The self-test's DWINIT is 2 bytes (`5A FF`) and the year byte is year-1900.
 - The lwIP config (`firmware/src/net/lwipopts.h`) is the SDK example's with
   only raw TCP, DHCP, DNS, SNTP and IPv4. No threads, no sockets API.

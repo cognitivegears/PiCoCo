@@ -234,7 +234,8 @@ RUN-pin reset:
   (`10 LOADM"PICOCO":EXEC`).
 - Load address at or above $3800, so the OS-9 boot track can load to
   $2600-$37FF without overwriting the program (5.5). The program must end
-  below $7800, leaving room for BASIC's stack and string space.
+  below $7B80; the loader's CLEAR 200 pins BASIC's string space to the top 200 bytes, leaving about 0.9 KB of stack.
+  (Was $7800 until the timezone row; $7A00 was tried and did not fit.)
 - Launch: copy `PICOCO.DSK` to flash, mount it (for example
   `dw mount 3 PICOCO.DSK` plus `save`), then `DRIVE 3:RUN"PICOCO"`. The
   loader `LOADM`s from the default drive, hence `DRIVE` first. On a CoCo 3

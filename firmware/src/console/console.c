@@ -389,7 +389,7 @@ static void net_leave_if_active(void) {
     if (mode_get() == MODE_NET) { net_stop(); mode_set(MODE_NATIVE); }
 }
 static int cmd_net(int argc, char **argv) {
-    const char *usage = "usage: net [status]|join <ssid>|psk [<psk>]|server <host> [port]|forget|scan|mode net|native";
+    const char *usage = "usage: net [status]|tz <minutes>|off|join <ssid>|psk [<psk>]|server <host> [port]|forget|scan|mode net|native";
     if (argc < 2 || strcasecmp(argv[1], "status") == 0) {
         outf("net state %s\n", net_state_name(net_state()));
         if (net_last_error()[0]) outf("net error %s\n", net_last_error());
@@ -399,6 +399,7 @@ static int cmd_net(int argc, char **argv) {
         outf("net ip %s\n", net_ip());
         outf("net bytes up %u down %u overrun %u retries %u\n",
              net_stats.bytes_up, net_stats.bytes_down, net_stats.overrun, net_stats.retries);
+        if (net_tz() == NET_TZ_OFF) outf("net tz off\n"); else outf("net tz %d\n", net_tz());
         outf("net radio %s\n", net_available() ? "yes" : "no");
         outf("net mode %s boot %s\n", mode_name(mode_get()),
              mode_name(g_boot_mode >= 0 ? (picoco_mode)g_boot_mode : mode_get()));
@@ -419,6 +420,13 @@ static int cmd_net(int argc, char **argv) {
         if (port < 1 || port > 65535) return cerr("net: bad port");
         net_leave_if_active();
         return net_set_server(argv[2], (uint16_t)port) == 0 ? 0 : cerr("net: host too long");
+    }
+    if (strcasecmp(argv[1], "tz") == 0) {
+        char *end; long m = 0;
+        if (argc < 3) return cerr(usage);
+        if (strcasecmp(argv[2], "off") == 0) m = NET_TZ_OFF;
+        else { m = strtol(argv[2], &end, 10); if (*end || end == argv[2]) return cerr("net: tz is minutes or off"); }
+        return net_set_tz((int)m) == 0 ? 0 : cerr("net: tz out of range (+-840)");
     }
     if (strcasecmp(argv[1], "forget") == 0) { net_leave_if_active(); net_forget(); g_boot_mode = -1; return 0; }
     if (strcasecmp(argv[1], "scan") == 0) {
@@ -722,6 +730,7 @@ static int cmd_save(void) {
     if (net_ssid()[0] && !cfg_append(cfg, sizeof(cfg), &len, "net join %s\n", net_ssid())) return cerr("config too large");
     if (net_psk_set() && !cfg_append(cfg, sizeof(cfg), &len, "net psk %s\n", net_psk_plain())) return cerr("config too large");
     if (net_host()[0] && !cfg_append(cfg, sizeof(cfg), &len, "net server %s %u\n", net_host(), net_port())) return cerr("config too large");
+    if (net_tz() != NET_TZ_OFF && !cfg_append(cfg, sizeof(cfg), &len, "net tz %d\n", net_tz())) return cerr("config too large");
     if (!cfg_append(cfg, sizeof(cfg), &len, "becker %s\n",
                     mode_name(g_boot_mode >= 0 ? (picoco_mode)g_boot_mode : mode_get())))
         return cerr("config too large");

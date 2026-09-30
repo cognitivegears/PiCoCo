@@ -26,6 +26,9 @@ int    net_set_ssid(const char *s);            /* 0 ok, -1 too long/empty */
 int    net_set_psk(const char *s);             /* "" clears (open network) */
 int    net_set_server(const char *host, uint16_t port);
 void   net_forget(void);                       /* clear config, net_stop */
+#define NET_TZ_OFF INT16_MIN                   /* SNTP only seeds a stopped clock (UTC) */
+int    net_set_tz(int minutes);                /* +-840, or NET_TZ_OFF; -1 out of range. Survives net_forget. */
+int    net_tz(void);                           /* minutes east of UTC, or NET_TZ_OFF */
 bool   net_configured(void);                   /* ssid and host stored */
 int    net_start(void);                        /* -1 not configured / no radio; else begins joining */
 void   net_stop(void);                         /* close socket, leave, NET_OFF, clear rings */

@@ -253,3 +253,39 @@ int parse_scan(char *text, file_ent *out, int max)
     }
     return n;
 }
+
+/* Written without / and % (CMOC's 16-bit divide helpers cost ~100 bytes each; the $7A00 ceiling is tight). */
+int parse_tz(const char *s, int *minutes)
+{
+    char neg = 0;
+    int h = 0, m = 0, nd = 0;
+    if (s[0] == '\0' || ((s[0] | 32) == 'o' && (s[1] | 32) == 'f' && (s[2] | 32) == 'f' && s[3] == '\0')) return 1;
+    if (*s == '+' || *s == '-') { neg = (*s == '-'); s++; }
+    while (*s >= '0' && *s <= '9' && nd < 2) { h = h * 10 + (*s - '0'); s++; nd++; }
+    if (nd == 0) return -1;
+    if (*s == ':') {
+        s++;
+        if (!(s[0] >= '0' && s[0] <= '5' && s[1] >= '0' && s[1] <= '9')) return -1;
+        m = (s[0] - '0') * 10 + (s[1] - '0');
+        s += 2;
+    }
+    if (*s != '\0' || h > 14 || (h == 14 && m)) return -1;
+    m += h * 60;
+    *minutes = neg ? -m : m;
+    return 0;
+}
+
+void fmt_tz(int minutes, char *out)
+{
+    int h = 0, t = 0;
+    char *p = out;
+    char neg = minutes < 0;
+    if (neg) minutes = -minutes;
+    while (minutes >= 60) { minutes -= 60; h++; }
+    while (minutes >= 10) { minutes -= 10; t++; }
+    strcpy(p, neg ? "UTC-00:00" : "UTC+00:00");
+    if (h >= 10) { h -= 10; p[4] = '1'; }
+    p[5] = (char)('0' + h);
+    p[7] = (char)('0' + t);
+    p[8] = (char)('0' + minutes);
+}

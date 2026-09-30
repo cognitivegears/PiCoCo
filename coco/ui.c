@@ -454,11 +454,12 @@ static void net_screen(void)
 
 void settings_run(void)
 {
-    char now[40], next[40], hdb[8], tv[16], clk[8], ts[20], *body;
+    char now[40], next[40], hdb[8], tv[16], clk[8], ts[20], tzv[8], tzs[10], *body;
     u32 t;
+    int tzm;
     u8 k;
     for (;;) {
-        now[0] = next[0] = hdb[0] = tv[0] = clk[0] = '\0';
+        now[0] = next[0] = hdb[0] = tv[0] = clk[0] = tzv[0] = '\0';
         if (ui_cmd("status", &body) != 0) return;
         line_value(body, "rom now ", now, sizeof now);
         line_value(body, "rom next ", next, sizeof next);
@@ -466,6 +467,8 @@ void settings_run(void)
         if (ui_cmd("time", &body) != 0) return;
         line_value(body, "time ", tv, sizeof tv);
         line_value(body, "clock ", clk, sizeof clk);
+        if (ui_cmd("net status", &body) == 0) line_value(body, "net tz ", tzv, sizeof tzv);
+        if (tzv[0] && strcmp(tzv, "off") != 0) { tzm = (int)dec_to_u32(tzv[0] == '-' ? tzv + 1 : tzv); fmt_tz(tzv[0] == '-' ? -tzm : tzm, tzs); } else strcpy(tzs, "OFF");
         strip_load(now); strip_load(next);
         fmt_time(dec_to_u32(tv), ts);
         clear_screen();
@@ -477,9 +480,10 @@ void settings_run(void)
         put_at(5, 0, "R:CHOOSE ROM FOR NEXT BOOT", 0);
         put_at(6, 0, "H:HDB-DOS DRIVE MODE ", 0); put_at(6, 21, hdb, 0);
         put_at(7, 0, "T:CLOCK ", 0);   put_at(7, 8, ts, 0);
-        if (strcmp(clk, "kept") != 0) put_at(8, 2, "(LOST AT RESET)", 0);
-        put_at(9, 0, "W:WIFI", 0);
-        put_at(10, 0, "V:SAVE   BREAK:BACK", 0);
+        put_at(8, 0, "Z:TIMEZONE ", 0);  put_at(8, 11, tzs, 0);
+        if (strcmp(clk, "kept") != 0) put_at(9, 2, "(LOST AT RESET)", 0);
+        put_at(10, 0, "W:WIFI", 0);
+        put_at(11, 0, "V:SAVE   BREAK:BACK", 0);
         k = key();
         if (k >= 'a' && k <= 'z') k = (u8)(k - 32);
         if (k == 3) return;
@@ -494,6 +498,16 @@ void settings_run(void)
                     strcpy(line, "time set ");
                     u32_to_dec(t, line + 9);
                     ui_cmd(line, &body);
+                }
+            }
+        } else if (k == 'Z') {
+            if (input_line("UTC OFFSET (+HH:MM,OFF): ", tzv, 6) >= 0) {
+                int r = parse_tz(tzv, &tzm);
+                if (r < 0) msg("BAD OFFSET");
+                else {
+                    strcpy(line, "net tz off");
+                    if (r == 0) { r = tzm < 0; line[7] = '-'; u32_to_dec((u32)(r ? -tzm : tzm), line + 7 + r); }
+                    if (ui_cmd(line, &body) == 0) ui_dirty = 1;
                 }
             }
         } else if (k == 'W') net_screen();

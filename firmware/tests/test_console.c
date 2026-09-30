@@ -664,6 +664,28 @@ TEST(net_status_hides_psk_and_save_order) {
       ASSERT(strstr(cfg, want)); }                      /* forget cleared the pending mode */
 }
 
+TEST(net_tz_config_and_save) {
+    setup();
+    ASSERT_EQ(console_exec("net tz -300"), 0);
+    ASSERT_EQ(net_tz(), -300);
+    outn = 0; console_exec("net status");
+    ASSERT(strstr(out, "net tz -300\n"));
+    ASSERT(console_exec("net tz 900") != 0);
+    ASSERT(console_exec("net tz abc") != 0);
+    ASSERT_EQ(net_tz(), -300);
+    console_exec("save");
+    char cfg[1024]; int n = plat_cfg_read(cfg, sizeof cfg - 1); ASSERT(n > 0); cfg[n] = 0;
+    const char *t = strstr(cfg, "net tz -300\n"), *b = strstr(cfg, "becker ");
+    ASSERT(t && b && t < b);
+    ASSERT_EQ(console_exec("net tz off"), 0);
+    ASSERT_EQ(net_tz(), NET_TZ_OFF);
+    outn = 0; console_exec("net status");
+    ASSERT(strstr(out, "net tz off\n"));
+    console_exec("save");
+    n = plat_cfg_read(cfg, sizeof cfg - 1); cfg[n] = 0;
+    ASSERT(!strstr(cfg, "net tz"));
+}
+
 TEST(net_remote_allowed) {
     setup();
     ASSERT_EQ(remote("net status"), 0);
@@ -747,6 +769,7 @@ int main(void) {
     RUN(becker_net_refused_without_config);
     RUN(net_mode_net_refused_on_host);
     RUN(net_status_hides_psk_and_save_order);
+    RUN(net_tz_config_and_save);
     RUN(net_remote_allowed);
     RUN(fallback_keeps_net_on_save);
     TEST_MAIN_END

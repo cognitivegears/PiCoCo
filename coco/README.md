@@ -294,6 +294,9 @@ a `dw mount <n> <file> ro` line for each read-only mount.
   swap the ROM currently driving `/CTS`. Shows `SAVE, THEN RESET`
   afterward. Hides any `.ROM` file whose name contains a space, since
   `rom boot` takes a single token and couldn't be sent one.
+- `Z`: timezone for SNTP (`+HH:MM`, `-HH`, or `OFF`), sent as `net tz <minutes>`.
+  With a zone set, WiFi SNTP sets the clock on every update instead of only
+  seeding a stopped one. The row shows `OFF` or e.g. `UTC-05:00`.
 - `H`: toggle HDB-DOS drive-by-LSN addressing (`dw hdbdos on|off`).
 - `T`: set the clock (`YYYY-MM-DD HH:MM`), converted to Unix seconds and
   sent as `time set`. Shows `(LOST AT RESET)` under the current time if
@@ -342,7 +345,8 @@ Pico 2 board (`net radio no`) the screen shows `NO RADIO ON THIS BOARD` and retu
 ## Memory layout
 
 - The 2-line `PICOCO.BAS` loader sits at $2601: line 10
-  (`IF PEEK(65534)=140 THEN WIDTH32`) sets 32-column mode on a CoCo 3,
+  (`CLEAR200:IF PEEK(65534)=140 THEN WIDTH32`) pins string space to 200
+  bytes and sets 32-column mode on a CoCo 3,
   line 20 (`LOADM"PICOCO":EXEC`) loads and runs the program.
 - The `fs ls` reply buffer (`LSBUF`, 3096 bytes: a 23-byte `OK` header
   plus a 3072-byte body plus a NUL) lives at a fixed $2700-$3317 instead
@@ -356,8 +360,10 @@ Pico 2 board (`net radio no`) the screen shows `NO RADIO ON THIS BOARD` and retu
   (`BASIC PROGRAM TOO BIG`) if BASIC's array-end pointer (`ARYEND`,
   $001F) already reaches past $2700.
 - `PICOCO.BIN` loads at $3800 (`ORG` in `coco/Makefile`) and must end
-  below $7800 (BASIC stack and string space); the Makefile passes
-  `--limit=7800`, so an overrun fails the build. Current end: $77A3.
+  below $7B80; the Makefile passes `--limit=7B80`, so an overrun fails the
+  build. The loader's `CLEAR 200` pins BASIC's string space to the top 200
+  bytes, leaving about 0.9 KB of stack above the program. Current end:
+  $7B5C. (The $7A00 target did not fit once the timezone row landed.)
 - OS-9 boot (track 34 -> $2600-$37FF) and the `RUN"X"`/`LOADM"X"`
   handoff both overwrite $2700-$37FF, but only after the picked file's
   name has already been copied out of `LSBUF`, so the overlap is safe.
