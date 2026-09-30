@@ -1,5 +1,6 @@
 cmake_minimum_required(VERSION 3.20)
 option(PICOCO_HOST "Build host library, tests and picoco-host instead of Pico firmware" OFF)
+option(PICOCO_BENCH "Register tools/bench.py as a ctest. It drives the bus pins: only with the board unplugged from the CoCo." OFF)
 set(PICOCO_VERSION "1.2")
 # PiCoCo board: "pico2" (Pico 2 / RP2350A, default) or "plusw" (Waveshare
 # RP2350B-Plus-W). Picks both the PiCoCo pin header (boards/<x>.h) and, for
@@ -48,6 +49,13 @@ if(NOT PICOCO_HOST)
   else()
     set(PICOCO_PIN_HEADER pico2_breadboard)
   endif()
+  # fake6809 (on-chip PIO selftest): pio1 drives A0-A13/R/W plus OE_BUS on a
+  # Pico 2, or A0-A15/R/W plus CTS/SCS/E/Q/SLENB on a Plus-W (fake6809.pio
+  # has one program per board; fake6809.c picks the right one on
+  # PICOCO_BOARD_PLUSW).
+  target_sources(picoco PRIVATE src/bus/fake6809.c)
+  target_compile_definitions(picoco PRIVATE PICOCO_HAVE_FAKE6809=1)
+  pico_generate_pio_header(picoco ${CMAKE_CURRENT_LIST_DIR}/src/bus/fake6809.pio)
   target_include_directories(picoco PRIVATE src src/usb src/dw src/bus src/dev src/console boards third_party/fatfs)
   target_compile_options(picoco PRIVATE -Wall -Wextra)
   set_source_files_properties(${FATFS_SRC} PROPERTIES COMPILE_OPTIONS -w)
@@ -63,7 +71,7 @@ if(NOT PICOCO_HOST)
     CFG_TUSB_CONFIG_FILE="tusb_config.h")
   target_link_libraries(picoco
     pico_stdlib pico_unique_id pico_multicore pico_aon_timer
-    hardware_flash hardware_sync hardware_watchdog
+    hardware_flash hardware_sync hardware_watchdog hardware_pio
     tinyusb_device tinyusb_board)
   pico_add_extra_outputs(picoco)
   find_package(Python3 COMPONENTS Interpreter)
@@ -105,4 +113,12 @@ endforeach()
 if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/host/picoco_host.c)
   add_executable(picoco-host host/picoco_host.c)
   target_link_libraries(picoco-host picoco_core)
+endif()
+
+if(PICOCO_BENCH)
+  find_package(Python3 COMPONENTS Interpreter)
+  if(Python3_FOUND)
+    add_test(NAME bench COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tools/bench.py --skip-if-absent)
+    set_tests_properties(bench PROPERTIES SKIP_RETURN_CODE 77)
+  endif()
 endif()

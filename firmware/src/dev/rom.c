@@ -8,54 +8,144 @@
 
 static const device_t rom_device = { "rom", ROM_LO, ROM_HI, NULL, NULL };
 
+/* 128 KB of SRAM, .bss. Only the loaded banks are meaningful. */
+static uint8_t rom_banks[ROM_MAX_BANKS][ROM_BANK_SIZE];
+static volatile uint8_t rom_nbanks;     /* 0 = unbanked; written by core0 (loader) only */
+static volatile uint8_t rom_bank_mask;
+static bool rom_have;
+static bool rom_dos;
+static cart_mode_t cart_mode;           /* initialized to CART_AUTO (0) by default */
+
+/* core1: swap the ROM window on a $FF40 write. Inert while unbanked, so it
+ * stays registered for the life of the firmware (no remove API needed). */
+static BUS_HOT void rom_bank_hook(uint8_t data) {
+    if (rom_nbanks) bus_rom_base = rom_banks[data & rom_bank_mask];
+}
+
 void rom_init(void) {
+    cart_mode = CART_AUTO;
+    rom_have = false;
+    rom_dos = false;
     device_register(&rom_device);
+    bus_add_write_hook(0x3F40, rom_bank_hook);
 }
 
-void rom_pattern(void) {
-    for (uint32_t i = 0; i < 0x2000; i++) bus_table[i] = (uint8_t)(i & 0xFF);
+static void unbank(void) {
+    rom_nbanks = 0;
+    rom_bank_mask = 0;
+    bus_rom_base = bus_table;
 }
 
-void rom_off(void) {
-    memset(&bus_table[ROM_LO], 0xFF, ROM_HI - ROM_LO + 1);
+void rom_banks_begin(void) {
+    unbank();
+    rom_have = false;
+    rom_dos = false;
 }
 
-int rom_load_mem(const uint8_t *p, size_t n) {
-    if (n != 8192 && n != 16384) return -2;
-    if (n == 8192) {
-        memcpy(&bus_table[0], p, n);
-        return 0;
-    }
-    /* 16 K load: bus_table[0x3F41]/[0x3F42] are becker's, not ROM's, and only
-     * core1's read hooks may write them (single-writer rule, see becker.c).
-     * Copy around those two indices instead of overwriting-then-relying-on
-     * the next $FF41 poll to restore them — no window where a core1 read
-     * would see a transient ROM byte there. */
-    memcpy(&bus_table[0], p, 0x3F41);
-    memcpy(&bus_table[0x3F43], p + 0x3F43, n - 0x3F43);
+uint8_t *rom_bank_buf(int b) {
+    if (b < 0 || b >= ROM_MAX_BANKS) return NULL;
+    return rom_banks[b];
+}
+
+int rom_publish_banks(int nb) {
+    if (nb != 2 && nb != 4 && nb != 8) return -2;
+    /* Order matters for core1: base at bank 0, then mask, then the count
+     * that lets the $FF40 hook start switching (same order as the old
+     * rom_load_mem banked path). */
+    bus_rom_base = rom_banks[0];
+    rom_bank_mask = (uint8_t)(nb - 1);
+    rom_nbanks = (uint8_t)nb;
+    rom_have = true;
+    rom_dos = (rom_banks[0][0] == 'D' && rom_banks[0][1] == 'K');
     return 0;
 }
 
-/* ponytail: 16 KB staging buffer; could read straight into bus_table since
- * size is validated first. */
-static uint8_t rom_file_buf[16384];
+void rom_pattern(void) {
+    unbank();
+    for (uint32_t i = 0; i < 0x2000; i++) bus_table[i] = (uint8_t)(i & 0xFF);
+    rom_have = false; rom_dos = false;
+}
+
+void rom_off(void) {
+    unbank();
+    memset(&bus_table[ROM_LO], 0xFF, ROM_HI - ROM_LO + 1);
+    rom_have = false; rom_dos = false;
+}
+
+static int bank_count_for(size_t n) {
+    if (n == 2 * ROM_BANK_SIZE || n == 4 * ROM_BANK_SIZE || n == 8 * ROM_BANK_SIZE) return (int)(n / ROM_BANK_SIZE);
+    return 0;
+}
+
+int rom_load_mem(const uint8_t *p, size_t n) {
+    int nb = bank_count_for(n);
+    if (n != 8192 && n != 16384 && nb == 0) return -2;
+    if (nb) {
+        /* Order matters for core1: fill banks, point the base at bank 0, then
+         * publish the count so the hook can start switching (rom_publish_banks). */
+        rom_nbanks = 0;
+        for (int b = 0; b < nb; b++) memcpy(rom_banks[b], p + (size_t)b * ROM_BANK_SIZE, ROM_BANK_SIZE);
+        rom_publish_banks(nb);   /* nb is always 2/4/8 here: bank_count_for only returns those */
+    } else {
+        unbank();
+        if (n == 8192) {
+            memcpy(&bus_table[0], p, n);
+        } else {
+            /* 16 K load: bus_table[0x3F41]/[0x3F42] are becker's, not ROM's, and
+             * only core1's read hooks may write them (single-writer rule). */
+            memcpy(&bus_table[0], p, 0x3F41);
+            memcpy(&bus_table[0x3F43], p + 0x3F43, n - 0x3F43);
+        }
+        rom_have = true;
+        rom_dos = (p[0] == 'D' && p[1] == 'K');
+    }
+    return 0;
+}
+
+static uint8_t rom_chunk_buf[ROM_BANK_SIZE];   /* staging for 8 K/16 K loads only; banked loads read straight into rom_banks */
 
 int rom_load_file(dw_store *st, const char *name) {
     dw_file f;
     if (st->ops->open(st->ctx, name, false, &f) < 0) return -1;
     uint32_t size;
-    if (st->ops->size(&f, &size) < 0) {
+    if (st->ops->size(&f, &size) < 0) { st->ops->close(&f); return -1; }
+    int nb = bank_count_for(size);
+    if (size != 8192 && size != 16384 && nb == 0) { st->ops->close(&f); return -2; }
+    if (nb) {
+        rom_banks_begin();
+        for (int b = 0; b < nb; b++) {
+            uint8_t *dst = rom_bank_buf(b);
+            uint32_t got = 0;
+            while (got < ROM_BANK_SIZE) {
+                int r = st->ops->read(&f, (uint32_t)b * ROM_BANK_SIZE + got, dst + got, ROM_BANK_SIZE - got);
+                if (r <= 0) { st->ops->close(&f); rom_off(); return -1; }   /* ROM left off: no stale bytes in bus_table either */
+                got += (uint32_t)r;
+            }
+        }
         st->ops->close(&f);
-        return -1;
+        rom_publish_banks(nb);
+        return 0;
     }
-    if (size != 8192 && size != 16384) {
-        st->ops->close(&f);
-        return -2;
+    uint32_t got = 0;
+    while (got < size) {
+        int r = st->ops->read(&f, got, rom_chunk_buf + got, size - got);
+        if (r <= 0) { st->ops->close(&f); return -1; }
+        got += (uint32_t)r;
     }
-    int got = st->ops->read(&f, 0, rom_file_buf, size);
     st->ops->close(&f);
-    if (got < 0 || (uint32_t)got != size) return -1;
-    return rom_load_mem(rom_file_buf, size);
+    return rom_load_mem(rom_chunk_buf, size);
+}
+
+int  rom_bank_count(void) { return rom_nbanks; }
+bool rom_loaded(void)     { return rom_have; }
+bool rom_is_dos(void)     { return rom_have && rom_dos; }
+
+void        rom_cart_set(cart_mode_t m) { cart_mode = m; }
+cart_mode_t rom_cart_get(void)          { return cart_mode; }
+bool rom_cart_wanted(void) {
+    if (cart_mode == CART_ON)  return true;
+    if (cart_mode == CART_OFF) return false;
+    return rom_have && !rom_dos;
 }
 
 int rom_check_file(dw_store *st, const char *name) {
@@ -65,5 +155,5 @@ int rom_check_file(dw_store *st, const char *name) {
     int r = st->ops->size(&f, &size);
     st->ops->close(&f);
     if (r < 0) return -1;
-    return (size == 8192 || size == 16384) ? 0 : -2;
+    return (size == 8192 || size == 16384 || bank_count_for(size)) ? 0 : -2;   /* same sizes rom_load_mem takes */
 }

@@ -143,6 +143,50 @@ python3 firmware/tools/pconsole.py /dev/cu.usbmodemXXXX2 \
     'fs format' 'fs ls' 'dw selftest'
 ```
 
+Bus-engine-specific commands: `bus selftest` runs the on-chip fake 6809
+self-test (see "Self-test without a CoCo" below); `cart on|off|auto`
+sets the firmware `/CART` pulse policy (`auto`, the default, pulses for
+500 ms after `/HALT` release when a loaded ROM is not DK-signature DOS;
+Plus-W only today — a Pico 2 build has no `PIN_CART_DRV`, so `cart on`
+and `cart off` are refused there with `err cart: needs Plus-W (JP5 on
+a Pico 2)`; `auto` and the bare query still work on both boards);
+`rom load <file>` accepts a plain
+8 KB/16 KB image or a banked Games Master Cartridge image (32 KB, 64 KB
+or 128 KB, switched by writes to `$FF40`), refusing any other size with
+`err rom load: size must be 8K, 16K, or banked 32K/64K/128K`.
+
+#### Self-test without a CoCo
+
+`bus selftest` drives the real core1 bus loop from an on-chip PIO1 state
+machine at 6809 timing — no CoCo needed, and safe to run on an unplugged
+board (see `docs/firmware-architecture.md` §3.2.5 for why). **Unplug the
+Pico from the CoCo cart edge first; the guard below is a backstop, not
+a licence to leave it plugged in.** Before touching any pins the command
+refuses (`-2`, "bus is live") if either: `bus_stats.cycles` moves during
+a 100 ms sleep (a running CoCo driving cart cycles), or the address/`R/W`
+pins (plus `OE_BUS` on a Pico 2, or `E`/`Q` on a Plus-W) aren't perfectly
+still for a 10 ms, 50 µs-interval sample — an idle CoCo running from RAM
+produces no cart cycles at all, but those pins still toggle with the CPU
+clock through always-enabled buffers, where an unplugged board just sits
+on its pull-ups.
+
+```
+python3 firmware/tools/bench.py [--port /dev/cu.usbmodemXXXX2] [--skip-if-absent]
+```
+
+`bench.py` runs `version` then `bus selftest` over the console (auto-
+detecting the second `/dev/cu.usbmodem*`/`/dev/ttyACM*` node if
+`--port` is omitted), prints every line, and exits 0 on `selftest pass`,
+1 on any failure or timeout, or 77 with `--skip-if-absent` when no Pico
+console is found at all. It is also registered as the `bench` ctest
+target, but only opt-in — configure with `-DPICOCO_BENCH=ON` to add it,
+since it drives real bus pins and must not run against a plugged-in
+board by accident. With `PICOCO_BENCH` off (the default), `ctest
+--test-dir build-host` doesn't know about it at all. The self-test
+clears whatever ROM was loaded (`rom off`) as part of running, so
+`bench.py` sends `reboot` at the end to replay a saved `rom load` from
+`picoco.cfg`.
+
 ### Filesystem
 
 The on-flash FAT filesystem (`fs_flash.c`/`dw_store_fatfs.c`) lives at

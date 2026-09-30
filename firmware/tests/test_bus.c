@@ -94,6 +94,68 @@ TEST(drive_flag) {
     ASSERT(!bus_drive_get());
 }
 
+static int wh_order;            /* 1 = hook ran before the event was queued */
+static uint8_t wh_data;
+static void whook_capture(uint8_t d) {
+    uint16_t idx; uint8_t data;
+    wh_data = d;
+    wh_order = bus_pop_write(&idx, &data) ? 2 : 1;   /* ring must still be empty */
+}
+static void whook_noop(uint8_t d) { (void)d; }
+
+TEST(write_hook_runs_before_queue_with_data) {
+    bus_init();
+    wh_order = 0; wh_data = 0;
+    ASSERT_EQ(bus_add_write_hook(0x3F40, whook_capture), 0);
+    bus_on_write(0x3F40, 0x5A, 0);
+    ASSERT_EQ(wh_order, 1);                 /* ring was still empty when the hook ran */
+    ASSERT_EQ(wh_data, 0x5A);
+    ASSERT_EQ(bus_stats.whooks_run, 1);
+    bus_on_write(0x3F41, 0x11, 0);          /* other index: no hook */
+    ASSERT_EQ(bus_stats.whooks_run, 1);
+    uint16_t idx; uint8_t data;
+    ASSERT(bus_pop_write(&idx, &data));     /* 0x3F40 event still queued after the hook */
+    ASSERT_EQ(idx, 0x3F40);
+    ASSERT_EQ(data, 0x5A);
+    ASSERT(bus_pop_write(&idx, &data));
+    ASSERT_EQ(idx, 0x3F41);
+    ASSERT(!bus_pop_write(&idx, &data));
+}
+
+TEST(write_hook_table_full) {
+    bus_init();
+    for (int i = 0; i < BUS_MAX_HOOKS; i++) ASSERT_EQ(bus_add_write_hook((uint16_t)i, whook_noop), 0);
+    ASSERT_EQ(bus_add_write_hook(99, whook_noop), -1);
+}
+
+TEST(stats_new_fields_zeroed) {
+    bus_stats.whooks_run = 5; bus_stats.hw_selected = 5; bus_stats.fw_selected = 5;
+    bus_init();
+    ASSERT_EQ(bus_stats.whooks_run, 0);
+    ASSERT_EQ(bus_stats.hw_selected, 0);
+    ASSERT_EQ(bus_stats.fw_selected, 0);
+}
+
+TEST(fw_decode_mask) {
+    bus_init();
+    ASSERT_EQ(bus_fw_mask, 0);
+    ASSERT_EQ(bus_fw_enable(0xFF7E), 0);
+    ASSERT_EQ(bus_fw_enable(0xFF6E), 0);
+    ASSERT_EQ(bus_fw_enable(0xFF5F), -1);      /* /SCS territory: hardware decodes it */
+    ASSERT_EQ(bus_fw_enable(0xFF80), -1);
+    ASSERT_EQ(bus_fw_enable(0xC000), -1);
+    ASSERT_EQ(bus_fw_enable(0xBF7E), -1);
+    ASSERT_EQ(bus_fw_mask, (1u << 0x1E) | (1u << 0x0E));
+    ASSERT(bus_fw_selected(0xFF7E, bus_fw_mask));
+    ASSERT(bus_fw_selected(0xFF6E, bus_fw_mask));
+    ASSERT(!bus_fw_selected(0xFF7D, bus_fw_mask));
+    ASSERT(!bus_fw_selected(0xBF7E, bus_fw_mask));   /* A14/A15 low: a different page */
+    ASSERT(!bus_fw_selected(0xFF7E, 0));
+    bus_fw_disable(0xFF7E);
+    ASSERT(!bus_fw_selected(0xFF7E, bus_fw_mask));
+    ASSERT(bus_fw_selected(0xFF6E, bus_fw_mask));
+}
+
 int main(void) {
     RUN(table_defaults_ff);
     RUN(set_read_and_range_clipped);
@@ -104,5 +166,9 @@ int main(void) {
     RUN(trace_freeze);
     RUN(stats);
     RUN(drive_flag);
+    RUN(write_hook_runs_before_queue_with_data);
+    RUN(write_hook_table_full);
+    RUN(stats_new_fields_zeroed);
+    RUN(fw_decode_mask);
     TEST_MAIN_END
 }

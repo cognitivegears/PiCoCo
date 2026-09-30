@@ -561,6 +561,33 @@ TEST(version_is_1_2) {
     ASSERT(strcmp(rbuf, "version 1.2\n") == 0);
 }
 
+TEST(bus_selftest_is_pico_only_on_host) {
+    setup();
+    outn = 0;
+    ASSERT_EQ(console_exec("bus selftest"), -1);
+    ASSERT(strstr(out, "pico only"));
+}
+
+TEST(cart_command_and_save) {
+    setup();
+    ASSERT_EQ(console_exec("cart on"), 0);
+    ASSERT_EQ(rom_cart_get(), CART_ON);
+    ASSERT_EQ(console_exec("cart off"), 0);
+    ASSERT_EQ(rom_cart_get(), CART_OFF);
+    ASSERT_EQ(console_exec("cart auto"), 0);
+    ASSERT_EQ(rom_cart_get(), CART_AUTO);
+    ASSERT_EQ(console_exec("cart sideways"), -1);
+    console_exec("cart on");
+    outn = 0;
+    ASSERT_EQ(console_exec("save"), 0);
+    char cfg[1024]; int n = plat_cfg_read(cfg, sizeof cfg - 1); ASSERT(n > 0); cfg[n] = 0;
+    ASSERT(strstr(cfg, "cart on\n"));
+    console_exec("cart auto");
+    ASSERT_EQ(console_exec("save"), 0);
+    n = plat_cfg_read(cfg, sizeof cfg - 1); cfg[n] = 0;
+    ASSERT(!strstr(cfg, "cart "));              /* default is omitted */
+}
+
 int main(void) {
     char tmpl[300];
     const char *tmpdir = getenv("TMPDIR");
@@ -609,5 +636,7 @@ int main(void) {
     RUN(fs_new_refuses_long_name);
     RUN(rom_boot_records_without_loading);
     RUN(version_is_1_2);
+    RUN(bus_selftest_is_pico_only_on_host);
+    RUN(cart_command_and_save);
     TEST_MAIN_END
 }

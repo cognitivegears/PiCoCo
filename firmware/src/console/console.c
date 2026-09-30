@@ -15,9 +15,16 @@
 #ifndef PICOCO_HOST
 #include "pico/platform/panic.h"
 #endif
+#ifdef PICOCO_BOARD_H
+#include PICOCO_BOARD_H
+#endif
 
 #ifndef PICOCO_VERSION
 #define PICOCO_VERSION "dev"
+#endif
+
+#ifdef PICOCO_HAVE_FAKE6809
+#include "fake6809.h"
 #endif
 
 static console_out_fn g_out;
@@ -197,6 +204,10 @@ static int cmd_dw_selftest(void) {
     return 0;
 }
 
+#ifdef PICOCO_HAVE_FAKE6809
+static void selftest_line(const char *s) { outf("%s\n", s); }
+#endif
+
 static int cmd_bus(int argc, char **argv) {
     if (argc < 2) { outf("bus drive %s\n", bus_drive_get() ? "on" : "off"); return 0; }
     if (strcasecmp(argv[1], "drive") == 0) {
@@ -205,7 +216,20 @@ static int cmd_bus(int argc, char **argv) {
         if (strcasecmp(argv[2], "off") == 0) { bus_drive_set(false); return 0; }
         return cerr("usage: bus drive on|off");
     }
-    return cerr("usage: bus drive on|off");
+    if (strcasecmp(argv[1], "selftest") == 0) {
+#ifndef PICOCO_HAVE_FAKE6809
+        return cerr("bus selftest: pico only (host build)");
+#else
+        fake_result_t r;
+        int rc = fake6809_selftest(&r, selftest_line);
+        if (rc == -2) return cerr("bus selftest: bus is live (CoCo attached), refused");
+        outf("selftest checks %u mismatches %u ring_overrun %u\n", r.cycles, r.mismatches, r.ring_overrun);
+        if (rc != 0) return cerr("selftest FAIL");
+        outf("selftest pass\n");
+        return 0;
+#endif
+    }
+    return cerr("usage: bus drive on|off | bus selftest");
 }
 
 /* "crash panic" is a hidden subcommand (not in help): exercises the
@@ -233,6 +257,7 @@ static int cmd_status(void) {
     outf("bus cycles %u reads %u writes %u write_overrun %u\n",
          bus_stats.cycles, bus_stats.reads, bus_stats.writes, bus_stats.write_overrun);
     outf("bus addr_resample %u bits %04x\n", bus_stats.addr_resample, bus_stats.addr_resample_bits);
+    outf("bus whooks %u hw_sel %u fw_sel %u\n", bus_stats.whooks_run, bus_stats.hw_selected, bus_stats.fw_selected);
     outf("bus drive %s\n", bus_drive_get() ? "on" : "off");
     outf("last reset %s\n", plat_last_reset());
     outf("dw hdbdos %s\n", g_dw->hdbdos ? "on" : "off"); /* DWINIT can flip this remotely */
@@ -291,6 +316,7 @@ static int cmd_rom(int argc, char **argv) {
     if (strcasecmp(argv[1], "load") == 0) {
         if (argc < 3) return cerr("usage: rom load <file>");
         int r = rom_load_file(g_store, argv[2]);
+        if (r == -2) return cerr("rom load: size must be 8K, 16K, or banked 32K/64K/128K");
         if (r != 0) return cerr("rom load failed");
         snprintf(rom_cmd, sizeof(rom_cmd), "load %s", argv[2]);
         snprintf(rom_now, sizeof(rom_now), "load %s", argv[2]);
@@ -367,6 +393,28 @@ static int cmd_dw_disk(int argc, char **argv) {
         return 0;
     }
     return cerr(usage);
+}
+
+static int cmd_cart(int argc, char **argv) {
+    if (argc < 2) { outf("cart %s\n", rom_cart_get() == CART_ON ? "on" : rom_cart_get() == CART_OFF ? "off" : "auto"); return 0; }
+    if (strcasecmp(argv[1], "on") == 0) {
+#if defined(PICOCO_BOARD_H) && !defined(PIN_CART_DRV)
+        return cerr("cart: needs Plus-W (JP5 on a Pico 2)");
+#else
+        rom_cart_set(CART_ON);
+        return 0;
+#endif
+    }
+    if (strcasecmp(argv[1], "off") == 0) {
+#if defined(PICOCO_BOARD_H) && !defined(PIN_CART_DRV)
+        return cerr("cart: needs Plus-W (JP5 on a Pico 2)");
+#else
+        rom_cart_set(CART_OFF);
+        return 0;
+#endif
+    }
+    if (strcasecmp(argv[1], "auto") == 0) { rom_cart_set(CART_AUTO); return 0; }
+    return cerr("usage: cart on|off|auto");
 }
 
 static int cmd_dw(int argc, char **argv) {
@@ -578,6 +626,8 @@ static int cmd_save(void) {
         return cerr("config too large");
     if (rom_cmd[0] && !cfg_append(cfg, sizeof(cfg), &len, "rom %s\n", rom_cmd))
         return cerr("config too large");
+    if (rom_cart_get() != CART_AUTO && !cfg_append(cfg, sizeof(cfg), &len, "cart %s\n", rom_cart_get() == CART_ON ? "on" : "off"))
+        return cerr("config too large");
     if (bus_drive_get() && !cfg_append(cfg, sizeof(cfg), &len, "bus drive on\n"))
         return cerr("config too large");
     if (!cfg_append(cfg, sizeof(cfg), &len, "dw hdbdos %s\n", g_dw->hdbdos ? "on" : "off"))
@@ -610,7 +660,7 @@ static int cmd_save(void) {
 static int dispatch(int argc, char **argv) {
     const char *v = argv[0];
     if (strcasecmp(v, "help") == 0) {
-        outf("commands: help status version smoke halt trace rom becker bus crash dw fs time log stats save reboot bootsel\n");
+        outf("commands: help status version smoke halt trace rom becker cart bus crash dw fs time log stats save reboot bootsel\n");
         return 0;
     }
     if (strcasecmp(v, "status") == 0) return cmd_status();
@@ -631,6 +681,7 @@ static int dispatch(int argc, char **argv) {
     if (strcasecmp(v, "trace") == 0) return cmd_trace(argc, argv);
     if (strcasecmp(v, "rom") == 0) return cmd_rom(argc, argv);
     if (strcasecmp(v, "becker") == 0) return cmd_becker(argc, argv);
+    if (strcasecmp(v, "cart") == 0) return cmd_cart(argc, argv);
     if (strcasecmp(v, "dw") == 0) return cmd_dw(argc, argv);
     if (strcasecmp(v, "fs") == 0) return cmd_fs(argc, argv);
     if (strcasecmp(v, "time") == 0) return cmd_time(argc, argv);

@@ -1,0 +1,72 @@
+; Fake 6809 bus master for the Pico 2 build. Two words per cycle from the TX FIFO:
+;   word 0: bits 0-13 = A0..A13, bit 14 = R/W (1 = read)         -> GP8..GP22 (out pins, 15)
+;   word 1: bit 0 = selected (pull OE_BUS low while "E is high"), bits 1-8 = data sample delay
+; Side-set pin = OE_BUS (GP26). One RX word per cycle: D0..D7 sampled during OE low (or 0 if unselected).
+; At clkdiv 1.1 on a 150 MHz system clock: ~1.1 us per cycle, OE low ~ (67 +
+; delay) PIO cycles (~490 ns + delay). Each former single-instruction [31]
+; delay (32 cycles) is a pair of [15] instructions at the same side value
+; (2x16 = 32 cycles): a 1-bit side-set only leaves 4 delay bits (max 15).
+; push happens after OE_BUS has returned high (side 1, at `done`), not while
+; it is still low: pushing mid-cycle let core0 start the next cycle (drive
+; new write data or flip OE) while core1 was still in the read branch of the
+; cycle core1 just serviced, since gpio_oe_clr on the shared SIO OE_BUS
+; register also released the write data core0 was driving.
+.program fake6809_p2
+.side_set 1
+.wrap_target
+    pull block          side 1
+    out pins, 15        side 1        ; address + R/W valid (E low, Q about to rise)
+    pull block          side 1 [15]   ; address setup time
+    nop                 side 1 [15]
+    out x, 1            side 1
+    out y, 8            side 1
+    jmp !x nosel        side 1
+    nop                 side 0        ; OE_BUS low: E high and cart selected
+dly:
+    jmp y-- dly         side 0        ; delay+1 cycles
+    in pins, 8          side 0        ; sample D0..D7 (what core1 drives on a read)
+    nop                 side 0 [15]
+    nop                 side 0 [15]
+    nop                 side 0 [15]
+    nop                 side 0 [15]   ; (the missing pair: the brief had push[31] + nop[31] here)
+    jmp done            side 1        ; OE_BUS high: E falling
+nosel:
+    nop                 side 1 [15]
+    nop                 side 1 [15]
+    nop                 side 1 [15]
+    nop                 side 1 [15]
+    in null, 8          side 1
+done:
+    nop                 side 1 [15]   ; E low
+    nop                 side 1 [15]
+    push block          side 1        ; cycle over: core1 has released D0-7 before cycle() returns
+.wrap
+
+; Plus-W variant: drives GP8..GP30 (A0-A13, R/W, GP23 LED, CTS, SCS, E, Q,
+; SLENB, A14, A15) from six words per cycle: four phase words (pin levels),
+; one control word (bits 0-7 sample delay), and a fifth phase word that drops
+; E before the push, so core1 has released D0-7 by the time cycle() returns
+; (see fake6809_p2's push-after-OE-high note above for why).
+;   P0: address valid, E=0 Q=0    P1: Q=1    P2: E=1 (sample after delay)
+;   P3: Q=0, E still 1            P4: E=0 Q=0 (cycle over)
+; Bit k of a phase word is GP(8+k). No side-set: pins carry E/Q directly, so
+; the [31] delays are plain instruction delays (5 bits), not side-set-limited.
+.program fake6809_pw
+.wrap_target
+    pull block
+    out pins, 23    [31]     ; P0: address valid, E=0 Q=0
+    pull block
+    out pins, 23    [31]     ; P1: Q=1
+    pull block
+    out pins, 23             ; P2: E=1
+    pull block
+    out y, 8                 ; sample delay
+dly:
+    jmp y-- dly
+    in pins, 8
+    pull block
+    out pins, 23    [31]     ; P3: Q=0, E still 1
+    pull block
+    out pins, 23    [15]     ; P4: E=0 Q=0 — cycle over, core1 has released D0-7
+    push block
+.wrap

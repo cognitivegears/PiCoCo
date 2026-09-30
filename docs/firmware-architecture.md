@@ -162,9 +162,9 @@ on a Plus-W the same physical header pins are `GP40`/`GP41`/`GP42`.
 | GP28 | SLENB_BUF | capture |
 | GP29 | A14_BUF | capture |
 | GP30 | A15_BUF | capture |
-| GP31 | OE_FW | JP2 alternate (2-3): firmware-driven U10 /OE |
-| GP32 | NMI_DRV | Q3 gate (DNP stage — R15/R17 also DNP); also reachable from a Pico 2 via JP5 2-3 (shares header pin 34, see below) |
-| GP33 | CART_DRV | Q4 gate (populated, v2.3.1); also reachable from a Pico 2 via JP5 1-2 |
+| GP31 | OE_FW | Firmware-driven U10 `/OE` (bus-engine spec, §3.2.2): `bus_core1.c` pulls it low for every selected cycle regardless of JP2 position; JP2 2-3 is required only to let `$FF60-$FF7F` (outside `/CTS`/`/SCS`) respond at all |
+| GP32 | NMI_DRV | Q3 gate (DNP stage — R15/R17 also DNP); also reachable from a Pico 2 via JP5 2-3 (shares header pin 34, see below); no firmware drives this pin yet |
+| GP33 | CART_DRV | Firmware-driven `/CART` pulse (bus-engine spec, §4.5-equivalent in `main.c`): toggled ~500 Hz for 500 ms after `/HALT` release when `rom_cart_wanted()` is true; also reachable from a Pico 2 via JP5 1-2, but no Pico 2 board header defines `PIN_CART_DRV` today, so the pulse is Plus-W only |
 | GP34 | AUDIO_PWM | sound output stage |
 | GP35 | EXP_GP35 → J1 pin 1 | Plus-W only; on a Pico 2 this is where the module's own SWDIO pad lands instead (see the debug-pad note in `hardware-design.md` §7) |
 | GP43, GP44, GP45 | EXP_GP43/44/45 → J1 pins 2-4 | Plus-W only |
@@ -189,6 +189,195 @@ out. `firmware/boards/plusw.h` uses LED2 (`PIN_LED 23`). The radio itself
 uses GP36-GP39 (REG_ON, DATA/IRQ, CS, CLK), clear of the pad grid. Sources:
 Zephyr `boards/waveshare/rp2350b_plus_w` (PR #119523) and arduino-pico
 issue #3297 (quotes the Waveshare schematic); not yet checked on a module.
+
+### 3.2.2 Plus-W bus loop
+
+`bus_core1.c`'s Plus-W loop (compiled under `PICOCO_BOARD_PLUSW`, replacing
+the OE_BUS-triggered Pico 2 loop entirely) samples address and control
+lines twice per cycle instead of once, trading a little latency for a
+head start on decode:
+
+1. Wait for `E` low, then wait for `Q` high — the address is valid once Q
+   rises, before E does.
+2. Sample A0-13, `/R/W`, `CTS_BUF`, `SCS_BUF`, A14, A15 and run
+   `plusw_selected()` on that sample immediately. This is the head start:
+   decode work happens during the dead time before E rises, not after.
+3. Wait for `E` high, then resample the same bits (`DECODE_MASK`). If
+   anything changed, redo the decode on the new sample (counted in
+   `bus_stats.addr_resample`, same diagnostic the Pico 2 loop already
+   used for its own late resample) — `/CTS` and `/SCS` are decoded
+   downstream in the SAM/GIME and only need to meet setup before E rises,
+   so a late-settling sample here is expected, not a bug.
+4. If the cycle is not selected, loop back to waiting for E low — the end
+   of this cycle — without touching the data pins at all.
+5. If selected: reads drive D0-7 from `bus_peek(idx)` only when
+   `bus_drive` is on, and pull `PIN_OE_FW` (GP31) low only for the
+   duration E is high; writes always pull `OE_FW` low to enable U10
+   inward regardless of `bus_drive`, because U10's direction is fixed by
+   the hardware `RW_BUF` signal, not by firmware — so capture-only mode
+   (`bus drive off`) still records write data even though it never drives
+   a read.
+
+**Selection** (`plusw_selected()`) is true when `/CTS` or `/SCS` is
+asserted (hardware-selected, same as the Pico 2 loop), or when the full
+16-bit address is set in `bus_fw_mask` (firmware-decoded). `bus_fw_mask`
+is a `uint32_t` bitmap over `$FF60-$FF7F` (one bit per address in that
+32-byte page — no other page is ever firmware-decoded), written only by
+core0 through `bus_fw_enable(addr)`/`bus_fw_disable(addr)` (`bus.c`;
+`bus_fw_enable` returns -1 outside `$FF60-$FF7F`). A 32-bit store is
+atomic, so a device registered from the console after core1 is already
+running takes effect on the very next cycle with no handshake.
+
+`bus_stats` gained three counters for this loop: `hw_selected` (cycles
+selected by `/CTS` or `/SCS`), `fw_selected` (cycles selected only by
+`bus_fw_mask`), and `whooks_run` (write hooks executed, §3.2.3). All
+three print on `bus status`/`status`'s `bus whooks N hw_sel N fw_sel N`
+line.
+
+`PIN_OE_FW` (GP31) mirrors what hardware (U15) does for the Pico 2 loop,
+plus the firmware-only address set: it is driven low only while a
+selected cycle's E is high. With JP2 left at its default (1-2), U15 also
+enables U10 for hardware-selected cycles in parallel with `OE_FW` — the
+two enables agree, so this is harmless. With JP2 cut to 2-3, `OE_FW` is
+the *only* enable path, which is what lets `$FF60-$FF7F` respond at all
+(those addresses assert neither `/CTS` nor `/SCS`, so U15 never enables
+U10 for them). See `docs/hardware-design.md` §4.1 for the JP2 jumper
+itself.
+
+The Pico 2 loop is untouched except that its read path now goes through
+`bus_peek()` (§3.2.4) and its write path calls the write-hook table
+(§3.2.3) from inside `bus_on_write`.
+
+### 3.2.3 Write hooks
+
+```c
+int bus_add_write_hook(uint16_t idx, void (*fn)(uint8_t data));  /* 0 ok, -1 full */
+```
+
+Same shape as the existing read-hook table (`bus_add_read_hook`):
+`BUS_MAX_HOOKS` (4) fixed entries, matched by `idx` with a linear scan —
+cheap at four entries, no map needed. Core1 calls the matching hook from
+inside `bus_on_write()`, right after the data byte is captured and
+*before* the event is pushed onto the core0-facing write ring, so core0
+still sees every write exactly as before; the hook is purely an
+early-look, not a replacement for the queued event. `whooks_run` (above)
+counts hook invocations. Hooks are `BUS_HOT` — SRAM-resident, no libc,
+no flash — the same rule core1's own loop follows.
+`firmware/tools/check_core1_flash_free.py` discovers hook functions by
+grepping for `bus_add_(read|write)_hook(...)` call sites (one regex
+covers both), so a write hook that branches into flash fails the Pico
+build the same way a read hook or the core1 loop itself would.
+
+### 3.2.4 Banked ROM
+
+`bus_rom_base` (`bus.h`) is a `const uint8_t *volatile` defaulting to
+`bus_table`; `bus_peek(idx)` (used by both loops and by `bus_on_read_done`
+for the trace/hook path) returns `bus_rom_base[idx]` for `idx < 0x3F00`
+and `bus_table[idx]` above that — so the I/O page (Becker, future
+devices) is never affected by which ROM bank is selected.
+
+`rom.c` loads three shapes:
+
+- **8192 or 16384 bytes**: unbanked, copied straight into `bus_table` as
+  before (the 16 KB case skips `0x3F41`/`0x3F42`, the Becker table
+  entries, per the single-writer rule in §6.3).
+- **32768, 65536 or 131072 bytes** (2/4/8 x 16 KB): banked. Banks land in
+  a static `rom_banks[8][16384]` SRAM array (128 KB `.bss`, the largest
+  Games Master Cartridge size MAME's `coco_gmc` supports). Load order
+  matters for core1, which may be running concurrently: `rom_nbanks` is
+  cleared to 0 first (so the `$FF40` hook is inert while banks fill),
+  then every bank is copied, then `bus_rom_base` points at bank 0, then
+  `rom_nbanks` is set last — a bank switch racing the loader can only see
+  "unbanked" or "fully loaded", never a half-filled table.
+- Any other size is refused with `-2` and the previous ROM stays loaded;
+  the console prints `rom load: size must be 8K, 16K, or banked 32K/64K/128K`.
+
+`rom_init()` registers a `$FF40` write hook (`rom_bank_hook`) once, for
+the life of the firmware; it is a no-op while `rom_nbanks` is 0, so it
+never needs to be removed by an unbanked load or `rom off`. On a write it
+does `bus_rom_base = rom_banks[data & rom_bank_mask]` — one compare, one
+table load, no per-cycle bank copy. `rom_is_dos()` (loaded and the first
+two bytes are `DK`) feeds both `rom_cart_wanted()`'s AUTO mode (§3.2.5's
+sibling, the `/CART` pulse in `main.c`) and is otherwise unchanged.
+
+### 3.2.5 Self-test: fake 6809
+
+`bus selftest` (`firmware/src/bus/fake6809.c`, PIO program in
+`fake6809.pio`) runs the real, unmodified core1 loop against synthetic
+6809 bus cycles generated by a PIO1 state machine, so the loop can be
+exercised with no CoCo attached.
+
+**Unplug the board from the CoCo before running this — the guard below is
+a backstop, not a licence to leave it plugged in.** Before touching a
+single pin, it samples `bus_stats.cycles`, sleeps 100 ms, and re-checks
+it: if the count moved, a CoCo is actually driving the bus, and the test
+refuses immediately (`-2`, "bus is live (CoCo attached), refused"). That
+check alone misses an idle CoCo: one running from RAM produces no cart
+cycles at all, so the count never moves even with the board live. A
+second guard covers that case: for 10 ms, sampled every 50 µs, the
+address and `R/W` pins (plus `OE_BUS` on a Pico 2, or `E`/`Q` on a
+Plus-W) must not move at all — those pins come through always-enabled
+buffers and toggle with the CPU clock whenever anything is running them,
+where an unplugged board just sits on its pull-ups. Only after both
+checks pass does it switch the address/control pins core1 watches from
+SIO to PIO function (and back to SIO when it's done); D0-7 stay SIO
+throughout, driven or read by core0 with plain GPIO calls between PIO
+pushes. `firmware/tools/bench.py` (below) is registered as the `bench`
+ctest target only when configured with `-DPICOCO_BENCH=ON` — it is
+opt-in, not part of the default `ctest --test-dir build-host` run,
+because it drives real bus pins.
+
+Two PIO programs, one per board, chosen at compile time by
+`PICOCO_BOARD_PLUSW`: `fake6809_p2` drives the Pico 2's 15 address/`R/W`
+bits with `OE_BUS` as a side-set, two TX words and one RX word per cycle;
+`fake6809_pw` drives the Plus-W's 23 bits (A0-15, `R/W`, `CTS`, `SCS`,
+`E`, `Q`, `SLENB`) with six TX words per cycle (address/select phases at
+Q-low, Q-high, E-high, a programmable sample-delay count, E-falling, then
+idle) and one RX word. Both emit a full 6809-style cycle: address valid,
+Q rise, E rise, (write: data must already be valid), E fall.
+
+The test loads a synthetic 32 KB banked image (bank 0 marked with a
+sentinel byte, each bank otherwise filled with its own bank number), then
+runs a fixed check list against the real loop: reads across the ROM
+window including the bank-0 marker, a bank switch via `$FF40` and back,
+a Becker status read, ten `$FF42` writes (checked against
+`bus_stats.writes` and `write_overrun`), an unselected cycle that must
+not move `bus_stats.cycles` at all, and — Plus-W only — a firmware-decode
+round trip on `$FF7E`: ignored before `bus_fw_enable`, read and written
+correctly once enabled, ignored again after `bus_fw_disable`, and never
+mistaken for the same low bits at `$BF7E` (different `/CTS`/`/SCS`
+state). Each check prints a `selftest <name> ok|FAIL` line live over the
+console; the whole run passes only if none failed.
+
+After the check list, it sweeps the read-side sample delay from 0 up to
+60 PIO cycles (clock divider 1.1) looking for the smallest delay at which
+core1's driven read data is already correct, and reports it as
+`selftest response first_ok_delay <n> (~<ns> ns after OE_BUS fell)` — the
+measured response time is whatever that line shows on the run in
+question, not a number fixed in this document (Task 3's design budget
+was the ~280 ns CoCo 3 window from §8; the self-test is how that margin
+gets checked going forward instead of read off a logic analyzer capture).
+
+It is safe to run on an unplugged PCB: with no cart +5 V present, the
+board's own +3.3 V rail (derived from +5 V through the LDO) is off, so
+U10/U11/U12/U13/U15's outputs sit in their unpowered high-impedance state
+(LVC "partial-power-down" `Ioff`) and cannot drive against the PIO no
+matter what it does. On success (or failure) it calls `rom_off()` and
+prints `selftest rom cleared; reload with rom load` — the synthetic image
+does not survive a run either way, which is why `firmware/tools/bench.py`
+sends `reboot` at the end of its own run, to replay a saved `rom load`
+from `picoco.cfg`.
+
+As of this writing the self-test has not been run on real hardware in
+this development session (no Pico attached); §3.2.2's Plus-W loop and
+the `$FF60-$FF7F` decode path are otherwise covered only by the host
+`ctest` suites and this on-chip test, not yet by a bench CoCo. One
+caveat worth watching once it is on a bench: a write hook that runs past
+the next E rise makes the Plus-W loop skip a cycle outright (it is still
+waiting for `E` low when the next cycle's `Q` rises), where the Pico 2
+loop instead just samples its address late. `bus status`'s
+`addr_resample` and `fw_sel`/`hw_sel` counters are where that would show
+up.
 
 ### 3.3 PIO block usage (v2 bus engine)
 

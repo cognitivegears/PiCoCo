@@ -5,8 +5,8 @@ core1 (firmware/src/bus/bus_core1.c) runs flash-free from SRAM with
 interrupts disabled: a branch into flash would either fault or (worse) hang
 with PICO_FLASH_ASSUME_CORE1_SAFE=1 turning it into a silent lockup instead
 of a build error (see CLAUDE.md "Firmware"). This script follows every
-direct branch/call reachable from bus_core1_main, plus the Becker read hooks
-it calls indirectly through bus_add_read_hook (found by grepping the source,
+direct branch/call reachable from bus_core1_main, plus every hook registered
+through bus_add_read_hook or bus_add_write_hook (found by grepping the source,
 since an indirect call's target can't be read off the disassembly), and
 fails if any of them lands outside SRAM.
 
@@ -44,7 +44,7 @@ FLASH_LO = 0x10000000
 FLASH_HI = 0x20000000
 
 ALWAYS_ENTRIES = ["bus_core1_main"]
-HOOK_RE = re.compile(r"bus_add_read_hook\([^,]+,\s*([A-Za-z_]\w*)\s*\)")
+HOOK_RE = re.compile(r"bus_add_(?:read|write)_hook\([^,]+,\s*([A-Za-z_]\w*)\s*\)")
 BRANCH_LINE_RE = re.compile(r"^\s*([0-9a-fA-F]+):\s+([A-Za-z][A-Za-z0-9.]*)\s+([0-9a-fA-F]+)\s*<([^>]+)>")
 WORD_LINE_RE = re.compile(r"^\s*([0-9a-fA-F]+):\s+\.word\s+(?:0x)?([0-9a-fA-F]+)")
 BRANCH_MNEMONIC_RE = re.compile(

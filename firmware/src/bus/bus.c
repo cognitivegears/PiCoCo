@@ -2,8 +2,10 @@
 #include <string.h>
 
 uint8_t bus_table[BUS_TABLE_SIZE];
+const uint8_t *volatile bus_rom_base = bus_table;
 volatile bus_stats_t bus_stats;
 volatile bool bus_drive;
+volatile uint32_t bus_fw_mask;
 
 typedef struct { uint16_t idx; uint8_t data; } bus_write_ev_t;
 #define WEV_SIZE 256
@@ -15,22 +17,41 @@ typedef struct { uint16_t idx; void (*fn)(void); } bus_hook_t;
 static bus_hook_t hooks[BUS_MAX_HOOKS];
 static int hook_count;
 
+typedef struct { uint16_t idx; void (*fn)(uint8_t); } bus_whook_t;
+static bus_whook_t whooks[BUS_MAX_HOOKS];
+static int whook_count;
+
 static bus_trace_entry trace[BUS_TRACE_SIZE];
 static uint32_t trace_pos;
 static bool trace_frozen;
 
 void bus_init(void) {
     memset(bus_table, 0xFF, sizeof(bus_table));
+    bus_rom_base = bus_table;
     wev_head = 0;
     wev_tail = 0;
     hook_count = 0;
+    whook_count = 0;
     trace_pos = 0;
     trace_frozen = false;
     bus_stats.cycles = 0;
     bus_stats.reads = 0;
     bus_stats.writes = 0;
     bus_stats.write_overrun = 0;
+    bus_stats.whooks_run = 0;
+    bus_stats.hw_selected = 0;
+    bus_stats.fw_selected = 0;
     bus_drive = false;
+    bus_fw_mask = 0;
+}
+
+int bus_fw_enable(uint16_t addr) {
+    if ((addr & 0xFFE0) != 0xFF60) return -1;
+    bus_fw_mask |= 1u << (addr & 0x1F);
+    return 0;
+}
+void bus_fw_disable(uint16_t addr) {
+    if ((addr & 0xFFE0) == 0xFF60) bus_fw_mask &= ~(1u << (addr & 0x1F));
 }
 
 void bus_drive_set(bool on) { bus_drive = on; }
@@ -53,6 +74,14 @@ int bus_add_read_hook(uint16_t idx, void (*fn)(void)) {
     hooks[hook_count].idx = idx;
     hooks[hook_count].fn = fn;
     hook_count++;
+    return 0;
+}
+
+int bus_add_write_hook(uint16_t idx, void (*fn)(uint8_t)) {
+    if (whook_count >= BUS_MAX_HOOKS) return -1;
+    whooks[whook_count].idx = idx;
+    whooks[whook_count].fn = fn;
+    whook_count++;
     return 0;
 }
 
@@ -84,7 +113,7 @@ static BUS_HOT void trace_record(uint16_t idx, uint8_t rw, uint8_t data, uint32_
 }
 
 BUS_HOT void bus_on_read_done(uint16_t idx, uint32_t t_us) {
-    uint8_t data = bus_table[idx];   /* what the table holds, i.e. what would have been driven, even with bus drive off */
+    uint8_t data = bus_peek(idx);   /* what the table holds, i.e. what would have been driven, even with bus drive off */
     for (int i = 0; i < hook_count; i++) {
         if (hooks[i].idx == idx) hooks[i].fn();
     }
@@ -94,6 +123,9 @@ BUS_HOT void bus_on_read_done(uint16_t idx, uint32_t t_us) {
 }
 
 BUS_HOT void bus_on_write(uint16_t idx, uint8_t data, uint32_t t_us) {
+    for (int i = 0; i < whook_count; i++) {
+        if (whooks[i].idx == idx) { whooks[i].fn(data); bus_stats.whooks_run++; }
+    }
     uint32_t h = wev_head, n = (h + 1) & WEV_MASK;
     if (n == wev_tail) {
         bus_stats.write_overrun++;
