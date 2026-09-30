@@ -38,6 +38,7 @@
 #define LWIP_DEBUG                  0
 /* SNTP: one server by name, hands the time to net.c (Task 6). */
 #define SNTP_SERVER_DNS             1
+#define MEMP_NUM_SYS_TIMEOUT        (LWIP_NUM_SYS_TIMEOUT_INTERNAL + 1)
 #define SNTP_SERVER_ADDRESS         "pool.ntp.org"
 void net_sntp_set(uint32_t sec);
 #define SNTP_SET_SYSTEM_TIME(sec)   net_sntp_set(sec)
