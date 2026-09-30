@@ -88,6 +88,22 @@ TEST(mode_net_drops_to_native_on_reconfigure) {
     ASSERT_EQ(becker_tx_free(), empty);
 }
 
+/* A nearly full to-server ring must not make the pump drop the CoCo's bytes. */
+TEST(mode_net_short_write_loses_nothing) {
+    setup();
+    static uint8_t fill[1020], got[1100];
+    ASSERT_EQ(net_write(fill, sizeof fill), sizeof fill);
+    for (int i = 0; i < 10; i++) bus_on_write(0x3F42, (uint8_t)(0x60 + i), 0);
+    mode_pump(&dw, 0);
+    mode_pump(&dw, 0);
+    size_t n = net_stub_take_to_server(got, sizeof got);
+    ASSERT_EQ(n, 1023);
+    mode_pump(&dw, 0);
+    size_t m = net_stub_take_to_server(got, sizeof got);
+    ASSERT_EQ(m, 7);
+    ASSERT(got[0] == 0x63 && got[6] == 0x69);
+}
+
 int main(void) {
     char tmpl[300];
     const char *tmpdir = getenv("TMPDIR");
@@ -101,5 +117,6 @@ int main(void) {
     RUN(not_up_consumes_quietly);
     RUN(net_stub_reason_strings);
     RUN(mode_net_drops_to_native_on_reconfigure);
+    RUN(mode_net_short_write_loses_nothing);
     TEST_MAIN_END
 }

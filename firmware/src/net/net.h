@@ -40,6 +40,7 @@ bool   net_psk_set(void);
 const char *net_psk_plain(void);               /* ONLY cmd_save (picoco.cfg) may call this */
 const char *net_ip(void);                      /* dotted quad while up, else "0.0.0.0" */
 size_t net_read(uint8_t *buf, size_t n);       /* from-server ring */
+size_t net_write_free(void);                  /* room in the to-server ring */
 size_t net_write(const uint8_t *buf, size_t n);/* to-server ring; returns n when not up */
 int    net_scan(void (*cb)(const char *ssid, int rssi, int chan, void *ctx), void *ctx); /* blocking, <= 5 s; -1 no radio */
 

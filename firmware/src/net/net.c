@@ -1,6 +1,8 @@
 #include "net.h"
 #include "ring.h"
 #include "log.h"
+#include "plat.h"
+#include <stdint.h>
 #include "pico/cyw43_arch.h"
 #include "lwip/tcp.h"
 #include "lwip/dns.h"
@@ -22,6 +24,7 @@ static bool s_addr_ok;
 static uint8_t up_buf[1024], down_buf[1024];
 static ring_t up, down;                   /* up: CoCo -> server, down: server -> CoCo */
 static char s_ip[16] = "0.0.0.0";
+static uint32_t s_dns_gen;                /* bumped on teardown: lwIP cannot cancel a lookup */
 static uint8_t s_err_kind;                /* first-failure-of-a-kind logging: bit per reason index */
 
 static const char *const reasons[] = { "no such network", "bad password", "dhcp timeout", "dns failed", "refused", "link lost", "not configured" };
@@ -65,7 +68,8 @@ static err_t on_connected(void *arg, struct tcp_pcb *pcb, err_t err) {
 }
 
 static void on_dns(const char *name, const ip_addr_t *addr, void *arg) {
-    (void)name; (void)arg;
+    (void)name;
+    if ((uintptr_t)arg != s_dns_gen || s_state != NET_CONNECTING) return;   /* stale lookup */
     if (addr) { s_addr = *addr; s_addr_ok = true; } else fail(3, 0);
 }
 
@@ -89,6 +93,7 @@ static void join_start(uint32_t now_ms) {
 
 /* Socket, association and rings; the state is left to the caller. */
 static void teardown(void) {
+    s_dns_gen++;
     pcb_drop();
     if (s_radio) cyw43_wifi_leave(&cyw43_state, CYW43_ITF_STA);
     ring_init(&up, up_buf, 1024); ring_init(&down, down_buf, 1024);
@@ -115,7 +120,7 @@ int net_start(void) {
     s_wanted = true;
     s_err_kind = 0;
     s_err = "";
-    join_start(0);
+    join_start(plat_now_ms());
     return 0;
 }
 void net_stop(void) {
@@ -136,7 +141,8 @@ void net_poll(uint32_t now_ms) {
                 snprintf(s_ip, sizeof s_ip, "%s", ip4addr_ntoa(netif_ip4_addr(&cyw43_state.netif[CYW43_ITF_STA])));
                 s_state = NET_CONNECTING;
                 s_since_ms = now_ms;
-                err_t r = dns_gethostbyname(s_host, &s_addr, on_dns, NULL);
+                s_addr_ok = false;
+                err_t r = dns_gethostbyname(s_host, &s_addr, on_dns, (void *)(uintptr_t)s_dns_gen);
                 if (r == ERR_OK) { s_addr_ok = true; }
                 else if (r != ERR_INPROGRESS) fail(3, now_ms);
             } else if (ls == CYW43_LINK_NONET) fail(0, now_ms);
@@ -152,19 +158,27 @@ void net_poll(uint32_t now_ms) {
         case NET_UP: {
             if (cyw43_tcpip_link_status(&cyw43_state, CYW43_ITF_STA) != CYW43_LINK_UP) { pcb_drop(); fail(5, now_ms); break; }
             if (!s_pcb) break;            /* on_err/on_recv already dropped it and failed */
-            uint8_t chunk[256]; size_t n = 0; uint8_t b;
-            while (n < sizeof chunk && ring_peek(&up, &b)) { chunk[n++] = b; ring_pop(&up, &b); }
+            /* Bytes leave the ring only once tcp_write accepted them; ERR_MEM just retries next poll. */
+            size_t room = tcp_sndbuf(s_pcb);
+            if (tcp_sndqueuelen(s_pcb) >= TCP_SND_QUEUELEN - 2) room = 0;
+            size_t n = ring_count(&up);
+            if (n > room) n = room;
+            if (n > 256) n = 256;
             if (n) {
-                if (tcp_write(s_pcb, chunk, n, TCP_WRITE_FLAG_COPY) == ERR_OK) { tcp_output(s_pcb); net_stats.bytes_up += n; }
+                uint8_t chunk[256], b;
+                for (size_t i = 0; i < n; i++) chunk[i] = up.buf[(up.tail + i) & up.mask];
+                err_t r = tcp_write(s_pcb, chunk, n, TCP_WRITE_FLAG_COPY);
+                if (r == ERR_OK) { for (size_t i = 0; i < n; i++) ring_pop(&up, &b); net_stats.bytes_up += n; tcp_output(s_pcb); }
+                else if (r == ERR_MEM) tcp_output(s_pcb);
                 else { pcb_drop(); fail(5, now_ms); }
-            }
+            } else tcp_output(s_pcb);
             break;
         }
         case NET_FAILED:
             if ((int32_t)(now_ms - s_retry_at_ms) >= 0) {
                 int ls = cyw43_tcpip_link_status(&cyw43_state, CYW43_ITF_STA);
-                if (ls == CYW43_LINK_UP) { s_state = NET_CONNECTING; s_since_ms = now_ms; s_addr_ok = false; s_pcb = NULL;
-                    err_t r = dns_gethostbyname(s_host, &s_addr, on_dns, NULL);
+                if (ls == CYW43_LINK_UP) { s_state = NET_CONNECTING; s_since_ms = now_ms; s_addr_ok = false; pcb_drop();
+                    err_t r = dns_gethostbyname(s_host, &s_addr, on_dns, (void *)(uintptr_t)s_dns_gen);
                     if (r == ERR_OK) s_addr_ok = true; else if (r != ERR_INPROGRESS) fail(3, now_ms); }
                 else join_start(now_ms);
             }
@@ -186,6 +200,7 @@ bool net_psk_set(void) { return s_psk[0] != 0; }
 const char *net_psk_plain(void) { return s_psk; }
 const char *net_ip(void) { return s_ip; }
 size_t net_read(uint8_t *buf, size_t n) { size_t i = 0; while (i < n && ring_pop(&down, &buf[i])) i++; return i; }
+size_t net_write_free(void) { return ring_free(&up); }
 size_t net_write(const uint8_t *buf, size_t n) {
     if (s_state != NET_UP) return n;      /* bridge rule: never let the mode pump spin on a dead link */
     size_t i = 0; while (i < n && ring_push(&up, buf[i])) i++; return i;

@@ -79,7 +79,8 @@ void mode_pump(dw_server *dw, uint32_t now_ms) {
         }
         case MODE_NET: {
             uint8_t buf[64];
-            size_t n = becker_read(buf, sizeof(buf));
+            size_t room = net_write_free();   /* never read more than net_write can take */
+            size_t n = becker_read(buf, room < sizeof(buf) ? room : sizeof(buf));
             if (n) net_write(buf, n);
             size_t want = becker_tx_free();
             if (want > sizeof(buf)) want = sizeof(buf);

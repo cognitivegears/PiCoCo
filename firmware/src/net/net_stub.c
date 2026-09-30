@@ -35,6 +35,7 @@ bool net_psk_set(void) { return psk[0] != 0; }
 const char *net_psk_plain(void) { return psk; }
 const char *net_ip(void) { return "0.0.0.0"; }
 size_t net_read(uint8_t *buf, size_t n) { rings(); size_t i = 0; while (i < n && ring_pop(&down, &buf[i])) i++; return i; }
+size_t net_write_free(void) { rings(); return ring_free(&up); }
 size_t net_write(const uint8_t *buf, size_t n) {
     rings();
     if (st != NET_UP) return n;   /* bridge rule: never let the mode pump spin */
