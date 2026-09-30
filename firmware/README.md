@@ -267,6 +267,64 @@ without matching it byte-for-byte. So the guard refuses any name with a
 byte below `$20`, `$7F`, or $80 and above, or a `/`, `\`, `:` at all, in
 addition to matching `picoco.cfg` itself.
 
+### WiFi (Plus-W)
+
+Firmware 1.3. Plus-W builds only (`PICOCO_HAVE_NET`); a Pico 2 has no radio
+and every `net` command that needs one answers `net: needs Plus-W`. The
+CoCo reaches a DriveWire server (DriveWire 4, `picoco-host`, FujiNet with
+BoIP) over one TCP connection, in place of USB.
+
+Radio pins (verified 2026-09-29 from the Waveshare schematic and a live
+scan): WL_ON GP36, WL_D/HOST_WAKE GP37, WL_CS GP38, WL_CLK GP39, LED on
+WL_GPIO0, VBUS on WL_GPIO2, VSYS sense GP46.
+
+| Command | Effect |
+|---|---|
+| `net [status]` | State, SSID, `net psk set\|unset` (never the passphrase), server, IP, bytes, retries, `net radio yes\|no`, `net mode <running> boot <next>`. |
+| `net join <ssid>` | Store the SSID (spaces allowed). |
+| `net psk [<psk>]` | Store the passphrase; empty clears it (open network). |
+| `net server <host> [port]` | Server; port 1-65535, default 65504. DNS names work, `.local` names do not (no mDNS). |
+| `net forget` | Clear all settings and stop the radio. |
+| `net scan` | One `ssid <name> rssi <n> chan <n>` line per network. Blocks up to 5 s. |
+| `net mode net\|native` | Sets the NEXT-BOOT mode only; `save` writes it. |
+| `becker net` | Console-only live switch. Refused with `net: needs Plus-W` or `net: set ssid and server first`. |
+
+`save` writes `net join`, `net psk` (if set) and `net server` before the
+`becker` line, so replay has them first. Example `picoco.cfg`:
+
+```
+net join MyLan
+net psk hunter2hunter2
+net server 192.168.1.20 65504
+becker net
+```
+
+Credentials are plain text in `picoco.cfg`. The config-replay error log
+redacts `net psk` lines. The remote allowlist has the bare `net` verb.
+
+**Boot.** With `becker net` saved, /HALT stays held until the socket is up
+or 10 s pass. Then the board falls back to native mode
+(`net failed (<reason>), native fallback`); the saved config still says net
+and retries continue every 2 s. `becker net` re-arms after a fallback.
+Reasons: `no such network`, `bad password`, `dhcp timeout`, `dns failed`,
+`refused`, `link lost`, `not configured`. Rings are cleared on every
+reconnect. After joining, WiFi power save is off. Once per boot, on link-up,
+SNTP seeds the clock only if none is running (`clock lost`); it never
+overwrites a `time set` (SNTP is UTC, `time set` is local).
+
+**Latency rule.** The server must answer within about 200 ms round trip.
+Servers abandon a half-finished op after 250 ms (`picoco-host`) or 200 ms
+(DW4 `ReadByteWait`). A link drop mid-transfer leaves the CoCo waiting
+until reset (accepted limitation; reset reboots the Pico, which reconnects).
+
+**`bus selftest net`** (Plus-W, needs `becker net` up, no CoCo attached):
+pushes DWINIT (2 bytes, `5A FF`) and 20 OP_TIME requests through the fake
+6809, core1, the Becker ring, the socket and back. Prints
+`selftest net dwinit -> <byte> in <n> ms`,
+`selftest net time (yr-1900) Y-M-D h:m:s in <n> ms` and
+`selftest net time worst <n> ms over 20`; fails if the worst case exceeds
+200 ms.
+
 ### DriveWire virtual-serial command channel
 
 `firmware/src/dw/dw_vser.c` implements DW4's virtual-serial command mode

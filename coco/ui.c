@@ -410,7 +410,8 @@ static void net_screen(void)
         if (strcmp(v[6], "yes") != 0) { msg("NO RADIO ON THIS BOARD"); return; }
         for (i = 0; i < 6; i++) { v[i][0] = '\0'; line_value(body, nkey[i], v[i], 24); }
         line_value(body, "net mode ", v[6], 24);        /* "<running> boot <next>" */
-        bm = strrchr(v[6], ' ') + 1;
+        bm = strrchr(v[6], ' ');
+        bm = bm ? bm + 1 : v[6];        /* no "net mode" line: boot mode = running mode */
         rl = (int)strlen(bm);
         pend = strncmp(v[6], bm, rl) != 0 || v[6][rl] != ' ';
         clear_screen();

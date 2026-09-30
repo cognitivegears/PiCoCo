@@ -717,6 +717,24 @@ allowlist, dispatches through the same `dispatch()` USB CDC1 uses, and
 restores the output function, so USB console behaviour is unchanged. See
 `firmware/README.md` for the allowlist contents and wire framing.
 
+### 7.3.1 WiFi transport
+
+Plus-W only (`PICOCO_HAVE_NET`). `firmware/src/net/net.c` runs lwIP in
+polled mode (`pico_cyw43_arch_lwip_poll`): no background thread, no locks,
+and the whole stack lives on core0. `net_poll` is called from the main loop
+beside `tud_task` and `mode_pump`, and from the boot wait.
+
+State machine: off, joining, connecting, up, failed. One TCP client, TCP_NODELAY,
+1 KB rings each way, power save off after join, retry every 2 s, 15 s timeout
+for join+DHCP and for connect. `MODE_NET` is the bridge case with the
+platform read/write swapped for `net_read`/`net_write` (writes return n when
+not up, the bridge rule). Core1 is untouched: it still only sees the
+Becker ring, so it stays flash-free. With `becker net` saved, `main.c` holds
+/HALT until the socket is up or 10 s, then falls back to native. SNTP starts
+once per boot on link-up and seeds the clock only when it is stopped. Host
+builds link `net_stub.c`. A remote server must answer within about 200 ms.
+See `firmware/README.md` and `docs/superpowers/specs/2026-09-29-wifi-transport-design.md`.
+
 ### 7.4 Host build and test tools
 
 The host build (`cmake -B build-host -DPICOCO_HOST=ON firmware`)

@@ -109,6 +109,9 @@ Behaviour rules:
   later ones at debug.
 - SNTP: once per boot, when the link first comes up, `sntp` sets the clock via
   `plat_rtc_set` and `dw_time_set` (pool.ntp.org). Failure is silent.
+  *As built:* SNTP starts on link-up and seeds only a stopped clock (never
+  overwrites a `time set`; SNTP is UTC). Rings are cleared on every reconnect.
+  The self-test's DWINIT is 2 bytes (`5A FF`) and the year byte is year-1900.
 - The lwIP config (`firmware/src/net/lwipopts.h`) is the SDK example's with
   only raw TCP, DHCP, DNS, SNTP and IPv4. No threads, no sockets API.
 - DNS names are allowed for the server; `.local` names are not (no mDNS
@@ -149,7 +152,7 @@ New `net` verb. R marks commands also on the remote allowlist.
 | `net status` (R) | State, SSID, IP, server, last error, retries, bytes each way, overrun. PSK shown as `set`/`unset`. |
 | `net` (R) | Same as `net status`. |
 | `becker net` (console only) | Select the mode. Refused on a Pico 2 (`net: needs Plus-W`) and when `net_configured()` is false (`net: set ssid and server first`). Calls `net_start`. |
-| `net mode net\|native` (R) | The manager's way to switch: the same two `becker` cases, so the CoCo can never pick loop or bridge. |
+| `net mode net\|native` (R) | The manager's way to switch: the same two `becker` cases, so the CoCo can never pick loop or bridge. *As built:* sets the NEXT-BOOT mode only (`save` writes it); `net status` gains `net mode <running> boot <next>`; `becker net` stays the live console switch. |
 
 `save` writes `net join`, `net psk`, `net server` before the `becker` line so
 replay has them first. `status` prints one `net` summary line on the Plus-W.
@@ -168,6 +171,11 @@ Settings screen gets `W:WIFI`. The network screen, on the ROM-picker pattern:
 - The PSK prompt honours the CoCo's SHIFT+0 lowercase mode; the screen says
   `SHIFT+0 TOGGLES LOWERCASE`.
 - On a Pico 2 (`net status` refused): `NO RADIO ON THIS BOARD`, BREAK only.
+- *As built:* the MODE row shows the boot mode, with `(SAVE, THEN RESET)`
+  when it differs from the running mode. Input is two rows (~57 chars).
+  `NO RADIO ON THIS BOARD` comes from `net radio no`. The list buffer is
+  3096 bytes, `files[]` and the reply buffer sit below the program, and
+  `cmoc --limit=7800` enforces the ceiling (§6).
 - `parse.c` gains a `net status` line parser (key-value lines, same shape as
   `time`).
 

@@ -178,6 +178,46 @@ until run.
 | CoCo 3, 0.89 MHz (`hdbdw3bck`) | | | | |
 | CoCo 3, 1.79 MHz (`hdbdw3bc3`) | | | | |
 
+## G. WiFi (Plus-W)
+
+Firmware 1.3, Plus-W build. Server: `picoco-host` on the Mac unless noted.
+
+### G.1 Bare module over USB (no CoCo)
+
+1. `net scan` lists networks.
+2. `net join <ssid>`, `net psk <psk>`, `net server <mac-ip> 65504`, `becker net`: `net status` reaches `net state up`.
+3. `bus selftest net` passes (worst round trip under 200 ms).
+4. Error reasons: wrong SSID, closed port, bad DNS name.
+5. Server down at boot with `becker net` saved: fallback after 10 s; `becker net` re-arms once the server is back.
+6. Cold-boot SNTP seeding (power cycle, then `time` shows the clock set).
+
+### G.2 On the PCB with a CoCo
+
+- Boot hold with a real CoCo: HDB-DOS boots over WiFi with /HALT released at link-up.
+- DIR and LOADM from DW4 over WiFi.
+- DIR and LOADM from FujiNet-PC over WiFi (BoIP).
+- Fallback with the server stopped: CoCo boots native after 10 s.
+- Manager WiFi screen end to end (scan, PSK, server, mode, save).
+- VSYS scope trace during a LOADM over WiFi, against the 300 mA cart budget.
+
+### G.3 Results
+
+| Check | Result | Date |
+|---|---|---|
+| G.1 join + DHCP + connect at boot | 5.3 s (`net up in 5327 ms`) | 2026-09-30 |
+| G.1 OP_TIME round trip | 8-13 ms typical, worst 23-30 ms over 20 | 2026-09-30 |
+| G.1 `bus selftest net` | pass | 2026-09-30 |
+| G.1 bad SSID / closed port / bad DNS name | `no such network` / `refused` / `dns failed`, ~10 retries in 22 s each | 2026-09-30 |
+| G.1 server down at boot | `net failed (refused), native fallback` after 10 s; `becker net` re-arms | 2026-09-30 |
+| G.1 `net scan` | 21 networks | 2026-09-30 |
+| G.1 cold-boot SNTP seeding | not yet run (needs a power cycle) | |
+| G.2 boot hold with CoCo | | |
+| G.2 DIR/LOADM from DW4 | | |
+| G.2 DIR/LOADM from FujiNet-PC | | |
+| G.2 fallback, server stopped | | |
+| G.2 manager WiFi screen | | |
+| G.2 VSYS scope trace | | |
+
 ## How to resume with Claude
 
 Plug the Pico in, then say "resume the bench test plan at step A" (or

@@ -654,11 +654,14 @@ TEST(net_status_hides_psk_and_save_order) {
                *s = strstr(cfg, "net server 10.0.0.9 65504\n"), *b = strstr(cfg, "becker ");
     ASSERT(j && p && s && b);
     ASSERT(j < p && p < s && s < b);
+    ASSERT_EQ(console_exec("net mode native"), 0);     /* pending boot mode */
     console_exec("net forget");
     ASSERT(!net_configured());
     console_exec("save");
     n = plat_cfg_read(cfg, sizeof cfg - 1); cfg[n] = 0;
     ASSERT(!strstr(cfg, "net join"));
+    { char want[24]; snprintf(want, sizeof want, "becker %s\n", mode_name(mode_get()));
+      ASSERT(strstr(cfg, want)); }                      /* forget cleared the pending mode */
 }
 
 TEST(net_remote_allowed) {

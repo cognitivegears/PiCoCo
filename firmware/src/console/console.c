@@ -413,7 +413,7 @@ static int cmd_net(int argc, char **argv) {
         net_leave_if_active();
         return net_set_server(argv[2], (uint16_t)port) == 0 ? 0 : cerr("net: host too long");
     }
-    if (strcasecmp(argv[1], "forget") == 0) { net_leave_if_active(); net_forget(); return 0; }
+    if (strcasecmp(argv[1], "forget") == 0) { net_leave_if_active(); net_forget(); g_boot_mode = -1; return 0; }
     if (strcasecmp(argv[1], "scan") == 0) {
         if (!net_available()) return cerr("net: needs Plus-W");
         if (net_scan(scan_line, NULL) != 0) return cerr("net: scan failed");
