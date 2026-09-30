@@ -172,6 +172,21 @@ static bool pins_idle_10ms(void) {
     return true;
 }
 
+static bool s_drive_was;
+int fake6809_begin(void) {
+    uint32_t c0 = bus_stats.cycles;
+    sleep_ms(100);
+    if (bus_stats.cycles != c0) return -2;
+    if (!pins_idle_10ms()) return -2;
+    if (start() < 0) return -1;
+    s_drive_was = bus_drive_get();
+    bus_drive_set(true);
+    { uint16_t di; uint8_t dd; while (bus_pop_write(&di, &dd)) { } }   /* pin-takeover blip, see fake6809_selftest */
+    return 0;
+}
+uint8_t fake6809_cycle(uint16_t addr, bool rd, uint8_t data) { return cycle(addr, rd, true, data, SAMPLE_LATE); }
+void fake6809_end(void) { bus_drive_set(s_drive_was); stop(); }
+
 int fake6809_selftest(fake_result_t *r, void (*line)(const char *s)) {
     char buf[96];
     memset(r, 0, sizeof *r);
