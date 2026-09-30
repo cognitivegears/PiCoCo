@@ -44,6 +44,11 @@ size_t net_write_free(void);                  /* room in the to-server ring */
 size_t net_write(const uint8_t *buf, size_t n);/* to-server ring; returns n when not up */
 int    net_scan(void (*cb)(const char *ssid, int rssi, int chan, void *ctx), void *ctx); /* blocking, <= 5 s; -1 no radio */
 
+#ifdef PICOCO_HAVE_NET
+struct dw_server;
+extern struct dw_server *net_dw;   /* main.c sets it: SNTP updates this server's clock */
+#endif
+
 #ifdef PICOCO_HOST
 void   net_stub_set_state(net_state_t s);
 void   net_stub_push_from_server(const uint8_t *b, size_t n);

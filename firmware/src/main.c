@@ -69,6 +69,9 @@ int main(void) {
     dw_init(&g_dw, &g_store, mode_dw_send, NULL);
     console_init(console_out, NULL, &g_dw, &g_store);
     net_init();
+#ifdef PICOCO_HAVE_NET
+    net_dw = &g_dw;
+#endif
     crash_init();
     crash_mode_hook = mode_get_u32;
     plat_reset_latch();   /* before watchdog_enable() below clobbers the marker it reads */

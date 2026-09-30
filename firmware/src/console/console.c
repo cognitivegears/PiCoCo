@@ -27,6 +27,9 @@
 #ifdef PICOCO_HAVE_FAKE6809
 #include "fake6809.h"
 #endif
+#ifdef PICOCO_HAVE_NET
+#include "net_selftest.h"
+#endif
 
 static console_out_fn g_out;
 static void *g_out_ctx;
@@ -218,6 +221,17 @@ static int cmd_bus(int argc, char **argv) {
         return cerr("usage: bus drive on|off");
     }
     if (strcasecmp(argv[1], "selftest") == 0) {
+        if (argc >= 3 && strcasecmp(argv[2], "net") == 0) {
+#ifdef PICOCO_HAVE_NET
+            int rc = net_selftest(selftest_line);
+            if (rc == -2) return cerr("bus selftest net: needs becker net with the link up, and no CoCo attached");
+            if (rc != 0) return cerr("selftest FAIL");
+            outf("selftest net pass\n");
+            return 0;
+#else
+            return cerr("net: needs Plus-W");
+#endif
+        }
 #ifndef PICOCO_HAVE_FAKE6809
         return cerr("bus selftest: pico only (host build)");
 #else

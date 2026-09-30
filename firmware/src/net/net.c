@@ -7,6 +7,8 @@
 #include "lwip/tcp.h"
 #include "lwip/dns.h"
 #include "lwip/netif.h"
+#include "lwip/apps/sntp.h"
+#include "dw.h"
 #include "hardware/watchdog.h"
 #include <string.h>
 #include <stdio.h>
@@ -44,12 +46,12 @@ static void pcb_drop(void) {
 static void on_err(void *arg, err_t err) {
     (void)arg; (void)err;
     s_pcb = NULL;                         /* lwIP has already freed it */
-    if (s_state == NET_UP) fail(5, 0); else fail(4, 0);
+    if (s_state == NET_UP) fail(5, plat_now_ms()); else fail(4, plat_now_ms());
 }
 
 static err_t on_recv(void *arg, struct tcp_pcb *pcb, struct pbuf *p, err_t err) {
     (void)arg; (void)err;
-    if (!p) { pcb_drop(); fail(5, 0); return ERR_OK; }   /* server closed */
+    if (!p) { pcb_drop(); fail(5, plat_now_ms()); return ERR_OK; }   /* server closed */
     for (struct pbuf *q = p; q; q = q->next)
         for (uint16_t i = 0; i < q->len; i++)
             if (ring_push(&down, ((uint8_t *)q->payload)[i])) net_stats.bytes_down++; else net_stats.overrun++;
@@ -60,8 +62,10 @@ static err_t on_recv(void *arg, struct tcp_pcb *pcb, struct pbuf *p, err_t err) 
 
 static err_t on_connected(void *arg, struct tcp_pcb *pcb, err_t err) {
     (void)arg; (void)pcb;
-    if (err != ERR_OK) { fail(4, 0); return ERR_OK; }
+    if (err != ERR_OK) { fail(4, plat_now_ms()); return ERR_OK; }
     s_state = NET_UP;
+    static bool sntp_started;   /* once per boot; lwIP keeps polling on its own */
+    if (!sntp_started) { sntp_started = true; sntp_setoperatingmode(SNTP_OPMODE_POLL); sntp_setservername(0, SNTP_SERVER_ADDRESS); sntp_init(); }
     s_err = "";
     LOG_I(LOG_M_NET, "net up %s -> %s:%u", s_ip, s_host, s_port);
     return ERR_OK;
@@ -70,7 +74,11 @@ static err_t on_connected(void *arg, struct tcp_pcb *pcb, err_t err) {
 static void on_dns(const char *name, const ip_addr_t *addr, void *arg) {
     (void)name;
     if ((uintptr_t)arg != s_dns_gen || s_state != NET_CONNECTING) return;   /* stale lookup */
-    if (addr) { s_addr = *addr; s_addr_ok = true; } else fail(3, 0);
+    if (addr) { s_addr = *addr; s_addr_ok = true; } else fail(3, plat_now_ms());
+}
+
+static void ip_refresh(void) {
+    snprintf(s_ip, sizeof s_ip, "%s", ip4addr_ntoa(netif_ip4_addr(&cyw43_state.netif[CYW43_ITF_STA])));
 }
 
 static void connect_start(uint32_t now_ms) {
@@ -138,7 +146,7 @@ void net_poll(uint32_t now_ms) {
             int ls = cyw43_tcpip_link_status(&cyw43_state, CYW43_ITF_STA);
             if (ls == CYW43_LINK_UP) {
                 cyw43_wifi_pm(&cyw43_state, cyw43_pm_value(CYW43_NO_POWERSAVE_MODE, 200, 1, 1, 10));
-                snprintf(s_ip, sizeof s_ip, "%s", ip4addr_ntoa(netif_ip4_addr(&cyw43_state.netif[CYW43_ITF_STA])));
+                ip_refresh();
                 s_state = NET_CONNECTING;
                 s_since_ms = now_ms;
                 s_addr_ok = false;
@@ -177,7 +185,7 @@ void net_poll(uint32_t now_ms) {
         case NET_FAILED:
             if ((int32_t)(now_ms - s_retry_at_ms) >= 0) {
                 int ls = cyw43_tcpip_link_status(&cyw43_state, CYW43_ITF_STA);
-                if (ls == CYW43_LINK_UP) { s_state = NET_CONNECTING; s_since_ms = now_ms; s_addr_ok = false; pcb_drop();
+                if (ls == CYW43_LINK_UP) { ip_refresh(); s_state = NET_CONNECTING; s_since_ms = now_ms; s_addr_ok = false; pcb_drop();
                     err_t r = dns_gethostbyname(s_host, &s_addr, on_dns, (void *)(uintptr_t)s_dns_gen);
                     if (r == ERR_OK) s_addr_ok = true; else if (r != ERR_INPROGRESS) fail(3, now_ms); }
                 else join_start(now_ms);
@@ -200,7 +208,7 @@ bool net_psk_set(void) { return s_psk[0] != 0; }
 const char *net_psk_plain(void) { return s_psk; }
 const char *net_ip(void) { return s_ip; }
 size_t net_read(uint8_t *buf, size_t n) { size_t i = 0; while (i < n && ring_pop(&down, &buf[i])) i++; return i; }
-size_t net_write_free(void) { return ring_free(&up); }
+size_t net_write_free(void) { return s_state == NET_UP ? ring_free(&up) : 1024; }   /* net_write eats bytes when not up */
 size_t net_write(const uint8_t *buf, size_t n) {
     if (s_state != NET_UP) return n;      /* bridge rule: never let the mode pump spin on a dead link */
     size_t i = 0; while (i < n && ring_push(&up, buf[i])) i++; return i;
@@ -221,4 +229,11 @@ int net_scan(void (*cb)(const char *, int, int, void *), void *ctx) {
     while (cyw43_wifi_scan_active(&cyw43_state) && !time_reached(t)) { cyw43_arch_poll(); watchdog_update(); sleep_ms(20); }
     return 0;
 }
-void net_sntp_set(uint32_t sec) { (void)sec; }   /* Task 6 */
+
+extern dw_server *net_dw;   /* set by main.c: the server whose clock SNTP updates */
+dw_server *net_dw;
+void net_sntp_set(uint32_t sec) {
+    plat_rtc_set((int64_t)sec);
+    if (net_dw) dw_time_set(net_dw, (int64_t)sec, plat_now_ms());
+    LOG_I(LOG_M_NET, "net: sntp set %u", sec);
+}
