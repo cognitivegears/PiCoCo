@@ -156,12 +156,18 @@ static int run_server(dw_server *srv, int port) {
             break;
         }
 
-        if (client_fd < 0 && (pfds[0].revents & POLLIN)) {
+        if (pfds[0].revents & POLLIN) {
             int fd = accept(listen_fd, NULL, NULL);
             if (fd >= 0) {
+                /* A rebooted Pico leaves a dead connection behind: the newest client wins. */
+                if (client_fd >= 0) {
+                    close(client_fd);
+                    srv->state = DW_IDLE;
+                    client_idx = -1;   /* its pollfd is stale */
+                    printf("picoco-host: client replaced\n");
+                } else printf("picoco-host: client connected\n");
                 client_fd = fd;
                 srv->send_ctx = &client_fd;
-                printf("picoco-host: client connected\n");
             }
         }
         if (client_idx >= 0 && (pfds[client_idx].revents & (POLLIN | POLLHUP | POLLERR))) {

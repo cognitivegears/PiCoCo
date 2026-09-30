@@ -57,6 +57,10 @@ Expected: every check prints `ok`, dwtest.py exits 0. Repeat with
 `--hdbdos on` on both the server and `dwtest.py --hdbdos` for the second
 addressing mode.
 
+A new connection replaces a client already held (log line
+`picoco-host: client replaced`), so a rebooted Pico is not blocked by its old
+dead socket.
+
 Note: on macOS under a sandboxed shell, binding the listening socket can
 fail with `Operation not permitted`; run the server (and the client) with
 the sandbox disabled.
