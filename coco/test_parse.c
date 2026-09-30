@@ -101,7 +101,7 @@ static void t_disk_detect(void) {
 }
 
 static void t_scan(void) {
-    char text[] = "ssid Oar5 rssi -36 chan 1\nssid My Net rssi -70 chan 9\nssid Pos rssi 12 chan 3\nbad line\n";
+    char text[] = "ssid Oar5 rssi -36 chan 1\nssid My Net rssi -70 chan 9\nssid  rssi -50 chan 2\nssid Pos rssi 12 chan 3\nbad line\n";
     file_ent f[4];
     int n = parse_scan(text, f, 4);
     CHECK(n == 3);
@@ -109,15 +109,16 @@ static void t_scan(void) {
     CHECK(strcmp(f[1].name, "My Net") == 0 && f[1].kb == 70);
     CHECK(strcmp(f[2].name, "Pos") == 0 && f[2].kb == 0);
 }
-static void t_net_status_refused(void) {
-    char fail[] = "FAIL 255 net: needs Plus-W\n\r";
-    char *b;
-    CHECK(parse_reply(fail, &b) == 255 && strcmp(b, "net: needs Plus-W") == 0);
+static void t_net_radio(void) {
+    char no[] = "net state off\nnet radio no\nnet mode off boot native\n";
+    char v[24];
+    CHECK(line_value(no, "net radio ", v, 24) > 0 && strcmp(v, "no") == 0);
+    CHECK(line_value(no, "net mode ", v, 24) > 0 && strcmp(v, "off boot native") == 0);
 }
 
 int main(void) {
     t_reply(); t_ls(); t_ls_truncated_tail(); t_disks(); t_line_value(); t_time(); t_disk_detect();
-    t_scan(); t_net_status_refused();
+    t_scan(); t_net_radio();
     printf("%s\n", fails ? "FAILED" : "all passed");
     return fails != 0;
 }

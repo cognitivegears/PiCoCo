@@ -618,7 +618,21 @@ TEST(becker_net_refused_without_config) {
     ASSERT(strstr(out, "needs Plus-W"));
     ASSERT_EQ(mode_get(), MODE_DIAG);
     ASSERT_EQ(console_exec("net mode native"), 0);
-    ASSERT_EQ(mode_get(), MODE_NATIVE);
+    ASSERT_EQ(mode_get(), MODE_DIAG);                    /* next boot only */
+    outn = 0;
+    console_exec("net status");
+    ASSERT(strstr(out, "net mode off boot native\n"));
+    ASSERT_EQ(console_exec("save"), 0);
+    char cfg[1024]; int n = plat_cfg_read(cfg, sizeof cfg - 1); ASSERT(n > 0); cfg[n] = 0;
+    ASSERT(strstr(cfg, "becker native\n"));
+}
+
+TEST(net_mode_net_refused_on_host) {
+    setup();
+    console_exec("net join a"); console_exec("net server b");
+    outn = 0;
+    ASSERT_EQ(console_exec("net mode net"), -1);
+    ASSERT(strstr(out, "net: needs Plus-W"));
 }
 
 TEST(net_status_hides_psk_and_save_order) {
@@ -712,6 +726,7 @@ int main(void) {
     RUN(cart_command_and_save);
     RUN(net_join_keeps_spaces);
     RUN(becker_net_refused_without_config);
+    RUN(net_mode_net_refused_on_host);
     RUN(net_status_hides_psk_and_save_order);
     RUN(net_remote_allowed);
     TEST_MAIN_END

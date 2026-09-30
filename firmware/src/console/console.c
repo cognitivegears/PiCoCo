@@ -350,6 +350,8 @@ static int cmd_rom(int argc, char **argv) {
     return cerr("usage: rom pattern|off|load <file>|boot <file>");
 }
 
+static int g_boot_mode = -1; /* pending next-boot mode from "net mode", -1 = none */
+
 static int cmd_becker(int argc, char **argv) {
     if (argc < 2) return cerr("usage: becker off|loop|bridge|native|net");
     picoco_mode m;
@@ -366,6 +368,7 @@ static int cmd_becker(int argc, char **argv) {
     else return cerr("usage: becker off|loop|bridge|native|net");
     if (mode_get() == MODE_NET && m != MODE_NET) net_stop();
     mode_set(m);
+    g_boot_mode = -1;
     return 0;
 }
 
@@ -390,6 +393,8 @@ static int cmd_net(int argc, char **argv) {
         outf("net bytes up %u down %u overrun %u retries %u\n",
              net_stats.bytes_up, net_stats.bytes_down, net_stats.overrun, net_stats.retries);
         outf("net radio %s\n", net_available() ? "yes" : "no");
+        outf("net mode %s boot %s\n", mode_name(mode_get()),
+             mode_name(g_boot_mode >= 0 ? (picoco_mode)g_boot_mode : mode_get()));
         return 0;
     }
     if (strcasecmp(argv[1], "join") == 0) {
@@ -416,8 +421,15 @@ static int cmd_net(int argc, char **argv) {
     }
     if (strcasecmp(argv[1], "mode") == 0) {
         if (argc < 3) return cerr(usage);
-        if (strcasecmp(argv[2], "net") == 0) { char *bv[] = { "becker", "net" }; return cmd_becker(2, bv); }
-        if (strcasecmp(argv[2], "native") == 0) { char *bv[] = { "becker", "native" }; return cmd_becker(2, bv); }
+        /* Next-boot mode only: switching the running mode would route the
+         * manager's own channel to the server and drop its reply. */
+        if (strcasecmp(argv[2], "net") == 0) {
+            if (!net_available()) return cerr("net: needs Plus-W");
+            if (!net_configured()) return cerr("net: set ssid and server first");
+            g_boot_mode = MODE_NET;
+            return 0;
+        }
+        if (strcasecmp(argv[2], "native") == 0) { g_boot_mode = MODE_NATIVE; return 0; }
         return cerr(usage);
     }
     return cerr(usage);
@@ -702,7 +714,8 @@ static int cmd_save(void) {
     if (net_ssid()[0] && !cfg_append(cfg, sizeof(cfg), &len, "net join %s\n", net_ssid())) return cerr("config too large");
     if (net_psk_set() && !cfg_append(cfg, sizeof(cfg), &len, "net psk %s\n", net_psk_plain())) return cerr("config too large");
     if (net_host()[0] && !cfg_append(cfg, sizeof(cfg), &len, "net server %s %u\n", net_host(), net_port())) return cerr("config too large");
-    if (!cfg_append(cfg, sizeof(cfg), &len, "becker %s\n", mode_name(mode_get())))
+    if (!cfg_append(cfg, sizeof(cfg), &len, "becker %s\n",
+                    mode_name(g_boot_mode >= 0 ? (picoco_mode)g_boot_mode : mode_get())))
         return cerr("config too large");
     if (rom_cmd[0] && !cfg_append(cfg, sizeof(cfg), &len, "rom %s\n", rom_cmd))
         return cerr("config too large");
@@ -780,6 +793,7 @@ void console_init(console_out_fn out, void *ctx, dw_server *dw, dw_store *store)
     g_dw = dw;
     g_store = store;
     linelen = 0;
+    g_boot_mode = -1;
     rom_cmd[0] = '\0';
     rom_now[0] = '\0';
     cap_open = false;

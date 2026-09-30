@@ -241,7 +241,7 @@ int parse_scan(char *text, file_ent *out, int max)
         if (strncmp(p, "ssid ", 5) == 0) {
             char *r = NULL, *q = p;
             for (; q < eol; q++) if (strncmp(q, " rssi ", 6) == 0) r = q;
-            if (r) {
+            if (r && r > p + 5) {   /* skip hidden (empty) SSIDs */
                 *r = '\0';
                 out[n].name = p + 5;
                 out[n].kb = (r[6] == '-') ? (u16)dec_to_u32(r + 7) : (u16)0;

@@ -11,9 +11,10 @@
 #define TICKS (*(volatile u16 *)0x0112)
 #define ARYEND (*(volatile u16 *)0x001F)   /* BASIC end-of-arrays pointer */
 
-/* "fs ls" body (up to 4096 + 23-byte OK header + NUL) lives at a fixed
- * address instead of BSS, between the 2-line PICOCO.BAS loader ($2601) and
- * the program image ($3800): frees 4120 bytes of program RAM. Safe because
+/* "fs ls" body (capped at 3072 + 23-byte OK header + NUL here; the firmware
+ * may send up to 4096, see ls_cut) lives at a fixed address instead of
+ * BSS, between the 2-line PICOCO.BAS loader ($2601) and the program image
+ * ($3800): frees 3096 bytes of program RAM. Safe because
  * boot.c's OS-9 boot (track 34 -> $2600) and RUN"X"/LOADM"X" handoff only
  * touch this region after the picked file's name has already been copied
  * out of it, i.e. once the list is no longer needed. ui_run() refuses to
@@ -25,6 +26,9 @@
 #define FILES ((file_ent *)0x3318)
 #define REPLY ((char *)0x3518)
 #define REPLY_SIZE 736
+#if MAX_FILES * 4 > 0x200
+#error FILES[] no longer fits before REPLY
+#endif
 
 u8 ui_dirty;
 static int nfiles, sel, top;
@@ -93,20 +97,20 @@ int ui_cmd(const char *l, char **body)
 
 int input_line(const char *prompt, char *buf, int max)
 {
-    int n = 0;
+    int n = 0, i;
     u8 k, col = (u8)strlen(prompt);
     clear_row(MSG_ROW); clear_row(MSG_ROW + 1);
     put_at(MSG_ROW, 0, prompt, 0);
-    for (;;) {
+    for (;;) {                      /* text runs on across rows MSG_ROW and MSG_ROW+1 */
         buf[n] = '\0';
-        memset(VRAM + MSG_ROW * COLS + col, 0x60, COLS - col);
-        put_at(MSG_ROW, col, buf, 0);
-        if (col + n < COLS) VRAM[MSG_ROW * COLS + col + n] = 0x20;   /* inverse-space cursor */
+        memset(VRAM + MSG_ROW * COLS + col, 0x60, 2 * COLS - col);
+        for (i = 0; i < n; i++) VRAM[MSG_ROW * COLS + col + i] = vdg((u8)buf[i], 0);
+        VRAM[MSG_ROW * COLS + col + n] = 0x20;   /* inverse-space cursor */
         k = key();
         if (k == 13) return n;
         if (k == 3) return -1;
         if (k == 8) { if (n) n--; continue; }
-        if (k >= 32 && k < 127 && n < max && col + n < COLS - 1) buf[n++] = (char)k;
+        if (k >= 32 && k < 127 && n < max && col + n < 2 * COLS - 1) buf[n++] = (char)k;
     }
 }
 
@@ -164,13 +168,26 @@ static void load_drives(void)
     if (ui_cmd("dw disk show", &body) == 0) parse_disks(body, drives);
 }
 
+/* picoco_cmd stops at the buffer end, losing the firmware's "..." marker and
+ * maybe cutting the last line: drop the partial line, report truncation. */
+static int ls_cut(char *body)
+{
+    char *p;
+    if (strlen(LSBUF) < LSBUF_SIZE - 1) return 0;
+    p = LSBUF + strlen(LSBUF);
+    while (p > body && p[-1] != '\n') p--;
+    *p = '\0';
+    return 1;
+}
+
 static void load_files(void)
 {
     char *body;
     int trunc;
     nfiles = 0;
     if (picoco_cmd("fs ls", LSBUF, LSBUF_SIZE, &body) != 0) { msg("CANNOT LIST FILES"); return; }
-    trunc = list_truncated(body);           /* before parse_ls rewrites body in place */
+    trunc = ls_cut(body);
+    if (list_truncated(body)) trunc = 1;           /* before parse_ls rewrites body in place */
     nfiles = parse_ls(body, FILES, MAX_FILES, 0);
     sort_files(FILES, nfiles);
     if (sel >= nfiles) sel = nfiles ? nfiles - 1 : 0;
@@ -361,6 +378,7 @@ static void pick_rom(void)
     char *body;
     int n, i;
     if (picoco_cmd("fs ls", LSBUF, LSBUF_SIZE, &body) != 0) { msg("CANNOT LIST FILES"); return; }
+    ls_cut(body);
     n = parse_ls(body, FILES, MAX_FILES, 1);
     if (!n) { msg("NO .ROM FILES ON FLASH"); return; }
     sort_files(FILES, n);
@@ -383,19 +401,25 @@ static void net_screen(void)
 {
     char v[7][24], *body;   /* ssid psk server state ip error mode; 23 chars is all the screen shows */
     u8 k;
-    int n, i;
+    int n, i, rl, pend;
+    char *bm;
     for (;;) {
+        if (ui_cmd("net status", &body) != 0) return;
         v[6][0] = '\0';
-        if (ui_cmd("status", &body) != 0) return;
-        line_value(body, "mode ", v[6], 24);
-        if (ui_cmd("net status", &body) != 0) { msg("NO RADIO ON THIS BOARD"); return; }
+        line_value(body, "net radio ", v[6], 24);
+        if (strcmp(v[6], "yes") != 0) { msg("NO RADIO ON THIS BOARD"); return; }
         for (i = 0; i < 6; i++) { v[i][0] = '\0'; line_value(body, nkey[i], v[i], 24); }
+        line_value(body, "net mode ", v[6], 24);        /* "<running> boot <next>" */
+        bm = strrchr(v[6], ' ') + 1;
+        rl = (int)strlen(bm);
+        pend = strncmp(v[6], bm, rl) != 0 || v[6][rl] != ' ';
         clear_screen();
         put_at(0, 0, "WIFI", 0);
         nrow(2, "S:SSID", v[0]);
         nrow(3, "P:PSK", strcmp(v[1], "set") == 0 ? "********" : "");
         nrow(4, "H:SERVER", v[2]);
-        nrow(5, "M:MODE", strcmp(v[6], "net") == 0 ? "NET" : "NATIVE");
+        nrow(5, "M:MODE", strcmp(bm, "net") == 0 ? "NET" : "NATIVE");
+        if (pend) put_at(6, 9, "(SAVE, THEN RESET)", 0);
         nrow(7, "STATE", v[3]);
         nrow(8, "IP", v[4]);
         if (v[5][0]) put_at(9, 0, v[5], 0);
@@ -422,7 +446,7 @@ static void net_screen(void)
             if (input_line("PORT (65504): ", port, 5) > 0) { strcat(line, " "); strcat(line, port); }
             if (ui_cmd(line, &body) == 0) ui_dirty = 1;
         } else if (k == 'M') {
-            if (ui_cmd(strcmp(v[6], "net") == 0 ? "net mode native" : "net mode net", &body) == 0) ui_dirty = 1;
+            if (ui_cmd(strcmp(bm, "net") == 0 ? "net mode native" : "net mode net", &body) == 0) ui_dirty = 1;
         } else if (k == 'V') do_save();
     }
 }

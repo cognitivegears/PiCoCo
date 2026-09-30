@@ -312,12 +312,16 @@ Rows: SSID, PSK (shown as `********` when set), SERVER, MODE (`NET` or
   open network).
 - `P`: set the passphrase.
 - `H`: server host, then port (empty keeps the default 65504).
-- `M`: toggle the DriveWire transport between net and native.
+- `M`: toggle the NEXT-BOOT DriveWire transport between net and native
+  (`net mode` sets the boot mode only). The row shows `(SAVE, THEN RESET)`
+  while it differs from the running mode. Press `V`, then reset. Leaving
+  net mode live is a USB-console action (`becker native`).
+- Entries (SSID, PSK, host) run over two rows, about 57 characters.
 - `V`: save. Settings do not survive a reset until saved.
 - `BREAK`: back.
 
 `SHIFT+0` toggles lowercase, which SSIDs and passphrases need. On a
-Pico 2 board the screen shows `NO RADIO ON THIS BOARD` and returns.
+Pico 2 board (`net radio no`) the screen shows `NO RADIO ON THIS BOARD` and returns.
 
 ### Boot (B)
 
@@ -343,8 +347,9 @@ Pico 2 board the screen shows `NO RADIO ON THIS BOARD` and returns.
 - The `fs ls` reply buffer (`LSBUF`, 3096 bytes: a 23-byte `OK` header
   plus a 3072-byte body plus a NUL) lives at a fixed $2700-$3317 instead
   of BSS, between the loader and the program. The firmware's `...`
-  truncation marker still arrives; the list shows `LIST TRUNCATED` above
-  roughly 120 files. Right after it, in the same window, sit `files[]`
+  marker is lost for bodies of 3073-4096 bytes (roughly 100 files at
+  30-char names); `ls_cut` drops the cut last line and the list shows
+  `LIST TRUNCATED` whenever the buffer fills. Right after it, in the same window, sit `files[]`
   (128 entries x 4 bytes, $3318-$3517) and the command reply buffer
   (736 bytes, $3518-$37F7). All three share one lifetime: they are dead
   by the time boot.c overwrites the window. `ui_run()` refuses to start
@@ -352,7 +357,7 @@ Pico 2 board the screen shows `NO RADIO ON THIS BOARD` and returns.
   $001F) already reaches past $2700.
 - `PICOCO.BIN` loads at $3800 (`ORG` in `coco/Makefile`) and must end
   below $7800 (BASIC stack and string space); the Makefile passes
-  `--limit=7800`, so an overrun fails the build. Current end: $763F.
+  `--limit=7800`, so an overrun fails the build. Current end: $77A3.
 - OS-9 boot (track 34 -> $2600-$37FF) and the `RUN"X"`/`LOADM"X"`
   handoff both overwrite $2700-$37FF, but only after the picked file's
   name has already been copied out of `LSBUF`, so the overlap is safe.
