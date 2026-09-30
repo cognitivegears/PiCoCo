@@ -148,7 +148,8 @@ New `net` verb. R marks commands also on the remote allowlist.
 | `net scan` (R) | One line per SSID: `ssid <name> rssi <n> chan <n>`. |
 | `net status` (R) | State, SSID, IP, server, last error, retries, bytes each way, overrun. PSK shown as `set`/`unset`. |
 | `net` (R) | Same as `net status`. |
-| `becker net` (R) | Select the mode. Refused on a Pico 2 (`net: needs Plus-W`) and when `net_configured()` is false (`net: set ssid and server first`). Calls `net_start`. |
+| `becker net` (console only) | Select the mode. Refused on a Pico 2 (`net: needs Plus-W`) and when `net_configured()` is false (`net: set ssid and server first`). Calls `net_start`. |
+| `net mode net\|native` (R) | The manager's way to switch: the same two `becker` cases, so the CoCo can never pick loop or bridge. |
 
 `save` writes `net join`, `net psk`, `net server` before the `becker` line so
 replay has them first. `status` prints one `net` summary line on the Plus-W.
@@ -161,8 +162,8 @@ Settings screen gets `W:WIFI`. The network screen, on the ROM-picker pattern:
 - Rows: `SSID`, `PSK` (`********` or `(NONE)`), `SERVER`, `PORT`,
   `MODE` (`NET`/`NATIVE`), `STATE` (from `net status`, refreshed on each key).
 - `S`: `net scan`, pick from the list, then prompt for the PSK. `H`: prompt
-  for host, then port (default 65504). `M`: toggle `becker net` /
-  `becker native` and show the firmware's refusal text if any. `V`: save.
+  for host, then port (default 65504). `M`: toggle `net mode net` /
+  `net mode native` and show the firmware's refusal text if any. `V`: save.
   `BREAK`: back.
 - The PSK prompt honours the CoCo's SHIFT+0 lowercase mode; the screen says
   `SHIFT+0 TOGGLES LOWERCASE`.
