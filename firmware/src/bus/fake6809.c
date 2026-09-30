@@ -195,6 +195,11 @@ int fake6809_selftest(fake_result_t *r, void (*line)(const char *s)) {
     memset(rom_bank_buf(1), 0x01, ROM_BANK_SIZE);
     rom_publish_banks(2);
 
+    /* Taking the pins over can blip OE_BUS once (seen on a bare Pico 2: one
+     * stray idx-0 cycle ~130 us before the first real one, R/W random). It
+     * lands before the baselines below, but a stray write would sit at the
+     * head of the write ring and fail write_data_captured, so drain it. */
+    { uint16_t di; uint8_t dd; while (bus_pop_write(&di, &dd)) { } }
     uint32_t cyc0 = bus_stats.cycles, wr0 = bus_stats.writes, ov0 = bus_stats.write_overrun;
     int fails = 0;
     #define CHECK(name, cond) do { bool ok_ = (cond); r->cycles++; if (!ok_) { fails++; r->mismatches++; } \
@@ -250,8 +255,16 @@ int fake6809_selftest(fake_result_t *r, void (*line)(const char *s)) {
         busy_wait_us(2);
         bool ok = true;
         for (size_t i = 0; i < sizeof(exp_idx) / sizeof(exp_idx[0]); i++) {
-            uint16_t widx; uint8_t wdata;
-            if (!bus_pop_write(&widx, &wdata) || widx != exp_idx[i] || wdata != exp_data[i]) ok = false;
+            uint16_t widx = 0xFFFF; uint8_t wdata = 0;
+            bool have = bus_pop_write(&widx, &wdata);
+            if (!have || widx != exp_idx[i] || wdata != exp_data[i]) {
+                if (ok) {   /* report the first mismatch only */
+                    snprintf(buf, sizeof buf, "selftest write %u: got %s%04x/%02x want %04x/%02x",
+                             (unsigned)i, have ? "" : "(empty) ", widx, wdata, exp_idx[i], exp_data[i]);
+                    line(buf);
+                }
+                ok = false;
+            }
         }
         CHECK("write_data_captured", ok);
     }
