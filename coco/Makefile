@@ -7,7 +7,7 @@ SRCS  = main.c ui.c dw.c parse.c boot.c hook.asm
 all: PICOCO.DSK
 
 PICOCO.BIN: $(SRCS) $(wildcard *.h)
-	$(CMOC) --coco --org=$(ORG) -o $@ $(SRCS)
+	$(CMOC) --coco --org=$(ORG) --limit=7800 -o $@ $(SRCS)
 
 PICOCO.DSK: PICOCO.BIN PICOCO.BAS
 	rm -f $@

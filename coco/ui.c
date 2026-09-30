@@ -19,11 +19,14 @@
  * out of it, i.e. once the list is no longer needed. ui_run() refuses to
  * start if BASIC's own arrays already reach into this region. */
 #define LSBUF ((char *)0x2700)
-#define LSBUF_SIZE 4120
+#define LSBUF_SIZE 3096
+/* The freed tail of the $2700-$37FF window (same lifetime as LSBUF) holds
+ * FILES[] (128 * 4 = 512 bytes) and the reply buffer. */
+#define FILES ((file_ent *)0x3318)
+#define REPLY ((char *)0x3518)
+#define REPLY_SIZE 736
 
 u8 ui_dirty;
-static char reply[768];
-static file_ent files[MAX_FILES];
 static int nfiles, sel, top;
 static char drives[4][32];
 static char fw[12];
@@ -80,7 +83,7 @@ static void msg2(const char *l1, const char *l2)
 
 int ui_cmd(const char *l, char **body)
 {
-    int rc = picoco_cmd(l, reply, sizeof reply, body);
+    int rc = picoco_cmd(l, REPLY, REPLY_SIZE, body);
     if (rc == PC_TIMEOUT) msg2("PICOCO NOT RESPONDING", "(BECKER NATIVE? FIRMWARE >= 1.2?)");
     else if (rc == PC_BAD) msg("BAD REPLY (FIRMWARE >= 1.2?)");
     else if (rc == PC_TOOLONG) msg("NAME TOO LONG");
@@ -168,8 +171,8 @@ static void load_files(void)
     nfiles = 0;
     if (picoco_cmd("fs ls", LSBUF, LSBUF_SIZE, &body) != 0) { msg("CANNOT LIST FILES"); return; }
     trunc = list_truncated(body);           /* before parse_ls rewrites body in place */
-    nfiles = parse_ls(body, files, MAX_FILES, 0);
-    sort_files(files, nfiles);
+    nfiles = parse_ls(body, FILES, MAX_FILES, 0);
+    sort_files(FILES, nfiles);
     if (sel >= nfiles) sel = nfiles ? nfiles - 1 : 0;
     if (trunc || nfiles == MAX_FILES) msg("LIST TRUNCATED");
 }
@@ -205,7 +208,7 @@ static void draw_all(void)
     clear_screen();
     draw_header();
     top = clamp_top(sel, top, LIST_ROWS);
-    if (nfiles) draw_list(files, nfiles, sel, top, LIST_TOP, LIST_ROWS);
+    if (nfiles) draw_list(FILES, nfiles, sel, top, LIST_TOP, LIST_ROWS);
     else put_at(LIST_TOP, 1, "NO DISK IMAGES ON FLASH", 0);
     draw_help();
 }
@@ -214,10 +217,10 @@ static void do_mount(u8 d)
 {
     char *body;
     if (!nfiles) return;
-    if (strlen(files[sel].name) >= 32) { msg("NAME TOO LONG"); return; }
+    if (strlen(FILES[sel].name) >= 32) { msg("NAME TOO LONG"); return; }
     strcpy(line, "dw disk insert ");
     line[15] = (char)('0' + d); line[16] = ' '; line[17] = '\0';
-    strcat(line, files[sel].name);
+    strcat(line, FILES[sel].name);
     if (ui_cmd(line, &body) == 0) { ui_dirty = 1; load_drives(); }
 }
 
@@ -245,7 +248,7 @@ static void do_new(void)
     strcat(line, name);
     if (ui_cmd(line, &body) != 0) return;
     load_files();
-    for (i = 0; i < nfiles; i++) if (ends_with_ci(files[i].name, name) && strlen(files[i].name) == strlen(name)) sel = i;
+    for (i = 0; i < nfiles; i++) if (ends_with_ci(FILES[i].name, name) && strlen(FILES[i].name) == strlen(name)) sel = i;
 }
 
 static void do_save(void)
@@ -267,12 +270,12 @@ static void do_jump(char c)
     if (l < 4) { jump[l] = c; jump[l + 1] = '\0'; }
     l = (int)strlen(jump);
     for (i = 0; i < nfiles; i++) {
-        if (strlen(files[i].name) >= (u16)l) {
-            char save = files[i].name[l];
+        if (strlen(FILES[i].name) >= (u16)l) {
+            char save = FILES[i].name[l];
             int hit;
-            files[i].name[l] = '\0';
-            hit = ends_with_ci(files[i].name, jump);   /* whole prefix, case-insensitive */
-            files[i].name[l] = save;
+            FILES[i].name[l] = '\0';
+            hit = ends_with_ci(FILES[i].name, jump);   /* whole prefix, case-insensitive */
+            FILES[i].name[l] = save;
             if (hit) { sel = i; return; }
         }
     }
@@ -325,7 +328,7 @@ void ui_run(void)
         else if (k == 'N') do_new();
         else if (k == 'V') do_save();
         else if (k == 'S') { settings_run(); load_drives(); load_files(); }
-        else if (k == 'B' && nfiles) { if (boot_image(files[sel].name)) return; load_drives(); }
+        else if (k == 'B' && nfiles) { if (boot_image(FILES[sel].name)) return; load_drives(); }
         else if (k == 'G') {              /* G then a letter: jump to that name */
             clear_row(MSG_ROW);
             put_at(MSG_ROW, 0, "GOTO: TYPE A LETTER", 1);
@@ -358,13 +361,13 @@ static void pick_rom(void)
     char *body;
     int n, i;
     if (picoco_cmd("fs ls", LSBUF, LSBUF_SIZE, &body) != 0) { msg("CANNOT LIST FILES"); return; }
-    n = parse_ls(body, files, MAX_FILES, 1);
+    n = parse_ls(body, FILES, MAX_FILES, 1);
     if (!n) { msg("NO .ROM FILES ON FLASH"); return; }
-    sort_files(files, n);
-    i = pick_list("ROM FOR NEXT BOOT", files, n);
+    sort_files(FILES, n);
+    i = pick_list("ROM FOR NEXT BOOT", FILES, n);
     if (i < 0) return;
     strcpy(line, "rom boot ");
-    strcat(line, files[i].name);
+    strcat(line, FILES[i].name);
     if (ui_cmd(line, &body) == 0) { ui_dirty = 1; msg("SAVE, THEN RESET"); }
 }
 
@@ -402,11 +405,11 @@ static void net_screen(void)
         if (k == 3) return;
         if (k == 'S') {
             if (picoco_cmd("net scan", LSBUF, LSBUF_SIZE, &body) != 0) { msg("SCAN FAILED"); continue; }
-            n = parse_scan(body, files, MAX_FILES);
+            n = parse_scan(body, FILES, MAX_FILES);
             if (n == 0) { msg("NO NETWORKS FOUND"); continue; }
-            i = pick_list("NETWORK", files, n);
+            i = pick_list("NETWORK", FILES, n);
             if (i < 0) continue;
-            strcpy(line, "net join "); strcat(line, files[i].name);
+            strcpy(line, "net join "); strcat(line, FILES[i].name);
             if (ui_cmd(line, &body) != 0) continue;
             if (input_line("PSK: ", line + 8, 63) >= 0) { memmove(line, "net psk ", 8); ui_cmd(line, &body); }
             ui_dirty = 1;

@@ -340,13 +340,19 @@ Pico 2 board the screen shows `NO RADIO ON THIS BOARD` and returns.
 - The 2-line `PICOCO.BAS` loader sits at $2601: line 10
   (`IF PEEK(65534)=140 THEN WIDTH32`) sets 32-column mode on a CoCo 3,
   line 20 (`LOADM"PICOCO":EXEC`) loads and runs the program.
-- The `fs ls` reply buffer (`LSBUF`, 4120 bytes: a 23-byte `OK` header
-  plus a 4096-byte body plus a NUL) lives at a fixed $2700-$3717 instead
-  of BSS, between the loader and the program, freeing that space for the
-  program itself. `ui_run()` refuses to start (`BASIC PROGRAM TOO BIG`)
-  if BASIC's array-end pointer (`ARYEND`, $001F) already reaches past
-  $2700 — i.e. the BASIC program that `RUN`s `PICOCO` is too large.
-- `PICOCO.BIN` loads at $3800 (`ORG` in `coco/Makefile`).
+- The `fs ls` reply buffer (`LSBUF`, 3096 bytes: a 23-byte `OK` header
+  plus a 3072-byte body plus a NUL) lives at a fixed $2700-$3317 instead
+  of BSS, between the loader and the program. The firmware's `...`
+  truncation marker still arrives; the list shows `LIST TRUNCATED` above
+  roughly 120 files. Right after it, in the same window, sit `files[]`
+  (128 entries x 4 bytes, $3318-$3517) and the command reply buffer
+  (736 bytes, $3518-$37F7). All three share one lifetime: they are dead
+  by the time boot.c overwrites the window. `ui_run()` refuses to start
+  (`BASIC PROGRAM TOO BIG`) if BASIC's array-end pointer (`ARYEND`,
+  $001F) already reaches past $2700.
+- `PICOCO.BIN` loads at $3800 (`ORG` in `coco/Makefile`) and must end
+  below $7800 (BASIC stack and string space); the Makefile passes
+  `--limit=7800`, so an overrun fails the build. Current end: $763F.
 - OS-9 boot (track 34 -> $2600-$37FF) and the `RUN"X"`/`LOADM"X"`
   handoff both overwrite $2700-$37FF, but only after the picked file's
   name has already been copied out of `LSBUF`, so the overlap is safe.
