@@ -316,6 +316,7 @@ void ui_run(void)
     u8 k;
     clear_screen();
     if (ARYEND > 0x2700) { msg("BASIC PROGRAM TOO BIG"); return; }
+    if ((u16)&k < 0x7D80) { msg("CLEAR 200 FIRST"); return; }   /* stack too small: loaded after CLEAR n>200 */
     put_at(0, 0, "PICOCO MANAGER", 0);
     for (;;) {
         clear_row(2);
@@ -454,7 +455,7 @@ static void net_screen(void)
 
 void settings_run(void)
 {
-    char now[40], next[40], hdb[8], tv[16], clk[8], ts[20], tzv[8], tzs[10], *body;
+    char now[24], next[24], hdb[8], tv[16], clk[8], ts[20], tzv[8], tzs[10], *body;
     u32 t;
     int tzm;
     u8 k;

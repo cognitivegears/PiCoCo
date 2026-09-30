@@ -59,7 +59,8 @@ addressing mode.
 
 A new connection replaces a client already held (log line
 `picoco-host: client replaced`), so a rebooted Pico is not blocked by its old
-dead socket.
+dead socket. The server listens on all interfaces, so any LAN peer can evict
+the current client; it is a dev tool.
 
 Note: on macOS under a sandboxed shell, binding the listening socket can
 fail with `Operation not permitted`; run the server (and the client) with

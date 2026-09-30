@@ -422,11 +422,11 @@ static int cmd_net(int argc, char **argv) {
         return net_set_server(argv[2], (uint16_t)port) == 0 ? 0 : cerr("net: host too long");
     }
     if (strcasecmp(argv[1], "tz") == 0) {
-        char *end; long m = 0;
+        char *end; long m = 0; int off = 0;
         if (argc < 3) return cerr(usage);
-        if (strcasecmp(argv[2], "off") == 0) m = NET_TZ_OFF;
+        if (strcasecmp(argv[2], "off") == 0) off = 1;
         else { m = strtol(argv[2], &end, 10); if (*end || end == argv[2]) return cerr("net: tz is minutes or off"); }
-        return net_set_tz((int)m) == 0 ? 0 : cerr("net: tz out of range (+-840)");
+        return (off || (m >= -840 && m <= 840)) && net_set_tz(off ? NET_TZ_OFF : (int)m) == 0 ? 0 : cerr("net: tz out of range (+-840)");
     }
     if (strcasecmp(argv[1], "forget") == 0) { net_leave_if_active(); net_forget(); g_boot_mode = -1; return 0; }
     if (strcasecmp(argv[1], "scan") == 0) {

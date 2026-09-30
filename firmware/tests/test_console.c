@@ -672,6 +672,8 @@ TEST(net_tz_config_and_save) {
     ASSERT(strstr(out, "net tz -300\n"));
     ASSERT(console_exec("net tz 900") != 0);
     ASSERT(console_exec("net tz abc") != 0);
+    ASSERT(console_exec("net tz -32768") != 0);
+    ASSERT(console_exec("net tz 65536") != 0);
     ASSERT_EQ(net_tz(), -300);
     console_exec("save");
     char cfg[1024]; int n = plat_cfg_read(cfg, sizeof cfg - 1); ASSERT(n > 0); cfg[n] = 0;

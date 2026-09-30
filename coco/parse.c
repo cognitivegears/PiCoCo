@@ -254,7 +254,7 @@ int parse_scan(char *text, file_ent *out, int max)
     return n;
 }
 
-/* Written without / and % (CMOC's 16-bit divide helpers cost ~100 bytes each; the $7A00 ceiling is tight). */
+/* Written without / and % (CMOC's 16-bit divide helpers cost ~100 bytes each; the $7B80 ceiling is tight). */
 int parse_tz(const char *s, int *minutes)
 {
     char neg = 0;

@@ -363,7 +363,7 @@ Pico 2 board (`net radio no`) the screen shows `NO RADIO ON THIS BOARD` and retu
   below $7B80; the Makefile passes `--limit=7B80`, so an overrun fails the
   build. The loader's `CLEAR 200` pins BASIC's string space to the top 200
   bytes, leaving about 0.9 KB of stack above the program. Current end:
-  $7B5C. (The $7A00 target did not fit once the timezone row landed.)
+  $7B80. (The $7A00 target did not fit once the timezone row landed.)
 - OS-9 boot (track 34 -> $2600-$37FF) and the `RUN"X"`/`LOADM"X"`
   handoff both overwrite $2700-$37FF, but only after the picked file's
   name has already been copied out of `LSBUF`, so the overlap is safe.
