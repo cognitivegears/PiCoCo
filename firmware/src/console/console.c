@@ -917,7 +917,10 @@ int console_run_config(void) {
         size_t l = strlen(line);
         if (l > 0 && line[l - 1] == '\r') line[l - 1] = '\0';
         if (line[0] != '\0' && line[0] != '#') {
-            if (console_exec(line) != 0) LOG_E(LOG_M_CONSOLE, "config: %s", line);
+            if (console_exec(line) != 0) {
+                if (strncasecmp(line, "net psk", 7) == 0) LOG_E(LOG_M_CONSOLE, "config: net psk <redacted>");
+                else LOG_E(LOG_M_CONSOLE, "config: %s", line);
+            }
             count++;
         }
         line = strtok_r(NULL, "\n", &save);

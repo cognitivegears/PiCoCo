@@ -42,3 +42,9 @@ const char *net_ip(void);                      /* dotted quad while up, else "0.
 size_t net_read(uint8_t *buf, size_t n);       /* from-server ring */
 size_t net_write(const uint8_t *buf, size_t n);/* to-server ring; returns n when not up */
 int    net_scan(void (*cb)(const char *ssid, int rssi, int chan, void *ctx), void *ctx); /* blocking, <= 5 s; -1 no radio */
+
+#ifdef PICOCO_HOST
+void   net_stub_set_state(net_state_t s);
+void   net_stub_push_from_server(const uint8_t *b, size_t n);
+size_t net_stub_take_to_server(uint8_t *b, size_t n);
+#endif

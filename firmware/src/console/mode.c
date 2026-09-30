@@ -31,6 +31,7 @@ void mode_reset(void) {
 }
 
 void mode_set(picoco_mode m) {
+    if (m != g_mode) pending_len = 0;   /* stale native replies must not replay after a mode round trip */
     g_mode = m;
     if (m == MODE_NATIVE && g_bound_dw) g_bound_dw->state = DW_IDLE;
 }

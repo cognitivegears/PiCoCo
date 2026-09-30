@@ -8,7 +8,7 @@
  * must not be called from core1 or an ISR that races core0's calls. */
 
 enum { LOG_OFF = 0, LOG_ERROR = 1, LOG_INFO = 2, LOG_DEBUG = 3 };
-enum { LOG_M_MAIN, LOG_M_BUS, LOG_M_DW, LOG_M_BECKER, LOG_M_CONSOLE, LOG_M_FS, LOG_M_COUNT };
+enum { LOG_M_MAIN, LOG_M_BUS, LOG_M_DW, LOG_M_BECKER, LOG_M_CONSOLE, LOG_M_FS, LOG_M_NET, LOG_M_COUNT };
 
 extern const char *const log_module_names[LOG_M_COUNT];
 extern uint32_t log_dropped;

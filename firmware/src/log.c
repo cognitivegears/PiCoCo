@@ -8,7 +8,7 @@
 /* log_write() is core0-only: it touches log_ring and log_levels with no
  * locking. Do not call it from core1 or an ISR that races core0. */
 
-const char *const log_module_names[LOG_M_COUNT] = {"main", "bus", "dw", "becker", "console", "fs"};
+const char *const log_module_names[LOG_M_COUNT] = {"main", "bus", "dw", "becker", "console", "fs", "net"};
 uint32_t log_dropped;
 
 static uint8_t log_buf[4096];
