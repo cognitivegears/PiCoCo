@@ -211,6 +211,8 @@ Firmware 1.3, Plus-W build. Server: `picoco-host` on the Mac unless noted.
 | G.1 server down at boot | `net failed (refused), native fallback` after 10 s; `becker net` re-arms | 2026-09-30 |
 | G.1 `net scan` | 21 networks | 2026-09-30 |
 | G.1 cold-boot SNTP seeding | pass 2026-09-30: after a USB power cycle the boot log shows `net: sntp seeded 1790778946`, `time` reports it with `clock kept`, `net up in 8329 ms` | |
+| G.1 `net tz` (firmware 1.3, 25517de) | pass 2026-09-30: `net tz -240` + `save` + reboot logs `net: sntp set 1790765675 (utc 1790780075 tz -240)`, exactly Mac UTC minus 14400; `net tz 0` then `net tz -240` move `time` at once, no hourly wait | |
+| G.1 reconnect after a Pico reboot with picoco-host (af12f4d) | pass 2026-09-30: the server replaces the stale client on the new accept; `bus selftest net` passes right after the reboot (dwinit 5 ms, worst 19 ms) without restarting the server | |
 | G.2 boot hold with CoCo | | |
 | G.2 DIR/LOADM from DW4 | | |
 | G.2 DIR/LOADM from FujiNet-PC | | |
