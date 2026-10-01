@@ -16,23 +16,46 @@
  * Flash-free per Plan B - everything reachable from here must be BUS_HOT or
  * static inline (see the nm/objdump acceptance check in the task report). */
 #ifndef PICOCO_BOARD_PLUSW
+/* Pico 2: OE_BUS (GP26) is in gpio_in, so one sample carries OE, address, R/W. */
+#define OE_LOW_IN(x) (!((x) & BUS_OE_MASK))
+
+/* Precompute while idle, drive on the edge. At 1.79 MHz (CoCo 3 fast ROM) E is
+ * high for 279 ns and the 6809E latches data at E fall; the old path (sample,
+ * 70 ns resample, lookup, drive) landed ~245 ns after E rose and failed on
+ * timing tails (bench 2026-09-30: +33 ns made every first poll misread as
+ * "ready"). Address and R/W are valid from Q, a quarter cycle before E, so the
+ * response is computed from the latest idle sample and the drive after OE_BUS
+ * falls is three SIO writes. The OE-low sample is then checked against the
+ * precomputed index; a mismatch (address still settling, late cycle) redrives
+ * and counts as addr_resample, keeping that diagnostic. */
 BUS_HOT void bus_core1_main(void) {
     (void)save_and_disable_interrupts();          /* never restored: core1 does nothing else */
+    uint32_t in = sio_hw->gpio_in;
     for (;;) {
-        while (OE_HIGH()) { }                     /* wait for a cart cycle (OE_BUS low) */
-        uint32_t in0 = sio_hw->gpio_in;
-        /* ponytail: diagnostic resample ~70 ns later; use the later sample. Bench 2026-09-16 saw
-         * A8 read high on ~3% of cycles; this tells settling-at-sample-time from a bad level. */
-        __asm volatile("nop\nnop\nnop\nnop\nnop\nnop\nnop\nnop\nnop\nnop" ::: "memory");
-        uint32_t in  = sio_hw->gpio_in;
-        uint32_t dif = ((in ^ in0) >> PIN_A0) & 0x3FFF;
-        if (dif) { bus_stats.addr_resample++; bus_stats.addr_resample_bits |= dif; }
+        uint16_t pidx; uint32_t pdat; bool prd; bool fresh = false;
+        do {                                      /* idle: response for the address on the bus now */
+            fresh = !OE_LOW_IN(in);               /* false only if no idle sample preceded this cycle */
+            pidx = (in >> PIN_A0) & 0x3FFF;
+            prd  = (in & RW_MASK) && bus_drive;
+            pdat = (uint32_t)bus_peek(pidx) << PIN_D0;
+            in   = sio_hw->gpio_in;
+        } while (!OE_LOW_IN(in));                 /* exit: `in` is the sample that saw the cycle start */
+        bool rd = (in & RW_MASK) != 0;
+        if (prd && rd) {                          /* R/W from the fresh sample: never drive into a write */
+            sio_hw->gpio_clr = D_MASK;
+            sio_hw->gpio_set = pdat;
+            sio_hw->gpio_oe_set = D_MASK;
+        }
         uint16_t idx = (in >> PIN_A0) & 0x3FFF;
-        if (in & RW_MASK) {                       /* CoCo read */
+        if (rd) {                                 /* CoCo read */
             if (bus_drive) {
-                sio_hw->gpio_clr = D_MASK;
-                sio_hw->gpio_set = (uint32_t)bus_peek(idx) << PIN_D0;
-                sio_hw->gpio_oe_set = D_MASK;
+                if (idx != pidx || !prd) {        /* precompute was for another address: redrive */
+                    if (fresh) { bus_stats.addr_resample++; bus_stats.addr_resample_bits |= (idx ^ pidx); }
+                    else bus_stats.late_precompute++;   /* back-to-back cycles (boot ROM copy): expected */
+                    sio_hw->gpio_clr = D_MASK;
+                    sio_hw->gpio_set = (uint32_t)bus_peek(idx) << PIN_D0;
+                    sio_hw->gpio_oe_set = D_MASK;
+                }
                 while (!OE_HIGH()) { }
                 sio_hw->gpio_oe_clr = D_MASK;
             } else {

@@ -1,4 +1,5 @@
 #include "dw.h"
+#include "bus.h"
 #include <string.h>
 #include <strings.h>
 #include <time.h>
@@ -144,6 +145,7 @@ static void do_write(dw_server *s, uint32_t now_ms) {
     if (got_sum != want_sum) {
         rc = DW_E_CRC;
         s->stats.crc_err++;
+        bus_trace_freeze(true);
     } else if (drive >= DW_MAX_DRIVES || !s->drives[drive].mounted) {
         rc = DW_E_NOTRDY;
         s->stats.notrdy++;
@@ -329,6 +331,7 @@ static void finish_readex(dw_server *s) {
     if (rc == DW_E_OK && client_sum != s->sector_sum) {
         rc = DW_E_CRC;
         s->stats.crc_err++;
+        bus_trace_freeze(true);
     }
     tx(s, &rc, 1);
     s->state = DW_IDLE;

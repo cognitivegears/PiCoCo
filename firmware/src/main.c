@@ -48,6 +48,13 @@ static void console_out(void *ctx, const char *s) {
 static void gpio_setup(void) {
     for (int g = 0; g < 48; g++) {
         if (PICOCO_INPUT_MASK & (1ULL << g)) { gpio_init(g); gpio_set_dir(g, GPIO_IN); gpio_pull_up(g); }
+    /* D0-D7 idle LOW, not high: U10 is enabled by hardware (E-qualified /OE) from the
+     * start of every cart read, so whatever the Pico's data pads hold before core1
+     * drives them is what the CoCo sees if the drive lands late. Pulled up that was
+     * 0xFF, whose bit 1 reads as Becker "data ready": one late $FF41 poll made the
+     * CoCo read a phantom byte and desynced the whole stream (PCB bench 2026-09-30,
+     * 1.79 MHz). Pulled down a late poll reads 0x00, not ready, and is retried. */
+    for (int g = PIN_D0; g < PIN_D0 + 8; g++) gpio_pull_down(g);
     }
     gpio_init(PIN_HALT); gpio_put(PIN_HALT, 1); gpio_set_dir(PIN_HALT, GPIO_OUT);   /* latch the value before enabling the output so /HALT never glitches low; keep it asserted until released after core1 launch, below */
 #ifdef PIN_CART_DRV

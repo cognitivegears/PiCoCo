@@ -19,6 +19,7 @@
 typedef struct { uint32_t t_us; uint16_t idx; uint8_t rw; uint8_t data; } bus_trace_entry;
 typedef struct {
     uint32_t cycles, reads, writes, write_overrun, addr_resample, addr_resample_bits;
+    uint32_t late_precompute; /* Pico 2 loop: cycle began before an idle sample was taken (back-to-back reads); served by the redrive path, benign */
     uint32_t whooks_run;     /* write hooks executed on core1 */
     uint32_t hw_selected;    /* Plus-W loop: cycles selected by /CTS or /SCS */
     uint32_t fw_selected;    /* Plus-W loop: cycles selected by bus_fw_mask ($FF60-$FF7F) */
@@ -66,6 +67,7 @@ int  bus_add_read_hook(uint16_t idx, void (*fn)(void));             /* 0 ok, -1 
 int  bus_add_write_hook(uint16_t idx, void (*fn)(uint8_t data));   /* 0 ok, -1 full; fn is BUS_HOT, runs on core1 before the event is queued */
 bool bus_pop_write(uint16_t *idx, uint8_t *data);                   /* core0 consumer */
 void bus_trace_freeze(bool freeze);
+void bus_trace_freeze_hot(void);              /* BUS_HOT; freezes (never thaws) */
 size_t bus_trace_copy(bus_trace_entry *out, size_t max);            /* oldest first, newest last */
 
 /* producer side (core1 loop and sim_bus): */

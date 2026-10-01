@@ -24,6 +24,7 @@ static int whook_count;
 static bus_trace_entry trace[BUS_TRACE_SIZE];
 static uint32_t trace_pos;
 static bool trace_frozen;
+static bool trace_freeze_after;   /* set by core1 at a fault: freeze once that cycle is recorded */
 
 void bus_init(void) {
     memset(bus_table, 0xFF, sizeof(bus_table));
@@ -96,6 +97,11 @@ bool bus_pop_write(uint16_t *idx, uint8_t *data) {
 
 void bus_trace_freeze(bool freeze) {
     trace_frozen = freeze;
+    if (!freeze) trace_freeze_after = false;
+}
+
+BUS_HOT void bus_trace_freeze_hot(void) {   /* core1-callable: stop the ring after the current cycle is recorded */
+    trace_freeze_after = true;
 }
 
 size_t bus_trace_copy(bus_trace_entry *out, size_t max) {
@@ -110,6 +116,7 @@ static BUS_HOT void trace_record(uint16_t idx, uint8_t rw, uint8_t data, uint32_
     if (trace_frozen) return;
     trace[trace_pos & (BUS_TRACE_SIZE - 1)] = (bus_trace_entry){ .t_us = t_us, .idx = idx, .rw = rw, .data = data };
     trace_pos++;
+    if (trace_freeze_after) { trace_frozen = true; trace_freeze_after = false; }
 }
 
 BUS_HOT void bus_on_read_done(uint16_t idx, uint32_t t_us) {

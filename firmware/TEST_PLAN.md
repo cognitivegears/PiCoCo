@@ -235,6 +235,17 @@ heading.
 
 ## Results
 
+### 2026-09-30, PCB v2.3.1 #1, Pico 2, CoCo 3 (firmware 1.3 + core1 timing fix)
+First assembled PCB (docs/pcb-bringup.md has the phase-by-phase log). HDB-DOS
+boots on cart power alone, CoCo RESET reboots the Pico through U13/R9, DIR,
+LOADM, SAVE and the manager all pass, `addr_resample 0` (the breadboard
+needed the resample on every boot). hdbdw3bc3 (1.79 MHz) failed
+intermittently with a one-byte Becker desync; root cause and fix in
+docs/pcb-bringup.md "1.79 MHz fault". After the fix: 4 LOADMs + SAVE at
+1.79 MHz, `dw reads 106 writes 4 crc_err 0`, `becker underrun 0`. Trace now
+freezes at the first underrun/CRC error (`trace run` thaws).
+
+
 ### 2026-09-29, breadboard: bridge mode, latency, clock, CoCo manager (firmware 1.2)
 Firmware 1.2 (branch coco-manager) on the Pico 2 breadboard rig, CoCo 3.
 - **Bridge mode (breadboard step 10) passes** against two servers: `picoco-host`

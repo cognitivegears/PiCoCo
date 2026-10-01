@@ -41,6 +41,7 @@ static BUS_HOT void becker_data_hook(void) {
         becker_stats.reads++;
     } else {
         becker_stats.underrun++;
+        bus_trace_freeze_hot();              /* keep the cycles that led here; `trace run` thaws */
     }
     becker_refresh();
 }

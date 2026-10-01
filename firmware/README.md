@@ -389,7 +389,9 @@ images and disk images on and off the board.
 
 Three tools to reach for when a step doesn't pass:
 
-- `trace dump [n]` piped through `tools/tracedump.py` (see above): reach for
+- `trace dump [n]` piped through `tools/tracedump.py` (see above): the ring
+  freezes by itself at the first Becker underrun or DriveWire CRC error, with
+  that cycle as its last entry; `trace run` thaws it. Reach for
   this when a CoCo-side PEEK/POKE doesn't show the address or data you
   expect, mainly steps 4-7.
 - `dw capture on <file>` (see "dw capture" in the console commands) plus
