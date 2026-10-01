@@ -593,6 +593,15 @@ TEST(serwritem_count_zero_is_256) {
     ASSERT_EQ(outn, 1);
 }
 
+TEST(sdc_probe_does_not_eat_next_op) {
+    setup();
+    feed(0x64, 0x64, 0x00, 0x64, 0x00);   /* SDC probe as EOU sends it: sta/clr $FF42 pairs */
+    ASSERT_EQ(s.state, DW_IDLE);
+    feed(0x5A, 'A');           /* next real op still answered */
+    ASSERT_EQ(outn, 1);
+    ASSERT_EQ(out[0], 4);
+}
+
 TEST(write_all_ff_checksum_is_ff00) {
     setup();
     uint8_t d[256];
@@ -666,6 +675,7 @@ int main(void) {
     RUN(dw4_single_byte_ops_counted);
     RUN(serreadm_replies_nothing);
     RUN(serwritem_count_zero_is_256);
+    RUN(sdc_probe_does_not_eat_next_op);
     RUN(write_all_ff_checksum_is_ff00);
     RUN(mount_long_name_fails);
     TEST_MAIN_END

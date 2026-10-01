@@ -220,6 +220,151 @@ Firmware 1.3, Plus-W build. Server: `picoco-host` on the Mac unless noted.
 | G.2 manager WiFi screen | | |
 | G.2 VSYS scope trace | | |
 
+## H. NitrOS-9 over Becker (roadmap item 4)
+
+CoCo 3 only (Level 2). Two disks, easiest first: a stock NitrOS-9 Becker
+boot floppy served from flash, then Ease of Use (EOU) from a server.
+NitrOS-9 L2 runs the CoCo 3 at 1.79 MHz, so every row here is also a
+fast-mode Becker test whichever HDB-DOS ROM started it.
+
+### H.0 What is needed
+
+- **CPU match.** The EOU zip in the repo root is the 6309-only build. On a
+  stock 68B09E CoCo 3 it will not boot; that needs the 6809
+  build (`68SDC.VHD`) instead. Same rule for the stock disk (`6809l2` vs
+  `6309l2`). Record the bench CoCo's CPU and RAM in H.5 before H.3.
+- **512 K RAM** for EOU. The stock disk runs in 128 K.
+- **Stock disk:** a `*coco3_becker.dsk` from a NitrOS-9 release (here
+  `nos96309l2v030300coco3_becker.dsk`; the `_headless` variant puts the
+  console on a DriveWire virtual terminal and is not wanted). Its kernel track carries
+  `boot_dw_becker` and `/DD` is `/X0`, so it boots with nothing but
+  DriveWire. Small enough for the flash filesystem on either board.
+- **EOU:** `63SDC.VHD` (or `68SDC.VHD`) does **not** boot on PiCoCo as
+  shipped: its kernel track is `boot_sdc` and every boot set has the CoCo
+  SDC as `/DD`; `OS9Boot.dw` uses the bitbanger `dwio`. `63EMU.DSK` is the
+  emulator hard-disk boot and has no DriveWire at all. Everything for a
+  Becker boot is on the VHD, so H.1 remasters it.
+- **EOU needs a server.** The VHD is 128 MB; the flash filesystem is 2.5 MB
+  (Pico 2) or 14.5 MB (Plus-W). Serve it from `picoco-host` over
+  `becker bridge` + `tools/becker_relay.py` (either board) or `becker net`
+  (Plus-W). Round trip must stay under 200 ms.
+
+### H.1 Prep: EOU Becker image (done 2026-10-01)
+
+`python3 firmware/tools/eou_becker.py 63SDC.VHD 63BECKER.VHD` (needs
+toolshed `os9`). It copies the image, then:
+
+- Kernel track (LSN 612): `KERNEL_TRACKS/kernel.dw` with `Boot` swapped for
+  `boot_dw_becker`.
+- Boot file: `BOOTS/OS9Boot.dw` with `dwio` -> `dwio_becker.sb`, `DD` ->
+  `ddx0.dd`, and `RBSuper`, `llcocosdc`, `H1` removed (the SDC registers
+  overlap the Becker port at `$FF41/$FF42`). Written over `OS9Boot.dw`'s
+  own extent (`os9 gen` fragments a new file there) and LSN 0
+  `DD.BT`/`DD.BSZ` pointed at it.
+
+So SWAPBOOT's "dw" set is now the Becker one; picking any other set
+un-does the boot pointer (re-run the script).
+
+**HDB-DOS translation must be off before `DOS`** on any hard-disk image:
+`picoco-host --hdbdos off`, or `dw hdbdos off` for a native mount. The
+NitrOS-9 Boot module sends no DWINIT, and with translation on its boot-file
+reads (LSN 47253 here) resolve to an unmounted drive 75: the screen shows
+`KREL Boot Krn tb0....bt*j` then `NITROS9 6309 FAILED`, and the server
+counts `notrdy`. The stock floppy is unaffected (everything below LSN 630).
+
+### H.2 Emulator gate (no hardware)
+
+1. `./build-host/picoco-host --dir <dir> --mount 0=<image> --hdbdos off`
+   (pick another `--port` if 65504 is taken, and match `-becker-port`).
+2. `xroar -machine coco3 -machine-cpu 6309 -ram 512 -cart becker
+   -becker-ip 127.0.0.1 -becker-port 65504 -cart-rom firmware/roms/hdbdw3bc3.rom
+   -type 'DOS\r'` (drop `-machine-cpu` for a 6809 image).
+3. Pass: stock disk reaches the shell prompt; EOU reaches its banner with
+   `DriveWire - (Installed) (Active)`. `Ctrl-C` on `picoco-host`: no CRC
+   errors, `notrdy=0`.
+
+`picoco-host` answers OP_TIME with Mac local time (since 2026-10-01; the
+XRoar runs above predate that and stopped at EOU's `Time ?` prompt).
+
+### H.3 Stock disk on the CoCo (native, from flash)
+
+`fs export`, copy the `.dsk`, `fs import`, `dw mount 0 <file>`, then:
+
+1. `DOS` from HDB-DOS: "NITROS9 BOOT", module list, shell prompt.
+   `status`: `crc_err 0`, `becker underrun 0`, `dw hdbdos off` (DWINIT
+   cleared it).
+2. `date -t` matches the Pico's `time` (Clock2 over OP_TIME).
+3. `dir -e /dd`; `dir /x1` with a second image on drive 1.
+4. Write: `copy /dd/startup /dd/t1`, `list /dd/t1`, `del /dd/t1`. `status`
+   writes count moves, no error; file survives a reboot if left in place.
+5. `dw disk show` inside NitrOS-9 lists the mounts (virtual channel,
+   `dw_vser.c`); `dw disk insert 1 <file>` then `dir /x1`.
+6. Tick loss (roadmap item 7): note `date -t`, run
+   `dir -e -r /dd >/nil` in a loop for 10 minutes, compare with the Pico's
+   `time`. Record the drift in seconds.
+7. CoCo RESET returns to HDB-DOS and `DOS` boots again; same after a
+   power cycle with `dw mount` saved in `picoco.cfg`.
+8. Manager: `B` on the OS-9 disk boots it (never bench-tested; the plan
+   skipped it for lack of a disk).
+
+### H.4 EOU on the CoCo (served)
+
+Transport per H.0; `picoco-host --mount 0=63BECKER.VHD --hdbdos off`.
+
+1. `DOS`: boots to the EOU prompt; `startup` loads all fonts with no
+   retry stall. Record the boot time.
+2. `date -t` matches the server (with `picoco-host`: answer `Time ?` by
+   hand, see H.2); `free /dd` and `dir -e /dd/cmds` work.
+3. `gshell`: desktop draws, mouse or keyboard moves, launch one app and
+   quit back.
+4. Write: copy a >100 K file, `dcheck /dd` reports no errors.
+5. 30-minute soak in gshell with a second window running `dir -e -r /dd`:
+   `status` still `crc_err 0`, `underrun 0`; relay or `net status` shows
+   no reconnect.
+6. `swapboot` runs and lists the sets; quit without selecting (only the
+   current boot works here, see H.1).
+7. Plus-W: repeat 1, 2 and 5 over `becker net`.
+
+Not in scope until the sound/MIDI work lands: `/MIDI`, `/P`, `/N` channels.
+
+### H.5 Results
+
+Firmware fixes that came out of this section (2026-10-01), details in
+`docs/pcb-bringup.md` "NitrOS-9 bring-up":
+- core1 Pico 2 read path: latch preloaded during idle, one store on OE_BUS
+  low; pad discharge after every cycle. Sector checksum failures over the
+  bridge went from 80 in 1,966 to 1 in 1,888 on an EOU boot.
+- DriveWire server drops the CoCo SDC probe (`64 64 00 64 00 ...` on `$FF42`).
+- Bridge mode holds the CoCo's bytes until CDC0 has a listener (HDB-DOS
+  reads drive 0 at power-on with no timeout).
+- Open: Plus-W path has neither the discharge nor the timing change;
+  `bus selftest` on a bare Pico 2 has not been rerun since the rework.
+
+
+Bench CoCo 3 CPU: 6309  RAM: 2 MB
+
+| Check | Pico 2 | Plus-W | Date |
+|---|---|---|---|
+| H.1 EOU Becker image built | n/a | n/a | 2026-10-01: `63BECKER.VHD`, 64 modules, boot file 35361 bytes at LSN 47253 |
+| H.2 XRoar, stock disk | n/a | n/a | pass 2026-10-01: shell prompt (6309, hdbdw3bc3) |
+| H.2 XRoar, EOU | n/a | n/a | pass 2026-10-01 to the `Time ?` prompt: 512k, 6309 native, DriveWire active; `reads=1383 crc_err=0 notrdy=0`. gshell not run |
+| H.3.1 stock boot | pass 2026-10-01 after the E9 discharge fix in `bus_core1.c`: shell prompt, `dw reads 308 crc_err 0`, `becker reads 79457 underrun 0`, `dw hdbdos off`. Before the fix: hung at `i2x`, underrun 1, crc_err 84 (phantom byte after a `$26` write) | | 2026-10-01 |
+| H.3.2 clock | pass: startup prints the 2014 build date (before the first OP_TIME is applied), `date -t` then shows 2026-10-01 10:38:51 matching the Pico | | 2026-10-01 |
+| H.3.3 read, two drives | `dir -e /dd` pass; `/x1` not run | | 2026-10-01 |
+| H.3.4 write | pass: copy, list, del; `dw reads 364 writes 16 crc_err 0`, `underrun 0` | | 2026-10-01 |
+| H.3.5 `dw` utility | | | |
+| H.3.6 tick loss in 10 min | | | |
+| H.3.7 reset / power cycle | RESET inside NitrOS-9 restarts the NitrOS-9 boot, not HDB-DOS; power cycle returns to HDB-DOS (mounts need `save`) | | 2026-10-01 |
+| H.3.8 manager `B` | | | |
+| H.3 through an MPI | | | |
+| H.4.1 EOU boot (bridge) | pass 2026-10-01 (third try): 2048k, 6309 native, boots to the prompt; 2409 sectors, 21 re-read after a checksum failure (0.9 %, open). Needed: the server dropping EOU's SDC probe (`64 64 00 64 00 ...` on `$FF42`), `COCO3FPGA=1` in the image. Still prompts for the time: root `startup` is the `.sdc` one | | 2026-10-01 |
+| H.4.2-4 clock, gshell, write | gshell loads and launches apps (trackpad), no time prompt with the `.dw` startup, saved `becker bridge` survives a power cycle; ~7935 sectors, 42 re-reads (0.5 %, open), 0 phantom reads. `dcheck` not run | | 2026-10-01 |
+| H.4.5 30 min soak | pass: copy + `dcheck /dd` + del over the bridge, no reconnect, no phantom reads. dcheck reports 117 lost and 129 shared clusters: both are in the untouched `63SDC.VHD` as shipped (kernel track, old boot extents; 5 files with two directory entries), so no damage from this session | | 2026-10-01 |
+| H.4.6 swapboot | | | |
+| EOU boot after the read-path rework | 1 re-read in 1,888 sectors (was 80 in 1,966), `oe_glitch 0`, `addr_resample` 70,314 of 1.3 M reads, `underrun 52` (all the SDC probe) | | 2026-10-01 |
+| Re-sample before recompute (final build) | `addr_resample 0` in 280k reads (was ~5 %); EOU boot on this build not yet run | | 2026-10-01 |
+| H.4.7 EOU over WiFi | n/a | | |
+
 ## How to resume with Claude
 
 Plug the Pico in, then say "resume the bench test plan at step A" (or

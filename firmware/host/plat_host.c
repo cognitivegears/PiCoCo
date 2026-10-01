@@ -101,6 +101,7 @@ void plat_reset_latch(void) { }
 
 size_t plat_bridge_read(uint8_t *buf, size_t n) { (void)buf; (void)n; return 0; }
 size_t plat_bridge_write(const uint8_t *buf, size_t n) { (void)buf; (void)n; return 0; }
+size_t plat_bridge_write_free(void) { return 0; }
 
 bool plat_rtc_get(int64_t *unix_secs) { (void)unix_secs; return false; }
 void plat_rtc_set(int64_t unix_secs) { (void)unix_secs; }

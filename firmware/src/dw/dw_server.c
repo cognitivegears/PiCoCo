@@ -371,6 +371,14 @@ void dw_feed(dw_server *s, const uint8_t *buf, size_t n, uint32_t now_ms) {
             }
         } else if (s->state == DW_PAYLOAD) {
             s->buf[s->have++] = b;
+            /* A CoCo SDC probe (lda #$64, sta $FF42, clr $FF42, repeated) lands on
+             * the Becker data port as 64 64 00 64 00 ..., i.e. SERWRITEM, and the
+             * next real op would be eaten as its count and payload (bench
+             * 2026-10-01: EOU hung after "Coco SDC - Not detected"). Channel 0 and
+             * channel $64 are not served here, so drop the op at the channel byte.
+             * ponytail: a headless console (/Term on channel 0) would need this
+             * gated on a setting. */
+            if (s->op == DW_OP_SERWRITEM && s->have == 1 && (b == 0 || b == 0x64)) { s->state = DW_IDLE; continue; }
             if (s->have >= s->need) dispatch(s, now_ms);
         } else if (s->state == DW_READEX_CKSUM) {
             s->buf[s->have++] = b;

@@ -148,3 +148,53 @@ exposed it on firmware 1.3.
 | 5 RESET button + cold power cycle | pass: RESET reboots the Pico (uptime restarts) and the CoCo warm-starts back into DINORUN, which hooks the reset vector (CoCo behaviour, not the board); cold power cycle boots HDB-DOS | 2026-09-30 |
 | 5 audio at TP7 / speaker | open: nothing drives AUDIO_PWM until the sound plan lands | |
 | 5 G.2 WiFi rows | | |
+
+## NitrOS-9 bring-up (2026-10-01)
+
+Bench: PCB v2.3.1 #1, Pico 2, CoCo 3 with a 6309 and 2 MB. Test plan
+section H. Four faults, in the order they showed up.
+
+1. **Phantom Becker byte after a write (stock NitrOS-9 boot hung at `i2x`).**
+   The trace froze on a `$FF41` poll the table answered `00`, 36 us after a
+   `$26` write, followed by a `$FF42` read: the CoCo saw bit 1. Working
+   explanation: RP2350-E9, a pad left high with only the internal pull-down
+   sits near 2.2 V, so the written byte was still on D0-D7 when U10 enabled
+   for the next read and a late drive showed it. Fix: core1 drives D0-D7 low
+   and releases after every cycle. The E9 thresholds were not verified.
+2. **EOU hung after "Coco SDC - Not detected".** Its SDC/GIME-X detection
+   writes `64 64 00 64 00 ...` to `$FF42`. The server parsed that as
+   SERWRITEM and ate the next ops as payload. Fix: `dw_feed` drops SERWRITEM
+   whose channel byte is 0 or `$64`. `COCO3FPGA=1` in EOU's env.file is
+   meant to skip the detection but did not on this image.
+3. **Bridge mode dropped bytes with no listener.** HDB-DOS reads drive 0 at
+   power-on and has no timeout, so a request sent before the relay attached
+   hung it at the banner. Fix: the bridge pump takes from the Becker ring
+   only what CDC0 can accept.
+4. **Bytes read as 0x00 at 1.79 MHz (0.7-4 % of sectors re-read).** Every
+   failed checksum was low by the value of one or more bytes. The rate moved
+   with unrelated code changes, and a three-sample filter on OE_BUS with a
+   counter (`oe_glitch`, still in `status`) read 0, which ruled out a spike
+   on OE_BUS. Cause: the 2026-09-30 loop recomputed on every idle pass
+   (~20 clk_sys cycles) and then did three stores, so the drive landed an
+   estimated 125-260 ns after OE_BUS fell; E is high for 279 ns. Fix: the
+   idle loop keeps the answer in the output latch (outputs off), recomputes
+   only when address or R/W change, and enables with one store: estimated
+   60-115 ns. Result on an EOU boot: 1 re-read in 1,888 sectors, was 80 in
+   1,966. The figures are instruction counts, not scope measurements.
+
+First cut of 4 had `addr_resample` at ~5 % of reads: A7 arrives a few ns
+after the other address lines, a sample landed in that gap, the recompute
+pass (~33 cycles) ran on it and the next sample was already OE-low. The loop
+now looks at the pins a second time before committing a recompute;
+`addr_resample` read 0 in 280k reads afterwards. `status` prints the last
+mismatching pair (`resample_key` / `in`) if it ever returns.
+
+Review findings applied: the idle loop loads the latch only for a read it
+will drive (`bus selftest` keeps its write data there), and the capture-only
+branch releases the outputs. `bus selftest` on a bare Pico 2 has not been
+rerun since. The bridge pump replays whatever sat in the Becker ring when a
+listener attaches; fine for HDB-DOS, untested for a client that retries.
+
+Not done: the Plus-W path has the same exposure with JP2 1-2 (review
+finding) and got none of these read-path changes.
+

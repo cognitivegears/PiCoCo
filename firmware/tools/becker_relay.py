@@ -43,11 +43,13 @@ def main():
     ap.add_argument("--tcp", type=int, default=65504)
     ap.add_argument("--delay", type=float, default=0.0, help="one-way ms")
     ap.add_argument("--jitter", type=float, default=0.0, help="0..ms extra")
+    ap.add_argument("--log", help="append every chunk as '<t> U|D <hex>' (U = CoCo to server)")
     a = ap.parse_args()
 
     ser = open_port(a.port)
     sock = socket.create_connection((a.host, a.tcp))
     sock.setblocking(False)
+    log = open(a.log, "a", buffering=1) if a.log else None
     print(f"relay {a.port} <-> {a.host}:{a.tcp} delay {a.delay} ms jitter {a.jitter} ms", flush=True)
 
     # Two delay lines: (deliver_at, bytes). Order is preserved per direction.
@@ -74,6 +76,7 @@ def main():
             data = os.read(ser, 4096)
             if data:
                 to_srv.append((now + lat(), data))
+                if log: log.write(f"{now:.4f} U {data.hex()}\n")
                 n_up += len(data)
         if sock in r:
             data = sock.recv(4096)
@@ -81,6 +84,7 @@ def main():
                 print("server closed", flush=True)
                 return
             to_coco.append((now + lat(), data))
+            if log: log.write(f"{now:.4f} D {data.hex()}\n")
             n_down += len(data)
         while to_srv and to_srv[0][0] <= now:
             sock.sendall(to_srv.popleft()[1])

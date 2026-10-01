@@ -19,47 +19,83 @@
 /* Pico 2: OE_BUS (GP26) is in gpio_in, so one sample carries OE, address, R/W. */
 #define OE_LOW_IN(x) (!((x) & BUS_OE_MASK))
 
-/* Precompute while idle, drive on the edge. At 1.79 MHz (CoCo 3 fast ROM) E is
- * high for 279 ns and the 6809E latches data at E fall; the old path (sample,
- * 70 ns resample, lookup, drive) landed ~245 ns after E rose and failed on
- * timing tails (bench 2026-09-30: +33 ns made every first poll misread as
- * "ready"). Address and R/W are valid from Q, a quarter cycle before E, so the
- * response is computed from the latest idle sample and the drive after OE_BUS
- * falls is three SIO writes. The OE-low sample is then checked against the
- * precomputed index; a mismatch (address still settling, late cycle) redrives
- * and counts as addr_resample, keeping that diagnostic. */
+#define KEY_MASK ((0x3FFFu << PIN_A0) | RW_MASK)
+
+/* Precompute while idle, enable on the edge. At 1.79 MHz (CoCo 3 fast mode,
+ * all of NitrOS-9) E is high for 279 ns and the CPU latches data at E fall.
+ * Address and R/W are valid from Q, a quarter cycle before E, so while OE_BUS
+ * is high the loop keeps the response for the address on the bus sitting in
+ * the output latch (outputs disabled), and the only work after OE_BUS falls is
+ * one compare and one output-enable store.
+ *
+ * The idle loop is deliberately tiny (~8 clk_sys cycles a pass): it recomputes
+ * only when address or R/W change, and a recompute pass is ~33 cycles, so keep
+ * work out of both. Static counts, not scope measurements: a hit enables
+ * ~55-105 ns after OE_BUS falls; OE_BUS falling during a recompute pass or a
+ * miss can be 200 ns or more. The 2026-09-30 version recomputed on every pass
+ * and then did three stores. Bench 2026-10-01
+ * (NitrOS-9 over the bridge): 0.7-4 % of sectors had a byte read as 0x00, the
+ * rate moving with unrelated code changes, i.e. the tail of that spread was
+ * past the latch point.
+ *
+ * A cycle whose OE-low sample does not match the precomputed key (address
+ * still settling, or back-to-back cycles with no idle sample) is served from
+ * the fresh sample and counted, as before. */
 BUS_HOT void bus_core1_main(void) {
     (void)save_and_disable_interrupts();          /* never restored: core1 does nothing else */
-    uint32_t in = sio_hw->gpio_in;
+    uint32_t in;
     for (;;) {
-        uint16_t pidx; uint32_t pdat; bool prd; bool fresh = false;
-        do {                                      /* idle: response for the address on the bus now */
-            fresh = !OE_LOW_IN(in);               /* false only if no idle sample preceded this cycle */
-            pidx = (in >> PIN_A0) & 0x3FFF;
-            prd  = (in & RW_MASK) && bus_drive;
-            pdat = (uint32_t)bus_peek(pidx) << PIN_D0;
-            in   = sio_hw->gpio_in;
-        } while (!OE_LOW_IN(in));                 /* exit: `in` is the sample that saw the cycle start */
-        bool rd = (in & RW_MASK) != 0;
-        if (prd && rd) {                          /* R/W from the fresh sample: never drive into a write */
-            sio_hw->gpio_clr = D_MASK;
-            sio_hw->gpio_set = pdat;
-            sio_hw->gpio_oe_set = D_MASK;
+        uint32_t key = ~0u;                       /* no idle sample yet: cannot match a real sample */
+        uint32_t oemask = 0;
+        for (;;) {                                /* idle: keep the latch loaded for the address on the bus */
+            in = sio_hw->gpio_in;
+            if (OE_LOW_IN(in)) break;             /* `in` is the sample that saw the cycle start */
+            uint32_t k = in & KEY_MASK;
+            if (k != key) {
+                /* Address lines do not all arrive together (A7 lags a few ns).
+                 * A recompute pass is long, so do not spend one on a sample that
+                 * is still moving: look again first. */
+                if ((sio_hw->gpio_in ^ in) & (KEY_MASK | BUS_OE_MASK)) continue;
+                key = k;
+                oemask = ((in & RW_MASK) && bus_drive) ? D_MASK : 0;   /* never enable into a write */
+                if (oemask) {                     /* latch only (outputs are off), and only for a read we will
+                                                   * drive: `bus selftest` puts its write data in this latch */
+                    sio_hw->gpio_clr = D_MASK;
+                    sio_hw->gpio_set = (uint32_t)bus_peek((in >> PIN_A0) & 0x3FFF) << PIN_D0;
+                }
+            }
         }
+        bool hit = (in & KEY_MASK) == key;
+        if (hit) sio_hw->gpio_oe_set = oemask;
+        bool rd = (in & RW_MASK) != 0;
         uint16_t idx = (in >> PIN_A0) & 0x3FFF;
         if (rd) {                                 /* CoCo read */
             if (bus_drive) {
-                if (idx != pidx || !prd) {        /* precompute was for another address: redrive */
-                    if (fresh) { bus_stats.addr_resample++; bus_stats.addr_resample_bits |= (idx ^ pidx); }
-                    else bus_stats.late_precompute++;   /* back-to-back cycles (boot ROM copy): expected */
+                if (!hit) {                       /* precompute was for another address, or there was none: drive first, count after */
                     sio_hw->gpio_clr = D_MASK;
                     sio_hw->gpio_set = (uint32_t)bus_peek(idx) << PIN_D0;
                     sio_hw->gpio_oe_set = D_MASK;
+                    /* addr_resample here is mostly address skew: a sample taken while the
+                     * lines were still changing (bench 2026-10-01: A7 a few ns behind
+                     * the rest, ~5 % of reads) followed by no clean idle sample before
+                     * OE_BUS fell. Served from the OE-low sample, ~165 ns later than a hit. */
+                    if (key != ~0u) { bus_stats.resample_key = key; bus_stats.resample_in = in; bus_stats.addr_resample++; bus_stats.addr_resample_bits |= (idx ^ ((key >> PIN_A0) & 0x3FFF)); }
+                    else bus_stats.late_precompute++;   /* back-to-back cycles (boot ROM copy): expected */
                 }
-                while (!OE_HIGH()) { }
+                /* End of cycle = OE_BUS high on three samples running, so a
+                 * spike on OE_BUS cannot clear the pads mid-cycle. Cheap guard:
+                 * oe_glitch has read 0 on the bench so far. */
+                for (;;) {
+                    if (!OE_HIGH()) continue;
+                    if (OE_HIGH() && OE_HIGH()) break;
+                    bus_stats.oe_glitch++;
+                }
+                sio_hw->gpio_clr = D_MASK;        /* leave the pads at 0 V, see DISCHARGE below */
+                sio_hw->gpio_clr = D_MASK;        /* second store: two clk_sys cycles of drive, as on the write path */
                 sio_hw->gpio_oe_clr = D_MASK;
             } else {
                 while (!OE_HIGH()) { }
+                sio_hw->gpio_oe_clr = D_MASK;     /* bus_drive went false after the precompute enabled us */
             }
             bus_on_read_done(idx, time_us_32());
         } else {                                  /* CoCo write: use the last gpio_in sample taken
@@ -73,6 +109,17 @@ BUS_HOT void bus_core1_main(void) {
                 if (OE_HIGH()) break;
                 prev = d;
             }
+            /* DISCHARGE: RP2350-E9 - a pad left above ~1 V with only the internal
+             * pull-down sits near 2.2 V, so the bits the CoCo just wrote would
+             * still read high through U10 at the start of the next read cycle.
+             * A late $FF41 poll then showed bit 1 from the written byte, the
+             * Becker "ready" bit (bench 2026-10-01, NitrOS-9 boot: phantom byte
+             * after a $26 write). Drive low for two SIO writes, then release;
+             * OE_BUS is already high, so U10 is off. */
+            sio_hw->gpio_clr = D_MASK;
+            sio_hw->gpio_oe_set = D_MASK;
+            sio_hw->gpio_clr = D_MASK;
+            sio_hw->gpio_oe_clr = D_MASK;
             bus_on_write(idx, (uint8_t)((prev >> PIN_D0) & 0xFF), time_us_32());
         }
     }

@@ -73,10 +73,9 @@ const char *plat_last_reset(void) {
 
 size_t plat_bridge_read(uint8_t *buf, size_t n) { return tud_cdc_n_connected(0) ? tud_cdc_n_read(0, buf, n) : 0; }
 
+size_t plat_bridge_write_free(void) { return tud_cdc_n_connected(0) ? tud_cdc_n_write_available(0) : 0; }
+
 size_t plat_bridge_write(const uint8_t *buf, size_t n) {
-    /* ponytail: report the full count "written" when nobody is listening so
-       mode_pump's flow control doesn't spin retrying bytes into the void. */
-    if (!tud_cdc_n_connected(0)) return n;
     size_t w = tud_cdc_n_write(0, buf, n);
     tud_cdc_n_write_flush(0);
     return w;

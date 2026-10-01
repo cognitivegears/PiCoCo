@@ -19,6 +19,8 @@
 typedef struct { uint32_t t_us; uint16_t idx; uint8_t rw; uint8_t data; } bus_trace_entry;
 typedef struct {
     uint32_t cycles, reads, writes, write_overrun, addr_resample, addr_resample_bits;
+    uint32_t resample_key, resample_in;   /* last addr_resample: precomputed key and the OE-low gpio sample */
+    uint32_t oe_glitch;       /* Pico 2 loop: OE_BUS sampled high once mid-read, then low again (see bus_core1.c) */
     uint32_t late_precompute; /* Pico 2 loop: cycle began before an idle sample was taken (back-to-back reads); served by the redrive path, benign */
     uint32_t whooks_run;     /* write hooks executed on core1 */
     uint32_t hw_selected;    /* Plus-W loop: cycles selected by /CTS or /SCS */

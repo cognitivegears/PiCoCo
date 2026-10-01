@@ -67,7 +67,12 @@ void mode_pump(dw_server *dw, uint32_t now_ms) {
             break;
         case MODE_BRIDGE: {
             uint8_t buf[64];
-            size_t n = becker_read(buf, sizeof(buf));
+            /* Take from the CoCo only what CDC0 can accept now. With nobody
+             * listening that is nothing, so the bytes wait in the Becker ring:
+             * HDB-DOS reads drive 0 at power-on and has no timeout, and a
+             * dropped request hung it at the banner (bench 2026-10-01). */
+            size_t room = plat_bridge_write_free();
+            size_t n = becker_read(buf, room < sizeof(buf) ? room : sizeof(buf));
             if (n) plat_bridge_write(buf, n);
             size_t want = becker_tx_free();
             if (want > sizeof(buf)) want = sizeof(buf);

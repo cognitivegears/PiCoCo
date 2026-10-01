@@ -17,6 +17,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/socket.h>
+#include <time.h>
 #include <unistd.h>
 
 static volatile sig_atomic_t g_stop = 0;
@@ -278,6 +279,9 @@ int main(int argc, char **argv) {
     }
 
     console_init(print_stdout, NULL, &srv, &store);
+    /* Before the config runs, so a `time set` there wins; a replay never asks the time: OP_TIME answers Mac local time. */
+    time_t now = time(NULL); struct tm lt; localtime_r(&now, &lt);
+    dw_time_set(&srv, (int64_t)now + lt.tm_gmtoff, plat_now_ms());
     int cfg_lines = console_run_config();
     if (cfg_lines >= 0) printf("picoco-host: config ran %d lines\n", cfg_lines);
 

@@ -272,6 +272,7 @@ static int cmd_status(void) {
     outf("bus cycles %u reads %u writes %u write_overrun %u\n",
          bus_stats.cycles, bus_stats.reads, bus_stats.writes, bus_stats.write_overrun);
     outf("bus addr_resample %u bits %04x late_precompute %u\n", bus_stats.addr_resample, bus_stats.addr_resample_bits, bus_stats.late_precompute);
+    outf("bus oe_glitch %u resample_key %08x in %08x\n", bus_stats.oe_glitch, (unsigned)bus_stats.resample_key, (unsigned)bus_stats.resample_in);
     outf("bus whooks %u hw_sel %u fw_sel %u\n", bus_stats.whooks_run, bus_stats.hw_selected, bus_stats.fw_selected);
     outf("bus drive %s\n", bus_drive_get() ? "on" : "off");
     outf("last reset %s\n", plat_last_reset());
