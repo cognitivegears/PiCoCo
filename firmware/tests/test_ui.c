@@ -19,7 +19,7 @@ static void send_cb(void *ctx, const uint8_t *buf, size_t n) {
     memcpy(tx + txn, buf, n);
     txn += n;
 }
-__attribute__((unused)) static int exec_cb(const char *line, char *msg, size_t cap) {
+static int exec_cb(const char *line, char *msg, size_t cap) {
     snprintf(last_line, sizeof last_line, "%s", line);
     if (exec_rc) snprintf(msg, cap, "rom load failed");
     return exec_rc;
@@ -176,6 +176,182 @@ TEST(reply_never_exceeds_cap) {
     ASSERT(row[1] != ' ');                  /* the list really drew */
 }
 
+static void open_with(int capsv) {
+    ui_ctl(0xA5);
+    poll(2, 0, capsv, 0);
+}
+
+static bool row_has(int row, const char *s) {
+    char t[UI_COLS + 1];
+    ui_row_text(row, t);
+    return strstr(t, s) != NULL;
+}
+
+/* Review Focus 1 */
+TEST(no_roms_message_and_enter_is_harmless) {
+    setup();
+    open_with(0);
+    ASSERT(row_has(1, "NO .ROM FILES"));
+    poll(0, UI_KEY_ENTER, -1, 10);
+    int len = reply_ok();
+    ASSERT(len > 0);
+    ASSERT_EQ(tx[2 + len - 1], UI_ACT_END);
+    for (int i = 0; i < len; i++) ASSERT(tx[2 + i] != UI_ACT_JUMP || i != len - 2);
+    ASSERT(ui_active());
+}
+
+TEST(lists_roms_sorted_and_hides_others) {
+    setup();
+    mkfile("zeta.rom", "\x7E\xC0\x10", 8192);
+    mkfile("ALPHA.ROM", "\x7E\xC0\x10", 8192);
+    mkfile("disk.dsk", "", 256);
+    mkfile("picoco.cfg", "", 16);
+    open_with(0);
+    ASSERT(row_has(1, "ROMS"));
+    ASSERT(row_has(2, "ALPHA.ROM"));
+    ASSERT(row_has(3, "ZETA.ROM"));         /* lowercase folded */
+    ASSERT(!row_has(4, "DISK"));
+}
+
+/* Review Focus 3 */
+TEST(awkward_names_hidden) {
+    setup();
+    mkfile("my game.rom", "\x7E\xC0\x10", 8192);
+    mkfile("abcdefghijklmnopqrstuvwxyz012.rom", "\x7E\xC0\x10", 8192);   /* 33 chars */
+    mkfile("ok.rom", "\x7E\xC0\x10", 8192);
+    open_with(0);
+    ASSERT(row_has(2, "OK.ROM"));
+    ASSERT(!row_has(3, "ROM"));
+}
+
+/* Review Focus 2 */
+TEST(scrolls_with_the_selection) {
+    setup();
+    char name[16];
+    for (int i = 0; i < 20; i++) {
+        snprintf(name, sizeof name, "r%02d.rom", i);
+        mkfile(name, "\x7E\xC0\x10", 8192);
+    }
+    open_with(0);
+    ASSERT(row_has(2, "R00.ROM"));
+    ASSERT(row_has(13, "R11.ROM"));
+    for (int i = 0; i < 12; i++) poll(0, UI_KEY_DOWN, -1, 10 + (uint32_t)i);
+    ASSERT(row_has(13, "R12.ROM"));          /* selection moved past the window: list scrolled */
+    ASSERT(row_has(2, "R01.ROM"));
+    for (int i = 0; i < 100; i++) poll(0, UI_KEY_DOWN, -1, 100 + (uint32_t)i);
+    ASSERT(row_has(13, "R19.ROM"));          /* stops at the last entry */
+    for (int i = 0; i < 100; i++) poll(0, UI_KEY_UP, -1, 300 + (uint32_t)i);
+    ASSERT(row_has(2, "R00.ROM"));
+}
+
+/* Review Focus 2: which 64 of 70 are kept depends on directory order, so
+ * only the notice is asserted. */
+TEST(more_than_64_shows_truncated) {
+    setup();
+    char name[16];
+    for (int i = 0; i < 70; i++) {
+        snprintf(name, sizeof name, "r%02d.rom", i);
+        mkfile(name, "\x7E\xC0\x10", 8192);
+    }
+    open_with(0);
+    ASSERT(row_has(14, "LIST TRUNCATED"));
+}
+
+TEST(enter_on_pak_asks_for_jump_then_go_loads) {
+    setup();
+    mkfile("game.rom", "\x7E\xC0\x10", 8192);
+    open_with(0);
+    poll(0, UI_KEY_ENTER, -1, 10);
+    int len = reply_ok();
+    ASSERT(len >= 2);
+    ASSERT_EQ(tx[2 + len - 2], UI_ACT_JUMP);
+    ASSERT_EQ(tx[2 + len - 1], UI_ACT_END);
+    txn = 0;
+    uint8_t g = 'G';
+    ui_feed(&g, 1, 20);
+    ASSERT_EQ(txn, 1);
+    ASSERT_EQ(tx[0], UI_GO_OK);
+    ASSERT(strcmp(last_line, "rom load game.rom") == 0);
+    ASSERT(!ui_active());
+}
+
+TEST(dos_rom_needs_ecb) {
+    setup();
+    mkfile("hdb.rom", "DK", 8192);
+    open_with(0);                            /* no ECB */
+    poll(0, UI_KEY_ENTER, -1, 10);
+    ASSERT(row_has(14, "NEEDS EXTENDED BASIC"));
+    int len = reply_ok();
+    ASSERT_EQ(tx[2 + len - 1], UI_ACT_END);
+    ASSERT(len < 2 || tx[2 + len - 2] != UI_ACT_COLD);
+}
+
+TEST(dos_rom_with_ecb_cold_restarts) {
+    setup();
+    mkfile("hdb.rom", "DK", 8192);
+    open_with(UI_CAP_32K | UI_CAP_ECB);
+    poll(0, UI_KEY_ENTER, -1, 10);
+    int len = reply_ok();
+    ASSERT_EQ(tx[2 + len - 2], UI_ACT_COLD);
+}
+
+TEST(dos_rom_on_coco3_waits_for_next_plan) {
+    setup();
+    mkfile("hdb.rom", "DK", 8192);
+    open_with(UI_CAP_64K | UI_CAP_32K | UI_CAP_ECB | UI_CAP_COCO3);
+    poll(0, UI_KEY_ENTER, -1, 10);
+    ASSERT(row_has(14, "DOS ROM ON COCO 3: NOT YET"));
+}
+
+TEST(bad_size_refused_before_leaving) {
+    setup();
+    mkfile("odd.rom", "\x7E\xC0\x10", 5000);
+    open_with(0);
+    poll(0, UI_KEY_ENTER, -1, 10);
+    ASSERT(row_has(14, "NOT A ROM SIZE"));
+    ASSERT(ui_active());
+}
+
+/* Review Focus 5 */
+TEST(go_failure_keeps_session_and_shows_reason) {
+    setup();
+    mkfile("game.rom", "\x7E\xC0\x10", 8192);
+    open_with(0);
+    poll(0, UI_KEY_ENTER, -1, 10);
+    exec_rc = -1;
+    txn = 0;
+    uint8_t g = 'G';
+    ui_feed(&g, 1, 20);
+    ASSERT_EQ(tx[0], UI_GO_FAIL);
+    ASSERT(ui_active());
+    ui_ctl(0xA5);                            /* the stub starts over */
+    poll(2, 0, 0, 30);
+    ASSERT(row_has(14, "ROM LOAD FAILED"));
+}
+
+TEST(go_without_a_pending_launch_fails) {
+    setup();
+    open_with(0);
+    txn = 0;
+    uint8_t g = 'G';
+    ui_feed(&g, 1, 20);
+    ASSERT_EQ(tx[0], UI_GO_FAIL);
+}
+
+TEST(break_asks_for_warm_restart) {
+    setup();
+    open_with(0);
+    poll(0, UI_KEY_BREAK, -1, 10);
+    int len = reply_ok();
+    ASSERT_EQ(tx[2 + len - 2], UI_ACT_WARM);
+    txn = 0;
+    uint8_t g = 'G';
+    ui_feed(&g, 1, 20);
+    ASSERT_EQ(tx[0], UI_GO_OK);
+    ASSERT(last_line[0] == '\0');            /* nothing to load */
+    ASSERT(!ui_active());
+}
+
 int main(void) {
     char tmpl[300];
     const char *tmpdir = getenv("TMPDIR");
@@ -192,5 +368,18 @@ int main(void) {
     RUN(bad_poll_gets_no_reply);
     RUN(half_poll_recovers_after_quiet);
     RUN(reply_never_exceeds_cap);
+    RUN(no_roms_message_and_enter_is_harmless);
+    RUN(lists_roms_sorted_and_hides_others);
+    RUN(awkward_names_hidden);
+    RUN(scrolls_with_the_selection);
+    RUN(more_than_64_shows_truncated);
+    RUN(enter_on_pak_asks_for_jump_then_go_loads);
+    RUN(dos_rom_needs_ecb);
+    RUN(dos_rom_with_ecb_cold_restarts);
+    RUN(dos_rom_on_coco3_waits_for_next_plan);
+    RUN(bad_size_refused_before_leaving);
+    RUN(go_failure_keeps_session_and_shows_reason);
+    RUN(go_without_a_pending_launch_fails);
+    RUN(break_asks_for_warm_restart);
     TEST_MAIN_END
 }

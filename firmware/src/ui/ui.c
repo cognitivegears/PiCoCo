@@ -178,6 +178,55 @@ void ui_init(ui_send_fn send, void *ctx, ui_exec_fn exec, dw_store *store) {
     memset(ack, 0x60, sizeof ack);
 }
 
-/* Task 2 replaces these two. */
-static uint8_t on_key(uint8_t key) { (void)key; return 0; }
-static void on_go(void) { }
+static void set_msg(const char *s) { snprintf(msg, sizeof msg, "%s", s); }
+
+/* First two bytes of a file: "DK" marks a DOS ROM that Extended BASIC must start. */
+static int peek2(const char *name, uint8_t two[2]) {
+    dw_file f;
+    if (g_store->ops->open(g_store->ctx, name, false, &f) < 0) return -1;
+    int n = g_store->ops->read(&f, 0, two, 2);
+    g_store->ops->close(&f);
+    return n == 2 ? 0 : -1;
+}
+
+static uint8_t launch(void) {
+    if (!nroms) return 0;
+    const char *name = roms[sel];
+    int rc = rom_check_file(g_store, name);
+    uint8_t two[2];
+    if (rc == -2) { set_msg("NOT A ROM SIZE"); return 0; }
+    if (rc != 0 || peek2(name, two) != 0) { set_msg("CANNOT READ FILE"); return 0; }
+    bool dos = two[0] == 'D' && two[1] == 'K';
+    if (dos && !(caps & UI_CAP_ECB)) { set_msg("NEEDS EXTENDED BASIC"); return 0; }
+    /* ponytail: a CoCo 3 cold restart has to restore ROM mode first; the next plan adds it. */
+    if (dos && (caps & UI_CAP_COCO3)) { set_msg("DOS ROM ON COCO 3: NOT YET"); return 0; }
+    snprintf(pending, sizeof pending, "%s", name);
+    pending_act = dos ? UI_ACT_COLD : UI_ACT_JUMP;
+    return pending_act;
+}
+
+static uint8_t on_key(uint8_t key) {
+    uint8_t act = 0;
+    if (key) msg[0] = '\0';
+    if (key == UI_KEY_UP && sel > 0) sel--;
+    else if (key == UI_KEY_DOWN && sel + 1 < nroms) sel++;
+    else if (key == UI_KEY_ENTER) act = launch();
+    else if (key == UI_KEY_BREAK) { pending[0] = '\0'; act = pending_act = UI_ACT_WARM; }
+    if (sel < top) top = sel;
+    if (sel >= top + LIST_ROWS) top = sel - LIST_ROWS + 1;
+    return act;
+}
+
+/* The stub has left the cart and is running from RAM: do the swap now. */
+static void on_go(void) {
+    uint8_t r = UI_GO_OK;
+    if (!pending_act) r = UI_GO_FAIL;
+    else if (pending[0]) {
+        char line[16 + NAME_LEN], err[UI_COLS + 1];
+        snprintf(line, sizeof line, "rom load %s", pending);
+        if (g_exec(line, err, sizeof err) != 0) { r = UI_GO_FAIL; set_msg(err); }
+    }
+    pending_act = 0;
+    if (r == UI_GO_OK) { msg[0] = '\0'; active = false; }
+    g_send(g_ctx, &r, 1);
+}
