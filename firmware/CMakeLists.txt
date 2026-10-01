@@ -10,7 +10,7 @@ set(PICOCO_BOARD "pico2" CACHE STRING "PiCoCo board: pico2 or plusw")
 set(CORE_SRC
   src/dw/dw_util.c src/dw/dw_disk.c src/dw/dw_server.c src/dw/dw_vser.c
   src/bus/bus.c src/dev/device.c src/dev/rom.c src/dev/becker.c
-  src/log.c src/console/console.c src/console/mode.c)
+  src/log.c src/console/console.c src/console/mode.c src/ui/ui.c)
 # dw_store_posix.c is the host filesystem backend (fopen/unistd); it also
 # collides with newlib's own posix_close() declaration under arm-none-eabi.
 # Host-only: added to picoco_core below, never to the picoco (Pico) target.
@@ -63,7 +63,7 @@ if(NOT PICOCO_HOST)
   target_sources(picoco PRIVATE src/bus/fake6809.c)
   target_compile_definitions(picoco PRIVATE PICOCO_HAVE_FAKE6809=1)
   pico_generate_pio_header(picoco ${CMAKE_CURRENT_LIST_DIR}/src/bus/fake6809.pio)
-  target_include_directories(picoco PRIVATE src src/usb src/dw src/bus src/dev src/console src/net boards third_party/fatfs)
+  target_include_directories(picoco PRIVATE src src/usb src/dw src/bus src/dev src/console src/net src/ui boards third_party/fatfs)
   target_compile_options(picoco PRIVATE -Wall -Wextra)
   set_source_files_properties(${FATFS_SRC} PROPERTIES COMPILE_OPTIONS -w)
   target_compile_definitions(picoco PRIVATE
@@ -101,7 +101,7 @@ add_link_options(-fsanitize=address,undefined)
 add_compile_definitions(PICOCO_HOST=1 PICOCO_LOG_LEVEL=3 PICOCO_VERSION="${PICOCO_VERSION}")
 
 add_library(picoco_core STATIC ${CORE_SRC} ${HOST_ONLY_SRC} ${NET_STUB_SRC} host/plat_host.c)
-target_include_directories(picoco_core PUBLIC src src/dw src/bus src/dev src/console src/net host)
+target_include_directories(picoco_core PUBLIC src src/dw src/bus src/dev src/console src/net src/ui host)
 
 enable_testing()
 file(GLOB TEST_SRCS tests/test_*.c)
