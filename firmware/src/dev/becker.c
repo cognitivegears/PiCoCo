@@ -62,7 +62,17 @@ static BUS_HOT void becker_data_hook(void) {
     becker_refresh();
 }
 
+static void (*ctl_fn)(uint8_t code);
+
+void becker_set_ctl(void (*fn)(uint8_t code)) { ctl_fn = fn; }
+
 static void becker_on_write(uint16_t idx, uint8_t data) {
+    if (idx == BUS_IDX_BECKER_CTL) {
+        uint8_t b;
+        if (data == 0xA5) while (ring_pop(&from_coco, &b)) { }   /* core0 is this ring's only consumer */
+        if (ctl_fn) ctl_fn(data);
+        return;
+    }
     if (idx != BUS_IDX_BECKER_DATA) return;
     if (ring_push(&from_coco, data)) {
         becker_stats.writes++;

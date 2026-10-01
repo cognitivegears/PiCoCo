@@ -3,6 +3,7 @@
 #include "becker.h"
 #include "plat.h"
 #include "net.h"
+#include "ui.h"
 #include <string.h>
 
 mode_stats_t mode_stats;
@@ -59,8 +60,38 @@ void mode_dw_send(void *ctx, const uint8_t *buf, size_t n) {
     }
 }
 
+/* Hand queued reply bytes to the Becker port as it frees up. */
+static void flush_pending(void) {
+    if (pending_len == 0) return;
+    size_t free_n = becker_tx_free();
+    size_t take = free_n < pending_len ? free_n : pending_len;
+    if (take) {
+        size_t put = becker_write(pending, take);
+        memmove(pending, pending + put, pending_len - put);
+        pending_len -= put;
+    }
+}
+
 void mode_pump(dw_server *dw, uint32_t now_ms) {
     device_dispatch_writes();
+    /* UI session (spec 2026-10-01 §5.1): the manager stub owns the Becker
+     * port in every mode until it writes 0x5A to $FF43. */
+    static bool was_ui;
+    bool ui = ui_active();
+    if (ui != was_ui) {
+        pending_len = 0;                         /* stale DriveWire or UI reply bytes */
+        if (!ui && g_bound_dw) g_bound_dw->state = DW_IDLE;
+        was_ui = ui;
+    }
+    if (ui) {
+        if (pending_len == 0) {
+            uint8_t buf[64];
+            size_t n = becker_read(buf, sizeof(buf));
+            if (n) ui_feed(buf, n, now_ms);
+        }
+        flush_pending();
+        return;
+    }
     switch (g_mode) {
         case MODE_LOOP:
             becker_loopback_pump();
@@ -104,15 +135,7 @@ void mode_pump(dw_server *dw, uint32_t now_ms) {
                 size_t n = becker_read(buf, sizeof(buf));
                 if (n) dw_feed(dw, buf, n, now_ms);
             }
-            if (pending_len > 0) {
-                size_t free_n = becker_tx_free();
-                size_t take = free_n < pending_len ? free_n : pending_len;
-                if (take) {
-                    size_t put = becker_write(pending, take);
-                    memmove(pending, pending + put, pending_len - put);
-                    pending_len -= put;
-                }
-            }
+            flush_pending();
             dw_tick(dw, now_ms);
             break;
         }

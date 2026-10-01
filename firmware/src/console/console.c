@@ -7,6 +7,7 @@
 #include "plat.h"
 #include "dw_disk.h"
 #include "net.h"
+#include "ui.h"
 #include <ctype.h>
 #include <stdarg.h>
 #include <stdio.h>
@@ -817,6 +818,8 @@ void console_init(console_out_fn out, void *ctx, dw_server *dw, dw_store *store)
     cap_open = false;
     cap_off = 0;
     mode_bind(dw);
+    ui_init(mode_dw_send, NULL, console_exec_capture, store);
+    becker_set_ctl(ui_ctl);
     dw_set_exec(dw, console_exec_remote, NULL);
 }
 
@@ -884,14 +887,13 @@ static size_t outn_clamp(int written, size_t cap) {
     return n >= cap ? cap - 1 : n;
 }
 
-int console_exec_remote(void *ctx, const char *line, char *out, size_t cap, size_t *outn) {
-    (void)ctx;
+static int exec_captured(const char *line, char *out, size_t cap, size_t *outn, bool check_allow) {
     if (cap < 5) { *outn = 0; return 255; } /* too small even for "...\n" + NUL */
     char copy[136];
     snprintf(copy, sizeof(copy), "%s", line);
     char *argv[6];
     int argc = tokenize(copy, argv);
-    if (argc == 0 || !remote_allowed(argc, argv)) {
+    if (argc == 0 || (check_allow && !remote_allowed(argc, argv))) {
         *outn = outn_clamp(snprintf(out, cap, "console only"), cap);
         return 255;
     }
@@ -934,6 +936,16 @@ int console_exec_remote(void *ctx, const char *line, char *out, size_t cap, size
     }
     *outn = rcap_len;
     return 0;
+}
+
+int console_exec_remote(void *ctx, const char *line, char *out, size_t cap, size_t *outn) {
+    (void)ctx;
+    return exec_captured(line, out, cap, outn, true);
+}
+
+int console_exec_capture(const char *line, char *msg, size_t cap) {
+    size_t n;
+    return exec_captured(line, msg, cap, &n, false) == 0 ? 0 : -1;
 }
 
 void console_feed(const uint8_t *buf, size_t n) {

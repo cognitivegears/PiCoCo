@@ -16,3 +16,6 @@ int  console_run_config(void);                      /* plat_cfg_read, exec each 
 /* DriveWire vserial command handler (vser_exec_fn): allowlisted commands only,
  * output captured into out. 0 ok, else DW4 result code with out = message. */
 int  console_exec_remote(void *ctx, const char *line, char *out, size_t cap, size_t *outn);
+/* Run any console command with its output captured, for the on-board UI
+ * (no allowlist: the caller is firmware). 0 ok; else msg = the text after "err ". */
+int  console_exec_capture(const char *line, char *msg, size_t cap);

@@ -6,6 +6,7 @@
 #define BUS_TABLE_SIZE 16384
 #define BUS_IDX_BECKER_STATUS 0x3F41
 #define BUS_IDX_BECKER_DATA   0x3F42
+#define BUS_IDX_BECKER_CTL    0x3F43   /* $FF43, write-only: UI session control (src/ui) */
 #define BUS_TRACE_SIZE 4096
 #define BUS_MAX_HOOKS 4
 
