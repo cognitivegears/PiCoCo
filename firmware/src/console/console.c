@@ -8,6 +8,7 @@
 #include "dw_disk.h"
 #include "net.h"
 #include "ui.h"
+#include "manager_rom.h"
 #include <ctype.h>
 #include <stdarg.h>
 #include <stdio.h>
@@ -314,10 +315,18 @@ static int cmd_trace(int argc, char **argv) {
     return cerr("usage: trace dump [n]|freeze|run");
 }
 
+/* Spec 2026-10-01 s6.5: a board with no ROM choice saved boots the manager.
+ * `rom off` is a choice; an absent line is not. */
+static void rom_fallback(void) {
+    if (rom_cmd[0] || rom_loaded()) return;
+    if (rom_load_mem(manager_rom, manager_rom_len) == 0) snprintf(rom_now, sizeof(rom_now), "load manager");
+}
+
 static int cmd_rom(int argc, char **argv) {
-    if (argc < 2) return cerr("usage: rom pattern|off|load <file>|boot <file>");
+    if (argc < 2) return cerr("usage: rom pattern|off|load <file>|launch <file>|boot <file>");
     if (plat_fs_exporting() &&
-        (strcasecmp(argv[1], "load") == 0 || strcasecmp(argv[1], "boot") == 0))
+        (strcasecmp(argv[1], "load") == 0 || strcasecmp(argv[1], "launch") == 0 ||
+         strcasecmp(argv[1], "boot") == 0))
         return cerr("fs export active; run fs import first");
     if (strcasecmp(argv[1], "pattern") == 0) {
         rom_pattern();
@@ -327,29 +336,34 @@ static int cmd_rom(int argc, char **argv) {
     }
     if (strcasecmp(argv[1], "off") == 0) {
         rom_off();
-        rom_cmd[0] = '\0';
+        snprintf(rom_cmd, sizeof(rom_cmd), "off");
         rom_now[0] = '\0';
         return 0;
     }
-    if (strcasecmp(argv[1], "load") == 0) {
-        if (argc < 3) return cerr("usage: rom load <file>");
-        int r = rom_load_file(g_store, argv[2]);
+    /* launch = load now, but leave the saved next-boot choice alone. */
+    bool launch = strcasecmp(argv[1], "launch") == 0;
+    if (launch || strcasecmp(argv[1], "load") == 0) {
+        if (argc < 3) return cerr("usage: rom load|launch <file>");
+        /* "manager" is the built-in stub (src/ui/manager_rom.h), not a file. */
+        int r = strcasecmp(argv[2], "manager") == 0
+              ? rom_load_mem(manager_rom, manager_rom_len)
+              : rom_load_file(g_store, argv[2]);
         if (r == -2) return cerr("rom load: size must be 8K, 16K, or banked 32K/64K/128K");
         if (r != 0) return cerr("rom load failed");
-        snprintf(rom_cmd, sizeof(rom_cmd), "load %s", argv[2]);
+        if (!launch) snprintf(rom_cmd, sizeof(rom_cmd), "load %s", argv[2]);
         snprintf(rom_now, sizeof(rom_now), "load %s", argv[2]);
         return 0;
     }
     if (strcasecmp(argv[1], "boot") == 0) {
         /* Next boot only: a live swap would change the DOS under a running CoCo. */
         if (argc < 3) return cerr("usage: rom boot <file>");
-        int r = rom_check_file(g_store, argv[2]);
+        int r = strcasecmp(argv[2], "manager") == 0 ? 0 : rom_check_file(g_store, argv[2]);
         if (r == -2) return cerr("rom must be 8192 or 16384 bytes");
         if (r != 0) return cerr("rom not found");
         snprintf(rom_cmd, sizeof(rom_cmd), "load %s", argv[2]);
         return 0;
     }
-    return cerr("usage: rom pattern|off|load <file>|boot <file>");
+    return cerr("usage: rom pattern|off|load <file>|launch <file>|boot <file>");
 }
 
 static int g_boot_mode = -1; /* pending next-boot mode from "net mode", -1 = none */
@@ -966,7 +980,7 @@ void console_feed(const uint8_t *buf, size_t n) {
 int console_run_config(void) {
     static char buf[1024]; /* static: core0 stack */
     int n = plat_cfg_read(buf, sizeof(buf) - 1);
-    if (n < 0) return -1;
+    if (n < 0) { rom_fallback(); return -1; }
     buf[n] = '\0';
     int count = 0;
     char *save = NULL;
@@ -983,5 +997,6 @@ int console_run_config(void) {
         }
         line = strtok_r(NULL, "\n", &save);
     }
+    rom_fallback();
     return count;
 }

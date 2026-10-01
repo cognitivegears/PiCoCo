@@ -100,6 +100,52 @@ TEST(rom_commands) {
     ASSERT_EQ(console_exec("rom load nope.rom"), -1);
 }
 
+TEST(rom_load_manager_is_built_in) {
+    setup();
+    ASSERT_EQ(console_exec("rom load manager"), 0);
+    ASSERT_EQ(bus_table[0], 'D');
+    ASSERT_EQ(bus_table[1], 'K');
+    console_exec("status");
+    ASSERT(strstr(out, "rom now load manager"));
+}
+
+TEST(no_rom_in_config_falls_back_to_manager) {
+    setup();
+    plat_cfg_write("bus drive on\n", 13);
+    ASSERT(console_run_config() >= 0);
+    ASSERT_EQ(bus_table[0], 'D');
+    ASSERT_EQ(bus_table[1], 'K');
+    outn = 0;
+    console_exec("status");
+    ASSERT(strstr(out, "rom now load manager"));
+    ASSERT(strstr(out, "rom next none"));     /* the fallback is not a saved choice */
+}
+
+TEST(explicit_rom_off_is_saved_and_kept) {
+    setup();
+    console_exec("rom off");
+    console_exec("save");
+    bus_set_read(0, 0x55);
+    ASSERT(console_run_config() >= 0);
+    ASSERT_EQ(bus_table[0], 0xFF);            /* off stays off: no fallback */
+    outn = 0;
+    console_exec("status");
+    ASSERT(strstr(out, "rom next off"));
+}
+
+TEST(rom_launch_leaves_next_boot_alone) {
+    setup();
+    ASSERT_EQ(console_exec("rom load nope.rom"), -1);
+    ASSERT_EQ(console_exec("rom pattern"), 0);
+    ASSERT_EQ(console_exec("rom launch manager"), 0);
+    ASSERT_EQ(bus_table[0], 'D');
+    ASSERT_EQ(bus_table[1], 'K');
+    outn = 0;
+    console_exec("status");
+    ASSERT(strstr(out, "rom now load manager"));
+    ASSERT(strstr(out, "rom next pattern"));
+}
+
 TEST(dw_mount_and_status) {
     setup();
     ASSERT_EQ(console_exec("dw mount 0 raw.dsk"), 0);
@@ -729,6 +775,10 @@ int main(void) {
     RUN(unknown_is_err);
     RUN(becker_mode_switch);
     RUN(rom_commands);
+    RUN(rom_load_manager_is_built_in);
+    RUN(no_rom_in_config_falls_back_to_manager);
+    RUN(explicit_rom_off_is_saved_and_kept);
+    RUN(rom_launch_leaves_next_boot_alone);
     RUN(dw_mount_and_status);
     RUN(feed_splits_lines);
     RUN(trace_dump_format);

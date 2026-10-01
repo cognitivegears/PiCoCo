@@ -207,7 +207,7 @@ static uint8_t launch(void) {
 
 static uint8_t on_key(uint8_t key) {
     uint8_t act = 0;
-    if (key) msg[0] = '\0';
+    if (key) { msg[0] = '\0'; pending_act = 0; }
     if (key == UI_KEY_UP && sel > 0) sel--;
     else if (key == UI_KEY_DOWN && sel + 1 < nroms) sel++;
     else if (key == UI_KEY_ENTER) act = launch();
@@ -222,8 +222,8 @@ static void on_go(void) {
     uint8_t r = UI_GO_OK;
     if (!pending_act) r = UI_GO_FAIL;
     else if (pending[0]) {
-        char line[16 + NAME_LEN], err[UI_COLS + 1];
-        snprintf(line, sizeof line, "rom load %s", pending);
+        char line[16 + NAME_LEN], err[UI_COLS + 1] = "ROM LOAD FAILED";
+        snprintf(line, sizeof line, "rom launch %s", pending);
         if (g_exec(line, err, sizeof err) != 0) { r = UI_GO_FAIL; set_msg(err); }
     }
     pending_act = 0;

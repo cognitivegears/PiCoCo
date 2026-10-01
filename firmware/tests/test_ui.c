@@ -271,7 +271,7 @@ TEST(enter_on_pak_asks_for_jump_then_go_loads) {
     ui_feed(&g, 1, 20);
     ASSERT_EQ(txn, 1);
     ASSERT_EQ(tx[0], UI_GO_OK);
-    ASSERT(strcmp(last_line, "rom load game.rom") == 0);
+    ASSERT(strcmp(last_line, "rom launch game.rom") == 0);
     ASSERT(!ui_active());
 }
 
@@ -352,6 +352,21 @@ TEST(break_asks_for_warm_restart) {
     ASSERT(!ui_active());
 }
 
+TEST(key_after_enter_cancels_the_launch) {
+    setup();
+    mkfile("game.rom", "\x7E\xC0\x10", 8192);
+    open_with(0);
+    poll(0, UI_KEY_ENTER, -1, 10);
+    int len = reply_ok();
+    ASSERT_EQ(tx[2 + len - 2], UI_ACT_JUMP);
+    poll(0, UI_KEY_DOWN, -1, 15);
+    txn = 0;
+    uint8_t g = 'G';
+    ui_feed(&g, 1, 20);
+    ASSERT_EQ(tx[0], UI_GO_FAIL);
+    ASSERT(last_line[0] == '\0');
+}
+
 int main(void) {
     char tmpl[300];
     const char *tmpdir = getenv("TMPDIR");
@@ -381,5 +396,6 @@ int main(void) {
     RUN(go_failure_keeps_session_and_shows_reason);
     RUN(go_without_a_pending_launch_fails);
     RUN(break_asks_for_warm_restart);
+    RUN(key_after_enter_cancels_the_launch);
     TEST_MAIN_END
 }
