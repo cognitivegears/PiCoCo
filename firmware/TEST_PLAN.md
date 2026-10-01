@@ -362,7 +362,7 @@ Bench CoCo 3 CPU: 6309  RAM: 2 MB
 | H.4.5 30 min soak | pass: copy + `dcheck /dd` + del over the bridge, no reconnect, no phantom reads. dcheck reports 117 lost and 129 shared clusters: both are in the untouched `63SDC.VHD` as shipped (kernel track, old boot extents; 5 files with two directory entries), so no damage from this session | | 2026-10-01 |
 | H.4.6 swapboot | | | |
 | EOU boot after the read-path rework | 1 re-read in 1,888 sectors (was 80 in 1,966), `oe_glitch 0`, `addr_resample` 70,314 of 1.3 M reads, `underrun 52` (all the SDC probe) | | 2026-10-01 |
-| Re-sample before recompute (final build) | `addr_resample 0` in 280k reads (was ~5 %); EOU boot on this build not yet run | | 2026-10-01 |
+| Re-sample before recompute (final build, 370603b) | EOU boot: 0 re-reads in ~1,880 sectors, `addr_resample 0` in 1.3 M reads, `oe_glitch 0`, `underrun 52` (the SDC probe) | | 2026-10-01 |
 | H.4.7 EOU over WiFi | n/a | | |
 
 ## How to resume with Claude
