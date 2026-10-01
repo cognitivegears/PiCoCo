@@ -93,7 +93,7 @@ console, then power the CoCo on. Boot the saved config from the breadboard
    sound from the console or a game and check TP7.
 5. Plus-W: TEST_PLAN G.2 rows (WiFi boot hold, DW4/FujiNet-PC over WiFi,
    fallback, manager WiFi screen).
-6. Case: fit check against case/ once the board works electrically.
+6. Case: fit check against case/ once the board works electrically. (passed 2026-10-01)
 
 ## 1.79 MHz fault found on the PCB (2026-09-30)
 
@@ -146,5 +146,5 @@ exposed it on firmware 1.3.
 | 5 1.79 MHz ROM (hdbdw3bc3) | FAILED on firmware 1.3 as merged, then fixed (see below): SAVE gave ?IO ERROR, then every sector failed its checksum (crc_err 5, underrun 1, one byte left in the ring = permanent one-byte desync). 0.89 MHz ROM and the write path were clean throughout. After the fix: 4 LOADMs + SAVE at 1.79 MHz, crc_err 0 underrun 0 | 2026-09-30 |
 | 5 DIR/LOADM/SAVE/manager | pass: DIR, LOADM+EXEC DINORUN, `DRIVE 3:RUN"PICOCO"` manager (exit is BREAK). SAVE not yet tried. After: 46450 cycles, addr_resample 0, 72 dw reads crc_err 0, becker 18752 reads underrun/overrun 0 | 2026-09-30 |
 | 5 RESET button + cold power cycle | pass: RESET reboots the Pico (uptime restarts) and the CoCo warm-starts back into DINORUN, which hooks the reset vector (CoCo behaviour, not the board); cold power cycle boots HDB-DOS | 2026-09-30 |
-| 5 audio at TP7 / speaker | | |
+| 5 audio at TP7 / speaker | open: nothing drives AUDIO_PWM until the sound plan lands | |
 | 5 G.2 WiFi rows | | |

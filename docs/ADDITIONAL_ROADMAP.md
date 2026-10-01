@@ -213,7 +213,7 @@ wider antenna keepout) or deferred to v2.4 (see hardware-design §9).
 5. **DONE (2026-09-22).** Write-cycle sampling: `bus_core1.c`'s write path now keeps the
    last `gpio_in` sample taken while OE_BUS was still low (`prev`) and uses its data bits,
    instead of the first sample with OE_BUS high.
-6. **Read-path margin.** Ten nops (67 ns at 150 MHz) before the address read; real
+6. **DONE (2026-09-30, first PCB).** `addr_resample` read 0 on the PCB, so the nops went; the Pico 2 loop now precomputes the response while OE_BUS is high and drives ~100 ns after it falls, and D0-D7 idle pulled down (a late $FF41 poll used to read 0xFF = Becker ready). hdbdw3bc3 at 1.79 MHz passes 4 LOADMs + SAVE clean; see docs/pcb-bringup.md. Original text kept for the lever order: Ten nops (67 ns at 150 MHz) before the address read; real
    OE-to-data ~180-200 ns, not the documented 70 ns. Levers in order (decided
    2026-09-28, see §7): (a) on the first PCB read `bus addr_resample`; if zero, drop
    the nops (~130 ns serve path); (b) if CoCo 3 at 1.79 MHz behind an MPI still fails,
