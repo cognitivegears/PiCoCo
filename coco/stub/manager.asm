@@ -47,7 +47,7 @@ KEYW    jsr [$A000]
         clr FLAGS,y
         bra MAIN
 
-* A = capability bits: 0 32K, 2 Extended BASIC, 4 CoCo 3
+* A = capability bits: 0 32K (a $7FFF write must take and not mirror $3FFF), 2 Extended BASIC, 4 CoCo 3
 DETECT  clrb
         ldx $8000
         cmpx #$4558
@@ -57,15 +57,24 @@ DET1    lda $FFFE
         cmpa #$8C
         bne DET2
         orb #$10
-DET2    lda $7FFF
+DET2    pshs b
+        lda $7FFF
+        ldb $3FFF
         coma
         sta $7FFF
-        cmpa $7FFF
-        bne DET3
-        orb #$01
-DET3    coma
+        cmpa $7FFF              the write took?
+        bne DET2N
+        cmpb $3FFF              and it was not a mirror of $3FFF?
+        bne DET2N
+        coma
         sta $7FFF
-        tfr b,a
+        puls b
+        orb #$01
+        bra DET3
+DET2N   coma
+        sta $7FFF               put back whatever we changed
+        puls b
+DET3    tfr b,a
         rts
 
 * discard whatever the Pico had queued

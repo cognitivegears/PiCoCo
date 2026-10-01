@@ -240,6 +240,37 @@ watching a window. Two pieces make that possible:
    running); use `kill -9 <pid>` (or `pkill -9 -f 'xroar -machine'`) to stop
    headless instances started this way.
 
+
+## Manager stub in XRoar
+
+`picoco-host --ui` treats the whole TCP stream as a UI session (XRoar's Becker
+cart forwards only `$FF41`/`$FF42`, so the stub's `$FF43` write never arrives).
+Install the stub with `cp coco/stub/manager.rom ~/.xroar/roms/manager.rom`,
+then (`D` = a scratch dir holding `CARTTEST.ROM` and `HDB.ROM`; add
+`-ui null` to run headless). Launch each XRoar with `pkill -9 xroar` first: a
+stale instance keeps the GDB port and `xrscreen.py` then hangs. Wait ~12 s
+before `xrscreen.py` when `-type` has several keys.
+
+1. No Extended BASIC (proves the first screen, the probe and the diff drawing;
+   the highlighted row prints lowercase in `xrscreen.py`, it is inverse video):
+   ```
+   build-host/picoco-host --dir "$D" --port 65511 --ui &
+   xroar -machine coco2bus -no-extbas -becker -becker-port 65511 -cart-rom manager \
+         -no-cart-autorun -rompath ~/.xroar/roms -gdb -ao null -type 'EXEC 49154\r' &
+   python3 coco/tools/xrscreen.py --wait-for 'PICOCO  32K NO ECB' --wait-for 'carttest.rom'
+   ```
+2. Keys and launch handshake (`-type 'EXEC 49154\r\n\r'` moves down to `HDB.ROM`
+   and ENTER draws `NEEDS EXTENDED BASIC`; `-type 'EXEC 49154\r\r'` runs
+   `rom launch CARTTEST.ROM` and the screen returns to the manager). Finding:
+   XRoar's `-type` does deliver keys to the stub's `JSR [$A000]` (POLCAT).
+3. Extended BASIC autostart (no typing; proves `DK` at `$C000` is found and
+   `$C002` called, row 0 reads `32K ECB`):
+   ```
+   xroar -machine coco2bus -becker -becker-port 65511 -cart-rom manager \
+         -rompath ~/.xroar/roms -gdb -ao null &
+   python3 coco/tools/xrscreen.py --wait-for 'PICOCO  32K ECB'
+   ```
+
 ## On the bench (real hardware)
 
 1. Copy `PICOCO.DSK` to the PiCoCo's flash: `fs export`, drag it onto the

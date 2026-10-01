@@ -10,6 +10,7 @@
 #include <arpa/inet.h>
 #include <errno.h>
 #include <getopt.h>
+#include "ui.h"
 #include <netinet/in.h>
 #include <poll.h>
 #include <signal.h>
@@ -121,7 +122,7 @@ static int run_replay(dw_server *srv, const char *path) {
     return 0;
 }
 
-static int run_server(dw_server *srv, int port) {
+static int run_server(dw_server *srv, int port, bool ui_mode) {
     signal(SIGPIPE, SIG_IGN); /* macOS has no MSG_NOSIGNAL; ignore instead */
 
     int listen_fd = socket(AF_INET, SOCK_STREAM, 0);
@@ -169,13 +170,17 @@ static int run_server(dw_server *srv, int port) {
                 } else printf("picoco-host: client connected\n");
                 client_fd = fd;
                 srv->send_ctx = &client_fd;
+                if (ui_mode) { ui_init(send_sock, &client_fd, console_exec_capture, srv->store); ui_ctl(0xA5); }
             }
         }
         if (client_idx >= 0 && (pfds[client_idx].revents & (POLLIN | POLLHUP | POLLERR))) {
             uint8_t buf[512];
             ssize_t n = recv(client_fd, buf, sizeof(buf), 0);
             if (n > 0) {
-                dw_feed(srv, buf, (size_t)n, plat_now_ms());
+                if (ui_mode) {
+                    if (!ui_active()) ui_ctl(0xA5);      /* the stub left and came back */
+                    ui_feed(buf, (size_t)n, plat_now_ms());
+                } else dw_feed(srv, buf, (size_t)n, plat_now_ms());
             } else {
                 printf("picoco-host: client disconnected\n");
                 close(client_fd);
@@ -208,6 +213,7 @@ int main(int argc, char **argv) {
     const char *dir = ".";
     int port = 65504;
     const char *replay = NULL;
+    bool ui_mode = false;
     bool hdbdos_set = false, hdbdos = false;
     struct { int drive; const char *name; bool read_only; } mounts[DW_MAX_DRIVES];
     int nmounts = 0;
@@ -218,10 +224,11 @@ int main(int argc, char **argv) {
         {"mount", required_argument, 0, 'm'},
         {"hdbdos", required_argument, 0, 'H'},
         {"replay", required_argument, 0, 'r'},
+        {"ui", no_argument, 0, 'u'},
         {0, 0, 0, 0},
     };
     int c;
-    while ((c = getopt_long(argc, argv, "d:p:m:H:r:", longopts, NULL)) != -1) {
+    while ((c = getopt_long(argc, argv, "d:p:m:H:r:u", longopts, NULL)) != -1) {
         switch (c) {
             case 'd': dir = optarg; break;
             case 'p': port = atoi(optarg); break;
@@ -250,9 +257,10 @@ int main(int argc, char **argv) {
                 }
                 break;
             case 'r': replay = optarg; break;
+            case 'u': ui_mode = true; break;
             default:
                 fprintf(stderr, "usage: %s [--dir DIR] [--port N] [--mount N=FILE[,ro]]... "
-                                "[--hdbdos on|off] [--replay FILE]\n", argv[0]);
+                                "[--hdbdos on|off] [--replay FILE] [--ui]\n", argv[0]);
                 return 1;
         }
     }
@@ -279,6 +287,9 @@ int main(int argc, char **argv) {
     }
 
     console_init(print_stdout, NULL, &srv, &store);
+    /* XRoar's Becker cart carries only $FF41/$FF42, so the stub's $FF43
+     * write never arrives: --ui makes the whole connection a UI session. */
+    if (ui_mode) ui_init(send_sock, &dummy_fd, console_exec_capture, &store);
     /* Before the config runs, so a `time set` there wins; a replay never asks the time: OP_TIME answers Mac local time. */
     time_t now = time(NULL); struct tm lt; localtime_r(&now, &lt);
     dw_time_set(&srv, (int64_t)now + lt.tm_gmtoff, plat_now_ms());
@@ -288,5 +299,5 @@ int main(int argc, char **argv) {
     if (replay) return run_replay(&srv, replay);
 
     signal(SIGINT, on_sigint);
-    return run_server(&srv, port);
+    return run_server(&srv, port, ui_mode);
 }
