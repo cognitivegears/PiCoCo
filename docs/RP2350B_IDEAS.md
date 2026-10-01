@@ -1049,3 +1049,51 @@ hooks in `bus.c`, so the handler runs before the next bus cycle
 It stays `BUS_HOT` and flash-free because cart RAM is SRAM, and core1
 then owns the port's table entries, which keeps the single-writer rule
 intact.
+
+## 15. Serving Extended BASIC at $8000 — Plus-W only (idea, 2026-10-01)
+
+Prompted by the CoCo 2 bench run (TEST_PLAN section I): a 26-3026 with
+Color BASIC 1.2 and an empty Extended BASIC socket cannot start HDB-DOS,
+because only ECB looks for `DK` at `$C000` and Disk BASIC calls into it.
+The cart can supply the missing ROM itself.
+
+**How.** Color BASIC looks for `EX` at `$8000` on a cold start and jumps
+to `$8002`. With the socket empty nothing inside the CoCo answers
+`$8000-$9FFF`, and on a CoCo 1/2 the CPU data bus runs straight to the
+cart port. A Plus-W build sees A14 (GP29) and A15 (GP30) and, with JP2 at
+2-3, drives U10 `/OE` from firmware, so it can decode `A15..A13 = 100`
+and answer with a stock `extbas11.rom` from the flash filesystem. ECB then
+finds the HDB-DOS `DK` in the normal `/CTS` window and the machine boots
+to a DOS prompt with no keystroke. The boot hold on /HALT already
+guarantees the table is filled before the CPU's first fetch.
+
+**Not on a Pico 2.** U10 `/OE` is the U15 hardware decode (`/CTS` or
+`/SCS`, qualified by E) and A14/A15 never reach the module, so `$8000`
+cannot be told apart from RAM at `$0000`.
+
+**Firmware work.**
+- `bus_fw_mask` / `bus_fw_enable` cover `$FF60-$FF7F` only. This needs a
+  second firmware-decoded range (8 KB at `$8000`) in the Plus-W core1
+  loop, inside the same latency budget as the ROM window.
+- A second 8 KB bank in the bus table and a console command to load it
+  (`rom ext <file>`), saved in `picoco.cfg`.
+- Reads only. Writes to `$8000-$9FFF` are ignored.
+
+**Check before building.**
+- That nothing drives D0-D7 at `$8000` with the socket empty: on the
+  target machine, `PEEK(32768)` with no cart should return a floating
+  value that changes with what was last on the bus. A machine that has
+  ECB fitted must leave the feature off, or both drive the bus.
+- 64K machines in all-RAM mode (SAM map type 1) read RAM at `$8000`; the
+  cart must stay off the bus there. The firmware cannot see the SAM bit
+  directly; it would have to track writes to `$FFDE`/`$FFDF`.
+- The Plus-W board has not run in a CoCo yet (TEST_PLAN F.5, G.2).
+- `extbas11.rom` is copyrighted; the user supplies it, as with XRoar.
+
+**What it buys.** Stock HDB-DOS on the cheapest CoCo 2s and on a CoCo 1
+with plain Color BASIC, with no chip to source. 16K RAM still limits
+them: the manager loads at `$3800-$7B80` and needs 32K.
+
+**Until then.** `coco/carttest.asm` is the no-ECB test path: an 8 KB ROM
+started with `EXEC 49152` that runs from the cart and reads the whole of
+drive 0 over the Becker port in a loop.

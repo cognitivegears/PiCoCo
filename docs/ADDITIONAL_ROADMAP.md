@@ -356,3 +356,15 @@ touching `bus_core1.c` again; the timing census there is the best public one.
   an MPI. Our HDMI corner stays a keepout for a variant that moves the address bus.
 - OLED + encoder: PICOCO.BIN on the CoCo and the USB console cover selection; WiFi
   (Plus-W) is the eventual remote UI.
+
+## 8. ROM manager follow-ups (from the 2026-10-01 design)
+
+Spec: `docs/superpowers/specs/2026-10-01-rom-manager-design.md` section 10.
+
+- **Firmware-pulsed `/CART` autostart** for machines without Extended
+  BASIC, so the manager (or a Program Pak set as default) starts with no
+  `EXEC` typed. Needs JP5 at 1-2 on a Pico 2 (never with JP3 bridged),
+  `cart on`, and the firmware serving a jump in place of the `DK` header
+  while it pulses, because the FIRQ entry is `$C000`.
+- Loading `.BIN` and BASIC programs from a disk image without a DOS.
+- Extended BASIC served at `$8000` from a Plus-W (`RP2350B_IDEAS.md` §15).
