@@ -208,8 +208,10 @@ wider antenna keepout) or deferred to v2.4 (see hardware-design §9).
    (`console_exec_remote`), and `dw disk show|insert|eject` plus `fs new`/`rom boot` give disk
    selection and image creation from any DW4 client, including the new `coco/` manager
    program. See `docs/superpowers/specs/2026-09-23-coco-manager-design.md`.
-4. **NitrOS-9 over Becker as a passed milestone** (EOU `dwio_becker.sb`, boot `/dd` from
-   HDB-DOS `DOS`). DWINIT already clears `hdbdos` for drive numbers < 0x80.
+4. **DONE (2026-10-01).** NitrOS-9 over Becker: stock NitrOS-9 L2 boots from flash and
+   EOU 1.0.1 boots through bridge mode on PCB v2.3.1 (Pico 2, 6309 CoCo 3). The NitrOS-9
+   Boot module sends no DWINIT, so a hard-disk image needs `hdbdos off` before `DOS`.
+   Guide: `docs/NITROS9_EOU.md`; bench log: `firmware/TEST_PLAN.md` section H.
 5. **DONE (2026-09-22).** Write-cycle sampling: `bus_core1.c`'s write path now keeps the
    last `gpio_in` sample taken while OE_BUS was still low (`prev`) and uses its data bits,
    instead of the first sample with OE_BUS high.
@@ -246,6 +248,13 @@ wider antenna keepout) or deferred to v2.4 (see hardware-design §9).
     `/CART` at all (it drives only the bus pins, not this GPIO). Bench check still open:
     a GMC image autostarts on a CoCo 3 with `cart auto`, and HDB-DOS still reaches BASIC
     normally (the pulse must not itself disturb a DOS boot).
+13. **TODO: make EOU easy for a newcomer** (follow-up to item 4). Two pieces:
+    (a) prebuilt `picoco-host` binaries for macOS, Linux and Windows, so nobody needs
+    CMake and a compiler to serve an image (a Windows build has never been tried);
+    (b) one launcher command that starts the server and `becker_relay.py --reconnect`
+    together and finds the bridge port by itself. Before announcing either: build and boot
+    the 6809 EOU image (only the 6309 one has run), and ship `eou_becker.py`, not a
+    remastered image, unless the EOU project's terms allow redistributing one.
 
 ### Docs
 - README: on a CoCo 3 a BASIC `PEEK(&HC000)` never reaches the cart, use $FF41/$FF42; the

@@ -18,6 +18,17 @@ static PIO pio = pio1;
 static int sm = -1;
 static uint offset;
 
+/* core1 reloads the D0-D7 output latch while idle (bus_core1.c), and this
+ * test parks its write data in that same latch: let core1 finish the reload
+ * that follows the previous cycle before putting data there. */
+static inline void settle(void) { busy_wait_us(2); }
+/* Pico 2: a write is normally followed by a settle too, so the functional
+ * checks do not depend on how long core1's post-write work (hooks, write
+ * ring, trace) takes; the response_after_write sweep turns that off. The old
+ * loop passed "write $FF40 = 1, read back 1" without it only because the
+ * written byte was still on the pads when the PIO sampled. */
+static bool raw_writes __attribute__((unused));
+
 #ifdef PICOCO_BOARD_PLUSW
 #define PW_BIT(gp) (1u << ((gp) - PIN_A0))
 static uint32_t phase(uint16_t addr, bool rd, bool sel, bool e, bool q) {
@@ -67,7 +78,7 @@ static uint8_t pop_cycle(void) {
     return (uint8_t)(pio_sm_get_blocking(pio, sm) & 0xFF);
 }
 static uint8_t cycle(uint16_t addr, bool rd, bool sel, uint8_t data, uint8_t delay) {
-    if (!rd) { sio_hw->gpio_clr = D_MASK; sio_hw->gpio_set = data; sio_hw->gpio_oe_set = D_MASK; }
+    if (!rd) { settle(); sio_hw->gpio_clr = D_MASK; sio_hw->gpio_set = data; sio_hw->gpio_oe_set = D_MASK; }
     push_cycle(addr, rd, sel, data, delay);
     uint8_t got = pop_cycle();
     if (!rd) sio_hw->gpio_oe_clr = D_MASK;
@@ -108,13 +119,13 @@ static void pins_to_sio(void) {
  * duration (core1 only samples them on a write). Returns the byte the PIO
  * sampled during OE low (a read's data), or 0 for an unselected cycle. */
 static uint8_t cycle(uint16_t addr, bool rd, bool sel, uint8_t data, uint8_t delay) {
-    if (!rd) { sio_hw->gpio_clr = D_MASK; sio_hw->gpio_set = data; sio_hw->gpio_oe_set = D_MASK; }
+    if (!rd) { settle(); sio_hw->gpio_clr = D_MASK; sio_hw->gpio_set = data; sio_hw->gpio_oe_set = D_MASK; }
     uint32_t w0 = (addr & 0x3FFF) | (rd ? 0x4000u : 0);
     uint32_t w1 = (sel ? 1u : 0) | ((uint32_t)delay << 1);
     pio_sm_put_blocking(pio, sm, w0);
     pio_sm_put_blocking(pio, sm, w1);
     uint32_t got = pio_sm_get_blocking(pio, sm);
-    if (!rd) sio_hw->gpio_oe_clr = D_MASK;
+    if (!rd) { sio_hw->gpio_oe_clr = D_MASK; if (!raw_writes) settle(); }
     return (uint8_t)(got & 0xFF);
 }
 #define PROGRAM fake6809_p2_program
@@ -339,10 +350,66 @@ int fake6809_selftest(fake_result_t *r, void (*line)(const char *s)) {
 #endif
     line(buf);
     CHECK("response_measured", r->first_ok_delay >= 0);
-    /* 300 ns is the initial threshold (Task 3's ~280 ns CoCo 3 budget,
-     * docs/firmware-architecture.md §8); tighten once a real bench run
-     * reports an actual number. */
-    CHECK("response_within_300ns", r->first_ok_delay >= 0 && r->delay_ns <= 300);
+    /* The sweep above runs its cycles back to back, so core1 is still in its
+     * post-cycle work when OE_BUS falls: this is the no-idle-sample path
+     * (late_precompute), the one a CPU executing from the cart ROM takes. Its
+     * budget is the 0.89 MHz one (E high ~560 ns), same 480 ns as the Plus-W
+     * burst check; bench 2026-10-01 measured 256-322 ns. */
+    CHECK("response_within_480ns", r->first_ok_delay >= 0 && r->delay_ns <= 480);
+#ifndef PICOCO_BOARD_PLUSW
+    /* Same sweep with core1 idle before each cycle: the path a Becker poll
+     * takes (precomputed latch, one output-enable store). 32 tries per delay
+     * so the PIO/core1 phase wanders across the idle pass. Budget at 1.79 MHz:
+     * 279 ns of E high less ~40 ns setup and U10. Best case for that path:
+     * the PIO gives ~265 ns of address setup, longer than a recompute pass, so
+     * the latch is always loaded; a real 1.79 MHz CPU gives less and a poll
+     * can land mid-recompute, a few tens of ns later than this figure. */
+    int idle_ok = -1;
+    for (int d = 0; d <= 60 && idle_ok < 0; d++) {
+        int bad = 0;
+        for (int i = 0; i < 32; i++) {
+            cycle(0xC001, true, true, 0, 60);      /* a 0x00 read first: pads start low whatever the loop does after a cycle */
+            busy_wait_us(3);
+            if (cycle(0xC000, true, true, 0, (uint8_t)d) != 0xA5) bad++;
+        }
+        if (!bad) idle_ok = d;
+    }
+    /* A read straight after a write (CPU executing from the cart ROM stores
+     * to $FF4x, then fetches): core1 is still in bus_on_write. 0.89 MHz budget. */
+    int aw_ok = -1;
+    raw_writes = true;
+    for (int d = 0; d <= 120 && aw_ok < 0; d += 2) {
+        int bad = 0;
+        for (int i = 0; i < 8; i++) {
+            busy_wait_us(3);
+            cycle(0xFF40, false, true, 0, SAMPLE_LATE);
+            if (cycle(0xC000, true, true, 0, (uint8_t)d) != 0xA5) bad++;
+        }
+        { uint16_t di; uint8_t dd; while (bus_pop_write(&di, &dd)) { } }   /* keep the write ring from filling */
+        if (!bad) aw_ok = d;
+    }
+    raw_writes = false;
+    unsigned aw_ns = aw_ok < 0 ? 0 : (unsigned)((aw_ok + 2) * ns_per);
+    snprintf(buf, sizeof buf, "selftest response_after_write first_ok_delay %d (~%u ns after OE_BUS fell)", aw_ok, aw_ns);
+    line(buf);
+    CHECK("response_after_write_within_480ns", aw_ok >= 0 && aw_ns <= 480);
+    unsigned idle_ns = idle_ok < 0 ? 0 : (unsigned)((idle_ok + 2) * ns_per);
+    snprintf(buf, sizeof buf, "selftest response_idle first_ok_delay %d (~%u ns after OE_BUS fell)", idle_ok, idle_ns);
+    line(buf);
+    CHECK("response_idle_within_230ns", idle_ok >= 0 && idle_ns <= 230);
+#endif
+    {   /* RP2350-E9 probe, information only: drive D0-D7 high, release onto the
+         * internal pull-downs and see how long they still read high. A working
+         * pull-down (~50-80 k into a few pF) is gone in microseconds. */
+        sio_hw->gpio_set = D_MASK; sio_hw->gpio_oe_set = D_MASK; busy_wait_us(2); sio_hw->gpio_oe_clr = D_MASK;
+        busy_wait_us(10);  unsigned h10 = sio_hw->gpio_in & D_MASK;
+        busy_wait_us(990); unsigned h1m = sio_hw->gpio_in & D_MASK;
+        sleep_ms(50);      unsigned h50 = sio_hw->gpio_in & D_MASK;
+        sio_hw->gpio_clr = D_MASK; sio_hw->gpio_oe_set = D_MASK; busy_wait_us(2); sio_hw->gpio_oe_clr = D_MASK;
+        busy_wait_us(10);  unsigned l10 = sio_hw->gpio_in & D_MASK;
+        snprintf(buf, sizeof buf, "selftest pad_hold high then released: 10us %02x 1ms %02x 51ms %02x; low then released: %02x", h10, h1m, h50, l10);
+        line(buf);
+    }
     r->ring_overrun = bus_stats.write_overrun - ov0;
     #undef CHECK
 

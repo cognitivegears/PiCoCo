@@ -43,9 +43,22 @@ def main():
     ap.add_argument("--tcp", type=int, default=65504)
     ap.add_argument("--delay", type=float, default=0.0, help="one-way ms")
     ap.add_argument("--jitter", type=float, default=0.0, help="0..ms extra")
+    ap.add_argument("--reconnect", action="store_true",
+                    help="keep running: wait for the port to come back after a Pico reboot (every CoCo reset reboots it)")
     ap.add_argument("--log", help="append every chunk as '<t> U|D <hex>' (U = CoCo to server)")
     a = ap.parse_args()
+    while True:
+        try:
+            if os.path.exists(a.port):
+                relay(a)
+        except OSError as e:                      # port vanished (Pico reboot) or server not up yet
+            print(f"relay stopped: {e}", flush=True)
+        if not a.reconnect:
+            return
+        time.sleep(1)
 
+
+def relay(a):
     ser = open_port(a.port)
     sock = socket.create_connection((a.host, a.tcp))
     sock.setblocking(False)

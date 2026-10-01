@@ -337,8 +337,20 @@ Firmware fixes that came out of this section (2026-10-01), details in
 - DriveWire server drops the CoCo SDC probe (`64 64 00 64 00 ...` on `$FF42`).
 - Bridge mode holds the CoCo's bytes until CDC0 has a listener (HDB-DOS
   reads drive 0 at power-on with no timeout).
-- Open: Plus-W path has neither the discharge nor the timing change;
-  `bus selftest` on a bare Pico 2 has not been rerun since the rework.
+- `bus selftest` on a bare Pico 2 (chip rev A2), six runs in one boot, all
+  pass: read answered ~139-146 ns after OE_BUS falls from idle (the
+  2026-09-30 loop measured 264-286 ns with the same sweep, budget 230),
+  256-286 ns back to back, 366-396 ns straight after a write.
+- RP2350-E9 confirmed on that Pico: D0-D7 driven high then released onto the
+  internal pull-downs still read `ff` after 51 ms; driven low then released
+  read `00` (`selftest pad_hold` line).
+- `bus selftest` on a bare Plus-W (chip rev A4), three fresh boots, all
+  pass with the ported loop (latch preload at Q time, pad discharge):
+  response 132 ns after E rises, burst 381 ns (old loop 139-154 / 352-366).
+  `pad_hold` reads `00`: no E9 on A4.
+- Open: Plus-W on a PCB with a CoCo (section G.2 and F.5), including a
+  scope look at JP2 2-3; a second `bus selftest` in one boot fails
+  `read_bank0_marker` on the Plus-W (old loop too).
 
 
 Bench CoCo 3 CPU: 6309  RAM: 2 MB

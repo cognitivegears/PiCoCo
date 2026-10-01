@@ -195,6 +195,34 @@ branch releases the outputs. `bus selftest` on a bare Pico 2 has not been
 rerun since. The bridge pump replays whatever sat in the Becker ring when a
 listener attaches; fine for HDB-DOS, untested for a client that retries.
 
-Not done: the Plus-W path has the same exposure with JP2 1-2 (review
-finding) and got none of these read-path changes.
+Bare Pico 2 follow-up, same day (`bus selftest`, chip revision A2):
 
+- E9 is confirmed, not just a working explanation: D0-D7 driven high and
+  released onto the internal pull-downs still read `ff` after 51 ms; driven
+  low and released they read `00`. The self-test prints this as `pad_hold`.
+- The self-test now measures three read latencies after OE_BUS falls. Idle
+  bus (a Becker poll): 139-146 ns; the 2026-09-30 loop measured 264-286 ns in
+  the same sweep, against a 230 ns budget at 1.79 MHz. Back-to-back reads:
+  256-286 ns. A read straight after a write: 366-396 ns. The last two only
+  occur when the CPU executes from the cart ROM, which a CoCo 3 in fast mode
+  does not do; their budget is the 0.89 MHz one (480 ns).
+- The old `response_within_300ns` check measured the back-to-back path, and
+  the old loop passed "write `$FF40`=1, read back 1" partly because the
+  written byte was still on the pads when the PIO sampled.
+- The idle loop reloads the latch only when address/RW change, so a table or
+  ROM change by core0 while the bus sat on one address left it stale (second
+  self-test in one boot read `ff`). The read path now checks the enabled
+  value against the table after the fast-path enable and redrives if needed.
+
+Plus-W, same day, bare module (`bus selftest`, chip revision A4, three
+fresh boots, all pass): the loop now preloads the latch at Q time (fast path
+is two stores) and drives the pads low at the end of every cycle; after a
+write it waits for OE_BUS before discharging. Response from idle 132 ns
+after E rises (was 139-154), back-to-back burst 381 ns (was 352-366,
+budget 480). A three-sample end-of-cycle filter as on the Pico 2 cost too
+much there (burst 425-454 ns) and was left out. The A4 chip does not show
+E9: `pad_hold` reads `00` 10 us after release. Not covered by a bare
+module: anything that depends on JP2 or on a real OE_BUS.
+
+A second `bus selftest` in one boot fails `read_bank0_marker` on the
+Plus-W, with the old loop too; `bench.py` reboots after each run.

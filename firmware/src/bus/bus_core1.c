@@ -71,16 +71,25 @@ BUS_HOT void bus_core1_main(void) {
         uint16_t idx = (in >> PIN_A0) & 0x3FFF;
         if (rd) {                                 /* CoCo read */
             if (bus_drive) {
-                if (!hit) {                       /* precompute was for another address, or there was none: drive first, count after */
+                /* The enable above already happened on a hit; now check what was
+                 * enabled. The latch is only reloaded when address/RW change, so
+                 * core0 changing the table, the ROM bank or bus_drive while the
+                 * bus sat on one address leaves it stale (bench 2026-10-01: a
+                 * second `bus selftest` read 0xFF from a freshly built image).
+                 * Rare, so it is corrected here, after the fast path, not paid
+                 * for in the idle loop. */
+                uint32_t v = (uint32_t)bus_peek(idx) << PIN_D0;
+                if (!hit || !oemask || v != (sio_hw->gpio_out & D_MASK)) {   /* compare with the latch itself; drive first, count after */
                     sio_hw->gpio_clr = D_MASK;
-                    sio_hw->gpio_set = (uint32_t)bus_peek(idx) << PIN_D0;
+                    sio_hw->gpio_set = v;
                     sio_hw->gpio_oe_set = D_MASK;
-                    /* addr_resample here is mostly address skew: a sample taken while the
-                     * lines were still changing (bench 2026-10-01: A7 a few ns behind
-                     * the rest, ~5 % of reads) followed by no clean idle sample before
-                     * OE_BUS fell. Served from the OE-low sample, ~165 ns later than a hit. */
-                    if (key != ~0u) { bus_stats.resample_key = key; bus_stats.resample_in = in; bus_stats.addr_resample++; bus_stats.addr_resample_bits |= (idx ^ ((key >> PIN_A0) & 0x3FFF)); }
-                    else bus_stats.late_precompute++;   /* back-to-back cycles (boot ROM copy): expected */
+                    /* A miss with a key is address skew: a sample taken while the lines
+                     * were still changing and no clean idle sample before OE_BUS fell.
+                     * The second look in the idle loop took this from ~5 % of reads to 0. */
+                    if (!hit) {
+                        if (key != ~0u) { bus_stats.resample_key = key; bus_stats.resample_in = in; bus_stats.addr_resample++; bus_stats.addr_resample_bits |= (idx ^ ((key >> PIN_A0) & 0x3FFF)); }
+                        else bus_stats.late_precompute++;   /* back-to-back cycles (boot ROM copy): expected */
+                    }
                 }
                 /* End of cycle = OE_BUS high on three samples running, so a
                  * spike on OE_BUS cannot clear the pads mid-cycle. Cheap guard:
@@ -134,6 +143,19 @@ BUS_HOT void bus_core1_main(void) {
 #define OEFW_MASK  (1u << PIN_OE_FW)
 #define DECODE_MASK ((0x3FFFu << PIN_A0) | RW_MASK | CTS_MASK | SCS_MASK | A14_MASK | A15_MASK)
 
+/* End of a cycle we drove: U10 off, then the pads driven low before release
+ * so no bits linger on them (RP2350-E9, see the Pico 2 loop; an A4 chip does
+ * not need it, an A2 does). Everything here delays the next back-to-back
+ * cycle, so there is no multi-sample E filter as on the Pico 2: bare Plus-W
+ * self-test 2026-10-01, burst response 352-366 ns before this macro and
+ * 425-454 ns with a three-sample filter and two clears, against 480. */
+#define PLUSW_READ_END() do { \
+        while (sio_hw->gpio_in & E_MASK) { } \
+        sio_hw->gpio_set = OEFW_MASK; \
+        sio_hw->gpio_clr = D_MASK; \
+        sio_hw->gpio_oe_clr = D_MASK; \
+    } while (0)
+
 /* Selected = /CTS or /SCS asserted, or the full 16-bit address is in bus_fw_mask. */
 static inline __attribute__((always_inline)) bool plusw_selected(uint32_t in) {
     if ((in & (CTS_MASK | SCS_MASK)) != (CTS_MASK | SCS_MASK)) return true;
@@ -146,7 +168,7 @@ static inline __attribute__((always_inline)) bool plusw_selected(uint32_t in) {
  * consistent with what we do; 2-3: only PIN_OE_FW enables it, which is what
  * lets $FF60-$FF7F respond). Reads take a fast path: the response (index,
  * data byte, hw/fw stat bucket) is precomputed from the Q-time sample while
- * E is still low, so the work after E rises is one compare and four pin
+ * E is still low, so the work after E rises is one compare and two pin
  * writes. Any decode-bit change caught at the E-rise resample falls through
  * to the full path below, which recomputes everything from the fresh
  * sample. */
@@ -165,25 +187,25 @@ BUS_HOT void bus_core1_main(void) {
         uint32_t in = sio_hw->gpio_in;
         bool sel = plusw_selected(in);                  /* head start from the Q-time sample */
         /* Precompute the read response during E low: after E rises the fast path
-         * below is one compare and four pin writes. Any change in the decode
+         * below is one compare and two pin writes. Any change in the decode
          * bits at E rise (late /CTS, address settling) falls through to the
          * full path, which recomputes everything from the fresh sample. */
         uint16_t idx = (in >> PIN_A0) & 0x3FFF;
         uint32_t dset = (uint32_t)bus_peek(idx) << PIN_D0;
         bool fast_read = sel && (in & RW_MASK) && bus_drive;
+        if (fast_read) {                                /* latch only: the outputs are off until E rises */
+            sio_hw->gpio_clr = D_MASK;
+            sio_hw->gpio_set = dset;
+        }
         while (!(sio_hw->gpio_in & E_MASK)) { }         /* wait E high */
         /* /CTS and /SCS are decoded downstream of the address (SAM/GIME) and need only
          * meet setup before E rises, so re-check them now; the Pico 2 bench needed the
          * same resample. */
         uint32_t in2 = sio_hw->gpio_in;
         if (fast_read && !((in ^ in2) & DECODE_MASK)) {
-            sio_hw->gpio_clr = D_MASK;
-            sio_hw->gpio_set = dset;
             sio_hw->gpio_oe_set = D_MASK;
             sio_hw->gpio_clr = OEFW_MASK;               /* U10 outward */
-            while (sio_hw->gpio_in & E_MASK) { }
-            sio_hw->gpio_set = OEFW_MASK;
-            sio_hw->gpio_oe_clr = D_MASK;
+            PLUSW_READ_END();
             bus_on_read_done(idx, time_us_32());
             if ((in & (CTS_MASK | SCS_MASK)) != (CTS_MASK | SCS_MASK)) bus_stats.hw_selected++; else bus_stats.fw_selected++;
             continue;
@@ -210,9 +232,7 @@ BUS_HOT void bus_core1_main(void) {
                 sio_hw->gpio_set = (uint32_t)bus_peek(idx) << PIN_D0;
                 sio_hw->gpio_oe_set = D_MASK;
                 sio_hw->gpio_clr = OEFW_MASK;           /* U10 outward */
-                while (sio_hw->gpio_in & E_MASK) { }
-                sio_hw->gpio_set = OEFW_MASK;
-                sio_hw->gpio_oe_clr = D_MASK;
+                PLUSW_READ_END();
             } else {
                 while (sio_hw->gpio_in & E_MASK) { }
             }
@@ -228,6 +248,14 @@ BUS_HOT void bus_core1_main(void) {
                 prev = d;
             }
             sio_hw->gpio_set = OEFW_MASK;
+            /* Discharge the pads U10 was driving (see the Pico 2 loop). With JP2 1-2
+             * U10 is enabled by OE_BUS, which rises a little after E falls: wait for
+             * it before driving against U10. */
+            while (!OE_HIGH()) { }
+            sio_hw->gpio_clr = D_MASK;
+            sio_hw->gpio_oe_set = D_MASK;
+            sio_hw->gpio_clr = D_MASK;
+            sio_hw->gpio_oe_clr = D_MASK;
             bus_on_write(idx, (uint8_t)((prev >> PIN_D0) & 0xFF), time_us_32());
         }
         /* Counted after servicing, not in the E-rise-to-data window: keeps
