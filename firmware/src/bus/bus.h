@@ -74,4 +74,6 @@ size_t bus_trace_copy(bus_trace_entry *out, size_t max);            /* oldest fi
 
 /* producer side (core1 loop and sim_bus): */
 void bus_on_read_done(uint16_t idx, uint32_t t_us);   /* runs hook for idx, traces (rw=1, data=bus_table[idx]), stats */
+void bus_run_read_hooks(uint16_t idx);                           /* BUS_HOT; first half of bus_on_read_done */
+void bus_record_read(uint16_t idx, uint8_t data, uint32_t t_us);  /* BUS_HOT; second half: trace + counters */
 void bus_on_write(uint16_t idx, uint8_t data, uint32_t t_us);   /* pushes write event, traces, stats */

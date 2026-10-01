@@ -15,6 +15,10 @@ PICOCO.DSK: PICOCO.BIN PICOCO.BAS
 	$(DECB) copy -2 -b PICOCO.BIN $@,PICOCO.BIN
 	$(DECB) copy -0 -a -t PICOCO.BAS $@,PICOCO.BAS
 
+# 8 KB cart test ROM for a CoCo without Extended BASIC (carttest.asm header)
+carttest.rom: carttest.asm
+	lwasm --raw -o $@ $<
+
 test: test_parse
 	./test_parse
 

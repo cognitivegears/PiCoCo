@@ -22,12 +22,14 @@ static ring_t to_coco, from_coco;
  * the push — one extra $FF41 poll of latency, no lost bytes. */
 BUS_HOT void becker_refresh(void) {
     uint8_t b;
+    /* Direct stores, not bus_set_read(): this runs inside the bus cycle on
+     * core1 and two calls cost ~30 clk_sys cycles of a CoCo 2's budget. */
     if (ring_peek(&to_coco, &b)) {
-        bus_set_read(BUS_IDX_BECKER_STATUS, 0x02);
-        bus_set_read(BUS_IDX_BECKER_DATA, b);
+        bus_table[BUS_IDX_BECKER_STATUS] = 0x02;
+        bus_table[BUS_IDX_BECKER_DATA] = b;
     } else {
-        bus_set_read(BUS_IDX_BECKER_STATUS, 0x00);
-        bus_set_read(BUS_IDX_BECKER_DATA, 0xFF);
+        bus_table[BUS_IDX_BECKER_STATUS] = 0x00;
+        bus_table[BUS_IDX_BECKER_DATA] = 0xFF;
     }
 }
 
@@ -35,14 +37,28 @@ static BUS_HOT void becker_status_hook(void) {
     becker_refresh();
 }
 
+/* Runs inside the bus cycle on core1. A CoCo 1/2 fetches its next opcode from
+ * the cart 1.12 us after this read, so the pop and the refresh are one pass
+ * over the ring here (bench 2026-10-01: ring_pop() then becker_refresh() was
+ * ~120 clk_sys cycles and the loop missed that fetch). A byte core0 pushes
+ * after the head was read shows up on the next $FF41 poll, as before. */
 static BUS_HOT void becker_data_hook(void) {
-    uint8_t b;
-    if (bus_table[BUS_IDX_BECKER_STATUS] == 0x02 && ring_pop(&to_coco, &b)) {
+    uint32_t t = to_coco.tail;
+    uint32_t h = __atomic_load_n(&to_coco.head, __ATOMIC_ACQUIRE);
+    if (bus_table[BUS_IDX_BECKER_STATUS] == 0x02 && h != t) {
+        t = (t + 1) & to_coco.mask;
+        __atomic_store_n(&to_coco.tail, t, __ATOMIC_RELEASE);
         becker_stats.reads++;
-    } else {
-        becker_stats.underrun++;
-        bus_trace_freeze_hot();              /* keep the cycles that led here; `trace run` thaws */
+        if (h != t) {                        /* status stays 0x02 */
+            bus_table[BUS_IDX_BECKER_DATA] = to_coco.buf[t];
+        } else {
+            bus_table[BUS_IDX_BECKER_STATUS] = 0x00;
+            bus_table[BUS_IDX_BECKER_DATA] = 0xFF;
+        }
+        return;
     }
+    becker_stats.underrun++;
+    bus_trace_freeze_hot();                  /* keep the cycles that led here; `trace run` thaws */
     becker_refresh();
 }
 

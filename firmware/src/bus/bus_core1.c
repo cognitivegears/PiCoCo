@@ -70,7 +70,8 @@ BUS_HOT void bus_core1_main(void) {
         bool rd = (in & RW_MASK) != 0;
         uint16_t idx = (in >> PIN_A0) & 0x3FFF;
         if (rd) {                                 /* CoCo read */
-            if (bus_drive) {
+            bool drv = bus_drive;
+            if (drv) {
                 /* The enable above already happened on a hit; now check what was
                  * enabled. The latch is only reloaded when address/RW change, so
                  * core0 changing the table, the ROM bank or bus_drive while the
@@ -91,6 +92,21 @@ BUS_HOT void bus_core1_main(void) {
                         else bus_stats.late_precompute++;   /* back-to-back cycles (boot ROM copy): expected */
                     }
                 }
+            }
+            /* Trace and counters run here, while the data is already on the bus
+             * and E is still high; the read hooks run after the release, in E
+             * low. A CoCo 1/2 executes its DOS ROM from the cart: the cycle
+             * after a Becker read is an opcode fetch from this same table,
+             * 1.12 us later (167 clk_sys cycles, OE_BUS low for ~80 of them).
+             * With hooks and trace both after the cycle (~160 cycles for a
+             * Becker read) the loop reached that fetch too late and the CPU
+             * read 0x00; with both inside the cycle they ran into the next
+             * one and held this byte on the bus (bench 2026-10-01, CoCo 2,
+             * coco/carttest.asm). Measured: trace + counters ~55 cycles, so
+             * they fit E high; a hook has E low, ~80, to itself. Keep hooks
+             * well under that. A CoCo 3 runs the DOS from RAM, never saw it. */
+            bus_record_read(idx, bus_peek(idx), time_us_32());
+            if (drv) {
                 /* End of cycle = OE_BUS high on three samples running, so a
                  * spike on OE_BUS cannot clear the pads mid-cycle. Cheap guard:
                  * oe_glitch has read 0 on the bench so far. */
@@ -106,7 +122,7 @@ BUS_HOT void bus_core1_main(void) {
                 while (!OE_HIGH()) { }
                 sio_hw->gpio_oe_clr = D_MASK;     /* bus_drive went false after the precompute enabled us */
             }
-            bus_on_read_done(idx, time_us_32());
+            bus_run_read_hooks(idx);
         } else {                                  /* CoCo write: use the last gpio_in sample taken
                                                     * while OE_BUS was still low, not the first one
                                                     * with OE_BUS high (U10 may have begun

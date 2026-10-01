@@ -5,3 +5,4 @@ PICOCO.DSK
 *.lst
 *.s
 test_parse
+carttest.rom

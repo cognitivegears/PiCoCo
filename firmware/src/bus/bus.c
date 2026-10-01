@@ -16,6 +16,7 @@ static volatile uint32_t wev_head, wev_tail;
 typedef struct { uint16_t idx; void (*fn)(void); } bus_hook_t;
 static bus_hook_t hooks[BUS_MAX_HOOKS];
 static int hook_count;
+static uint16_t hook_lo = 0xFFFF;   /* lowest hooked index */
 
 typedef struct { uint16_t idx; void (*fn)(uint8_t); } bus_whook_t;
 static bus_whook_t whooks[BUS_MAX_HOOKS];
@@ -32,6 +33,7 @@ void bus_init(void) {
     wev_head = 0;
     wev_tail = 0;
     hook_count = 0;
+    hook_lo = 0xFFFF;
     whook_count = 0;
     trace_pos = 0;
     trace_frozen = false;
@@ -72,6 +74,8 @@ void bus_set_read_range(uint16_t idx, const uint8_t *p, size_t n) {
 
 int bus_add_read_hook(uint16_t idx, void (*fn)(void)) {
     if (hook_count >= BUS_MAX_HOOKS) return -1;
+    for (int i = 0; i < hook_count; i++) if (hooks[i].idx == idx) return -1;   /* dispatch stops at the first match */
+    if (idx < hook_lo) hook_lo = idx;
     hooks[hook_count].idx = idx;
     hooks[hook_count].fn = fn;
     hook_count++;
@@ -100,7 +104,10 @@ void bus_trace_freeze(bool freeze) {
     if (!freeze) trace_freeze_after = false;
 }
 
-BUS_HOT void bus_trace_freeze_hot(void) {   /* core1-callable: stop the ring after the current cycle is recorded */
+/* core1-callable: stop the ring after the next record. From a read hook that
+ * is this cycle's record on the Plus-W and host (hooks run first) and the
+ * following cycle's on a Pico 2 (hooks run after the record, bus_core1.c). */
+BUS_HOT void bus_trace_freeze_hot(void) {
     trace_freeze_after = true;
 }
 
@@ -119,14 +126,26 @@ static BUS_HOT void trace_record(uint16_t idx, uint8_t rw, uint8_t data, uint32_
     if (trace_freeze_after) { trace_frozen = true; trace_freeze_after = false; }
 }
 
-BUS_HOT void bus_on_read_done(uint16_t idx, uint32_t t_us) {
-    uint8_t data = bus_peek(idx);   /* what the table holds, i.e. what would have been driven, even with bus drive off */
+/* The two halves of bus_on_read_done, for a loop that has to spread them over
+ * the cycle (Pico 2, see bus_core1.c). hook_lo keeps ROM fetches out of the
+ * hook scan: every hook so far sits at $FF40 and up. */
+BUS_HOT void bus_run_read_hooks(uint16_t idx) {
+    if (idx < hook_lo) return;
     for (int i = 0; i < hook_count; i++) {
-        if (hooks[i].idx == idx) hooks[i].fn();
+        if (hooks[i].idx == idx) { hooks[i].fn(); return; }   /* one hook per address */
     }
+}
+
+BUS_HOT void bus_record_read(uint16_t idx, uint8_t data, uint32_t t_us) {
     trace_record(idx, 1, data, t_us);
     bus_stats.cycles++;
     bus_stats.reads++;
+}
+
+BUS_HOT void bus_on_read_done(uint16_t idx, uint32_t t_us) {
+    uint8_t data = bus_peek(idx);   /* what the table holds, i.e. what would have been driven, even with bus drive off */
+    bus_run_read_hooks(idx);
+    bus_record_read(idx, data, t_us);
 }
 
 BUS_HOT void bus_on_write(uint16_t idx, uint8_t data, uint32_t t_us) {

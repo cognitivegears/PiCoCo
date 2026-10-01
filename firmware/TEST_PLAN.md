@@ -174,7 +174,7 @@ until run.
 | CoCo | Pico 2, bare | Pico 2, MPI | Plus-W, bare | Plus-W, MPI |
 |---|---|---|---|---|
 | CoCo 1 (`hdbdw3bck`) | | | | |
-| CoCo 2 (`hdbdw3bck`) | | | | |
+| CoCo 2 (`hdbdw3bck`) | electrical pass 2026-10-01 (section I); cart test ROM 55 min clean after the read-path fix (I.5); HDB-DOS not run, the 26-3026 has no ECB | | | |
 | CoCo 3, 0.89 MHz (`hdbdw3bck`) | | | | |
 | CoCo 3, 1.79 MHz (`hdbdw3bc3`) | | | | |
 
@@ -376,6 +376,138 @@ Bench CoCo 3 CPU: 6309  RAM: 2 MB
 | EOU boot after the read-path rework | 1 re-read in 1,888 sectors (was 80 in 1,966), `oe_glitch 0`, `addr_resample` 70,314 of 1.3 M reads, `underrun 52` (all the SDC probe) | | 2026-10-01 |
 | Re-sample before recompute (final build, 370603b) | EOU boot: 0 re-reads in ~1,880 sectors, `addr_resample 0` in 1.3 M reads, `oe_glitch 0`, `underrun 52` (the SDC probe) | | 2026-10-01 |
 | H.4.7 EOU over WiFi | n/a | | |
+
+## I. CoCo 2 (PCB v2.3.1 #1, Pico 2)
+
+First run on a machine that executes the DOS ROM straight from the cart:
+a CoCo 3 copies `$C000-$FEFF` to RAM once at boot, a CoCo 2 fetches every
+HDB-DOS opcode through U10 at 0.89 MHz. One wrong ROM read crashes instead
+of showing up as a retry. Bare slot only; the MPI rows stay in F.4.
+
+### I.0 Before the board goes in (USB only, no CoCo)
+
+The config saved after section H is wrong for a CoCo 2. Fix it first:
+
+1. `status`: note `rom next` and the `becker` mode.
+2. `becker native`. A saved `becker bridge` holds the CoCo at power-on
+   until CDC0 has a listener.
+3. `rom load hdbdw3bck.rom`. `hdbdw3bc3` pokes `$FFD9`, which on a CoCo 2 is
+   the SAM rate bit: 1.79 MHz on a machine that cannot run it.
+4. `dw mount 0 DINORUN.DSK`, `dw hdbdos on`, `bus drive on`, `save`,
+   `reboot`, `status` again: `rom now hdbdw3bck.rom`, `becker` native.
+5. Record the CoCo 2 in I.4: model number (26-3026/3027, 26-3127, 26-3134
+   ...), RAM (16K/64K), BASIC versions from the power-on banner without the
+   cart. Extended BASIC is required; 16K is enough for HDB-DOS but not for
+   the manager or DINORUN.
+6. Optional emulator pre-check, same ROM and disk:
+   `xroar -machine coco2bus -becker -rompath ~/.xroar/roms` against
+   `picoco-host` (`coco/README.md`).
+
+### I.1 Boot and ROM path
+
+CoCo off, board in, USB to the Mac, CoCo on.
+
+1. Banner `HDB-DOS 1.5 BECKER COCO 2` over `EXTENDED COLOR BASIC`.
+   `log dump` has `core1 up, halt released`. No banner: `status` first
+   (cycles moving? `oe_glitch`, `addr_resample`), then TP1/TP5 on the scope.
+2. `PRINT PEEK(&HC000);PEEK(&HC001)` → `68 75` ("DK"). On a CoCo 2 this
+   reads the cart itself.
+3. ROM checksum from BASIC, twice, same number both times:
+   `S=0:FOR A=&HC000 TO &HDFFF:S=S+PEEK(A):NEXT:PRINT S`
+   Expected `903857` (byte sum of `firmware/roms/hdbdw3bck.rom`). Takes
+   about a minute.
+4. `status`: `addr_resample 0`, `oe_glitch 0`. Record `late_precompute`
+   (4097 per boot on the CoCo 3 came from its ROM copy; expect a different
+   number here).
+
+### I.2 Becker and DriveWire
+
+1. `POKE &HFF42,65:PRINT PEEK(&HFF41);PEEK(&HFF41);PEEK(&HFF42)` under
+   `becker loop` → `0 2 65`; back to `becker native` after.
+2. `DIR`, `LOADM"DINORUN":EXEC`, a `SAVE` + power cycle + `DIR`.
+3. `DRIVE 3:RUN"PICOCO"`: manager draws in uppercase (no inverse-video
+   garbage), E/N/V/S/B keys work, BREAK exits. First real-hardware run of
+   the CoCo 2 path; only XRoar so far.
+4. `status` / `dw stats`: `crc_err 0`, `underrun 0`, `addr_resample 0`.
+5. Soak: `10 DIR:GOTO 10` for 10 minutes, counters unchanged.
+
+### I.3 Reset and power
+
+1. RESET button: Pico reboots, HDB-DOS banner returns.
+2. Cold power cycle with USB unplugged, five times: banner every time
+   (the /HALT hold against a different power-on reset circuit).
+3. `+5V` at the cart (TP or pad 39) with the board running: record it. The
+   CoCo 2 supply is the weakest of the three.
+
+Not in scope today: MPI, Plus-W board, NitrOS-9 Level 1 (needs 64K and a
+`nos96809l1...coco1_becker.dsk`), 1.79 MHz (CoCo 3 only).
+
+### I.4 Results
+
+CoCo 2 model: 26-3026  RAM: 16K (`PRINT MEM` 14631)  BASIC: Color BASIC 1.2  ECB: none
+
+No Extended BASIC, so HDB-DOS cannot start on this machine (only ECB looks
+for `DK` at `$C000`): I.1.1 is the plain Color BASIC banner, and I.2.2-I.2.5
+wait for an ECB ROM or another CoCo 2. Color BASIC has no `&H`; the decimal
+forms are `PEEK(49152)`, `FOR A=49152 TO 57343`, `POKE 65346,65`,
+`PEEK(65345)`, `PEEK(65346)`.
+
+| Check | Result | Date |
+|---|---|---|
+| I.0 config: bck ROM, native, DINORUN on drive 0 | done: firmware 1.3; saved config had `hdbdw3bc3.rom` (mode already native), now `rom now load hdbdw3bck.rom`, drive 0 DINORUN.DSK, drive 3 PICOCO.DSK, `bus drive on`, `dw hdbdos on` after reboot | 2026-10-01 |
+| I.1.1 banner, halt released | pass: `COLOR BASIC 1.2` banner and `OK` with the cart in (no HDB-DOS, see above); `core1 up, halt released` at 2.7 s | 2026-10-01 |
+| I.1.2 `PEEK(&HC000)` = 68 75 | pass: `68 75` four times. One earlier `68 196` not reproduced (49193 holds 196; taken as a typo) | 2026-10-01 |
+| I.1.3 ROM checksum x2 | pass: `903857` twice | 2026-10-01 |
+| I.1.4 `addr_resample` / `oe_glitch` / `late_precompute` | 0 / 0 / 0; `bus reads 8205 writes 2`, exactly the PEEKs and POKEs typed (Color BASIC never touches the cart on its own) | 2026-10-01 |
+| I.2.1 Becker loop `0 2 65` | pass | 2026-10-01 |
+| I.2.2 DIR / LOADM / SAVE | | |
+| I.2.3 manager | | |
+| I.2.5 10 min DIR soak | | |
+| I.3.1 RESET | pass: CoCo back to `OK`, Pico rebooted (uptime restarted, counters zeroed, `core1 up, halt released` at 2.7 s) | 2026-10-01 |
+| I.3.2 cold boot x5, no USB | pass: banner and `OK` five of five; `PEEK(49152)`/`(49153)` = `68 75` on cart power alone | 2026-10-01 |
+| I.3.3 +5V at the cart | pass: module pad 39 (VSYS, after D2) 4.8 V, TP6 3.27 V, measured against TP8. No +5V test point; finger 9 is inside the slot | 2026-10-01 |
+
+### I.5 Without Extended BASIC: the cart test ROM
+
+`coco/carttest.asm` (`make -C coco carttest.rom`, 8 KB) stands in for
+HDB-DOS on a machine with no ECB. It runs from the cart, so every opcode is
+a ROM read, and reads drive 0 LSN 0-629 with DriveWire OP_READ in a loop.
+
+1. Copy `carttest.rom` to the flash volume (`fs export` / `fs import`),
+   `rom load carttest.rom`. Never swap the ROM under a running test: power
+   the CoCo off first (RESET is a warm start and keeps scribbled RAM).
+2. Sum to expect, from the copy on the board (it changes with every SAVE):
+   `python3 -c "print('%04X' % (sum(open('/Volumes/PICOCO/DINORUN.DSK','rb').read()) & 0xFFFF))"`
+   while the volume is exported.
+3. `EXEC 49152`. One line per pass (~14 s): `PASS nnnn SUM ssss ERR eeee`.
+   A bad sector prints `Ecc llll` and the test carries on after a 0.5 s
+   quiet wait. Any key stops it at the end of a pass.
+4. `status` after: `underrun 0`, `oe_glitch 0`, `addr_resample 0`,
+   `dw stats` clean. `trace dump` is frozen at the first underrun.
+5. Emulator check of the ROM itself:
+   `xroar -machine coco2bus -no-extbas -becker -cart-rom carttest
+   -no-cart-autorun -type 'EXEC 49152\r'` against `picoco-host`.
+
+Restore `rom load hdbdw3bck.rom` + `save` afterwards.
+
+**Found with it (2026-10-01): back-to-back cart cycles after a Becker
+read.** With the firmware as of 2ee4b76 the test failed within seconds to
+minutes: the opcode fetched right after a `$FF41`/`$FF42` read came back
+as `0x00`, the CPU ran a 6-cycle direct-page instruction in its place
+(visible in `trace dump` as a 5-6 us gap after a 2-byte opcode), and from
+there either a phantom `$FF42` read or a crash. Cause: core1 ran the read
+hooks, trace and counters after the cycle, ~160 clk_sys cycles for a Becker
+read against a 167-cycle bus cycle. A CoCo 3 never has a cart cycle straight
+after a Becker read (HDB-DOS runs from RAM). Fix in `bus_core1.c`, `bus.c`
+and `becker.c`: trace and counters inside the cycle, hooks after the
+release, Becker hooks slimmed. Stock HDB-DOS on any CoCo 1/2 would have hit
+the same fault. The Plus-W loop still has the old order.
+
+| Check | Result | Date |
+|---|---|---|
+| XRoar, no ECB | pass: `PASS 0001/0002 SUM D8F6 ERR 0000` against the repo's DINORUN image | 2026-10-01 |
+| CoCo 2, firmware 2ee4b76 | fail: 11 clean passes then a desync; later runs failed on the first sector | 2026-10-01 |
+| CoCo 2, fixed read path | pass: 55 minutes, `PASS 00D1` (209 passes), `SUM 83CB ERR 0000` throughout. Board: 1.59 G bus cycles, `dw reads 132445` all clean, `becker reads 34302611 underrun 0 overrun 0`, `oe_glitch 0`, `addr_resample 0`, `late_precompute` 181 M (11 % of cycles served from the fresh sample, expected back to back) | 2026-10-01 |
 
 ## How to resume with Claude
 

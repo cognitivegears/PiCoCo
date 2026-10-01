@@ -391,7 +391,9 @@ Three tools to reach for when a step doesn't pass:
 
 - `trace dump [n]` piped through `tools/tracedump.py` (see above): the ring
   freezes by itself at the first Becker underrun or DriveWire CRC error, with
-  that cycle as its last entry; `trace run` thaws it. Reach for
+  that cycle as its last entry (on a Pico 2 build the faulting read is the
+  second-to-last entry: the read hooks run after the cycle is recorded);
+  `trace run` thaws it. Reach for
   this when a CoCo-side PEEK/POKE doesn't show the address or data you
   expect, mainly steps 4-7.
 - `dw capture on <file>` (see "dw capture" in the console commands) plus
