@@ -25,7 +25,7 @@ __attribute__((unused)) static int exec_cb(const char *line, char *msg, size_t c
     return exec_rc;
 }
 
-__attribute__((unused)) static void mkfile(const char *name, const char *head, size_t size) {
+static void mkfile(const char *name, const char *head, size_t size) {
     char p[600];
     snprintf(p, sizeof p, "%s/%s", g_dir, name);
     FILE *f = fopen(p, "wb");
@@ -162,9 +162,18 @@ TEST(half_poll_recovers_after_quiet) {
 
 TEST(reply_never_exceeds_cap) {
     setup();
+    for (int i = 0; i < 12; i++) {
+        char n[40];
+        snprintf(n, sizeof n, "%02d_abcdefghijklmnopqrstuvwx.rom", i);   /* 31 chars */
+        mkfile(n, "", 8192);
+    }
     ui_ctl(0xA5);
     poll(2, 0, 0, 0);
-    ASSERT(reply_ok() <= UI_REPLY_MAX);
+    int len = reply_ok();
+    ASSERT(len > 0 && len <= UI_REPLY_MAX);
+    char row[UI_COLS + 1];
+    ui_row_text(13, row);
+    ASSERT(row[1] != ' ');                  /* the list really drew */
 }
 
 int main(void) {
