@@ -69,6 +69,7 @@ static void gpio_setup(void) {
 }
 int main(void) {
     gpio_setup();
+    bool dbl_reset = plat_double_reset();
     tusb_init();
     log_init();
     bus_init(); device_reset(); rom_init(); becker_init(); device_init_all();
@@ -91,6 +92,10 @@ int main(void) {
     } else {
         LOG_E(LOG_M_FS, "fs mount failed");
     }
+    if (dbl_reset) {
+        console_boot_manager();
+        LOG_I(LOG_M_MAIN, "double reset: manager for this boot");
+    }
     /* becker net in the config: hold /HALT (already asserted by the boot
      * pull-up) until the server socket is up, at most NET_BOOT_HOLD_MS, so a
      * CoCo never sees a half-connected board. Fall back to native otherwise:
@@ -98,6 +103,7 @@ int main(void) {
     if (mode_get() == MODE_NET) {
         uint32_t t0 = plat_now_ms();
         while (net_state() != NET_UP && plat_now_ms() - t0 < NET_BOOT_HOLD_MS) {
+            plat_double_reset_tick(plat_now_ms());
             tud_task();
             net_poll(plat_now_ms());
             watchdog_update();
@@ -131,6 +137,7 @@ int main(void) {
     for (;;) {
         tud_task();
         uint32_t now = plat_now_ms();
+        plat_double_reset_tick(now);
         mode_pump(&g_dw, now);
         net_poll(now);
 #ifdef PIN_CART_DRV

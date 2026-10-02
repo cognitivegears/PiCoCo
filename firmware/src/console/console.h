@@ -12,6 +12,7 @@ void console_feed(const uint8_t *buf, size_t n);   /* accumulates up to 127 char
 int  console_exec(const char *line);               /* 0 ok (printed "ok"), -1 err (printed "err <msg>") */
 void console_set_boot_mode(picoco_mode m);         /* pending next-boot mode used by save */
 int  console_run_config(void);                      /* plat_cfg_read, exec each line; lines executed, or <0 */
+void console_boot_manager(void);   /* double RESET: load the built-in manager for this boot; rom_cmd (the saved choice) is untouched */
 
 /* DriveWire vserial command handler (vser_exec_fn): allowlisted commands only,
  * output captured into out. 0 ok, else DW4 result code with out = message. */

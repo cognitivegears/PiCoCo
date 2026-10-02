@@ -9,6 +9,7 @@
 #include "usb_descriptors.h"
 #include "ff.h"
 #include "crash.h"
+#include "pico/platform/sections.h"
 #include <stdio.h>
 
 uint32_t plat_now_us(void) { return time_us_32(); }
@@ -136,4 +137,20 @@ void plat_rtc_set(int64_t unix_secs) {
     struct timespec ts = { .tv_sec = (time_t)unix_secs, .tv_nsec = 0 };
     if (aon_timer_is_running()) aon_timer_set_time(&ts);
     else aon_timer_start(&ts);
+}
+
+/* A 32-bit magic value, so RAM noise at power-on cannot look like a hit. */
+#define DBL_MAGIC 0xD0B1E5E7u
+static uint32_t __uninitialized_ram(dbl_marker);
+static bool dbl_armed;
+
+bool plat_double_reset(void) {
+    bool hit = dbl_marker == DBL_MAGIC;
+    dbl_marker = hit ? 0 : DBL_MAGIC;            /* a third reset is a plain boot again */
+    dbl_armed = !hit;
+    return hit;
+}
+
+void plat_double_reset_tick(uint32_t now_ms) {
+    if (dbl_armed && now_ms >= PICOCO_DOUBLE_RESET_MS) { dbl_marker = 0; dbl_armed = false; }
 }

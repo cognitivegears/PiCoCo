@@ -315,6 +315,10 @@ static int cmd_trace(int argc, char **argv) {
     return cerr("usage: trace dump [n]|freeze|run");
 }
 
+void console_boot_manager(void) {
+    if (rom_load_mem(manager_rom, manager_rom_len) == 0) snprintf(rom_now, sizeof(rom_now), "load manager");
+}
+
 /* Spec 2026-10-01 s6.5: a board with no ROM choice saved boots the manager.
  * `rom off` is a choice; an absent line is not. */
 static void rom_fallback(void) {

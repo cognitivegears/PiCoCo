@@ -267,6 +267,10 @@ then `save` once. A config that has a `rom load ...` line is unaffected. On a
 CoCo 3 the manager cannot launch anything yet (it shows `COCO 3: NOT YET`); set
 a ROM from the USB console (`rom load <file>`, `save`).
 
+Press RESET twice within 3 seconds to load the manager for that boot only; the
+saved ROM is unchanged. On a machine without Extended BASIC then type
+`EXEC 49154`. The boot log shows `double reset: manager for this boot`.
+
 `time` now also prints `clock kept|lost`, showing whether the RP2350's
 always-on timer carried the clock across the last `/RESET` (see
 `docs/superpowers/specs/2026-09-23-coco-manager-design.md` §4.5).

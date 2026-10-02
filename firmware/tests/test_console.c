@@ -762,6 +762,31 @@ TEST(net_remote_allowed) {
     mode_set(MODE_NATIVE);
 }
 
+/* Review Focus 4: a double RESET loads the manager for this boot and leaves
+ * the saved ROM choice alone. */
+TEST(boot_manager_is_one_shot) {
+    setup();
+    console_exec("rom pattern");
+    console_exec("save");
+    ASSERT(console_run_config() >= 0);
+    console_boot_manager();
+    ASSERT_EQ(bus_table[0], 'D');
+    ASSERT_EQ(bus_table[1], 'K');
+    outn = 0;
+    console_exec("status");
+    ASSERT(strstr(out, "rom now load manager"));
+    ASSERT(strstr(out, "rom next pattern"));
+    ASSERT(console_run_config() >= 0);          /* the next boot: the saved choice again */
+    ASSERT_EQ(bus_table[0x10], 0x10);
+}
+
+/* Review Focus 3: the host platform never reports a double reset. */
+TEST(host_never_double_resets) {
+    ASSERT(!plat_double_reset());
+    plat_double_reset_tick(10000);
+    ASSERT(!plat_double_reset());
+}
+
 TEST(fallback_keeps_net_on_save) {
     setup();
     console_set_boot_mode(MODE_NET);
@@ -836,5 +861,7 @@ int main(void) {
     RUN(net_tz_config_and_save);
     RUN(net_remote_allowed);
     RUN(fallback_keeps_net_on_save);
+    RUN(boot_manager_is_one_shot);
+    RUN(host_never_double_resets);
     TEST_MAIN_END
 }
