@@ -336,3 +336,283 @@ No tuning was needed. The first build passed.
   select-gap variant (it needs a select bit in the TX word, for example by
   shrinking `post` to 6 bits) and write-data checks once write capture
   exists.
+
+## Part 3: helper-flag trigger
+
+The question: moving the select decision into a helper state machine lets one
+read program serve both boards. On the Plus-W, OE_BUS (GP40) is outside
+PIO0's GPIO window, but /CTS (GP24), /SCS (GP25) and E (GP26) are inside it.
+What does that cost on the read path, alone and combined with enabling the
+outputs only after the pull?
+
+Commit: `a354b38`. Everything below is from the same bare Pico 2, measured with
+`bus selftest fast`, and `bus cycles 0` was confirmed before every run.
+
+### What was built
+
+The read program and the helper are both in `firmware/src/bus/bus_engine.pio`.
+
+```
+; read SM, variation A (bus_engine): enable before the pull
+top:  mov isr, x
+trig: wait 1 irq 0          ; patched at load to `wait 0 gpio 26` for the pin trigger
+      jmp pin rd
+      wait 1 gpio 26
+      jmp top
+rd:   in pins, 14
+      push noblock
+      mov pindirs, ~null
+      pull block
+      out pins, 8
+      wait 1 gpio 26
+      mov pins, null [1]
+      mov pindirs, null
+
+; read SM, variation B (bus_engine_late): rd = in pins,14 / push noblock / pull block /
+;                                        out pins,8 / mov pindirs,~null / (rest as A)
+
+; helper (bus_sel_p2), PIO0, no pins of its own
+.wrap_target
+      wait 1 gpio 26        ; starts here: a start while OE_BUS is low skips that cycle
+fall: wait 0 gpio 26
+      irq set 0
+flag1: irq set 1            ; patched to a nop for the one-flag variant
+.wrap
+```
+
+How the flag behaves:
+
+- The helper raises the flag once per OE_BUS-low cycle, for reads and writes
+  alike.
+- The read SM's `wait 1 irq 0` clears the flag, and it does so on both its
+  read and write branches. A write therefore never leaves the flag set.
+- Unselected cycles never raise it.
+- Flag 1 has no consumer here, so it simply stays set. An event SM will have to
+  consume it every cycle, or events merge silently, because a flag is a bit and
+  not a count.
+
+`engine_start` handles a restart as follows:
+
+1. Wait for RX to be empty and DMA B to be idle.
+2. Clear the FIFOs.
+3. Restart both SMs.
+4. Clear IRQ flags 0 and 1.
+5. Enable the read SM and the helper with one register write.
+
+The `naive` knob starts the helper at `fall` instead and does not clear the
+flags. That is the coordinator's form, `wait 0` / `irq set` / `wait 1`.
+
+The console knobs are `bus engine order a|b` and
+`bus engine trig pin|irq1|irq2|naive`. The build is left on **B with the pin
+trigger**.
+
+### Test additions (fake6809_fast)
+
+- The TX word gained an unselected bit (bit 17). e shrank to 2 bits, since only
+  0 and 3 are used. An unselected cycle keeps OE_BUS high for the whole "low"
+  phase and is 1 clk longer.
+- A **gaps** burst: `k%4` = read, unselected, read, write. It covers
+  write->read, read->gap, gap->read and write->read->gap.
+- The **mixed** burst (every third cycle a write) stays.
+- A **restart** burst: the gaps pattern with `bus_engine_rebase()` called every
+  50 us under it. That is 46 restarts, each landing at an arbitrary point in a
+  cycle.
+- Mismatches are now split into four classes:
+  - `spurious`: nonzero on a cycle that must not be driven, a write or an
+    unselected cycle.
+  - `wrong`: a nonzero byte that is not the expected one, which indicates a
+    desync.
+  - `zero`: 0x00 on a read, which only means the cycle was missed.
+  - `stale`.
+
+  The restart burst passes with zero `spurious` and zero `wrong`. Each restart
+  may lose one or two cycles as `zero`.
+
+### Found and fixed: the stop path drove the bus for about 1 us
+
+The first restart run, with variation A and the pin trigger (no helper
+involved), showed:
+
+```
+fast 1.79MHz restarts 46 under a gaps burst: spurious 9 wrong 0 (zero 135 = cycles lost to a restart)
+```
+
+`engine_stop` released D0-D7 with `pio_sm_set_pins_with_mask()` and
+`pio_sm_set_pindirs_with_mask()`. Those go pin by pin through exec and pinctrl
+rewrites. A byte being driven at the moment of the stop therefore stayed on
+the pads for about 1 us, into the following unselected and write cycles. On
+the board that would put the Pico's pads against U10's write drive.
+
+The fix is two direct execs on the stopped SM: `mov pins, null`, then
+`mov pindirs, null`, a few clk in total. After the fix, every restart run
+reads `spurious 0 wrong 0`. The same issue affected `bus_engine_rebase()` on
+the Part 2 build.
+
+### Results
+
+Each configuration ran 2 plain runs and 2 runs with core0 stress. The naive
+form ran 2 plain runs per order. That is 28 runs in all, and every one passed.
+
+| variation | response_clk 1.79 MHz | response_clk 0.89 MHz | margin vs 36 clk (1.79) |
+|---|---|---|---|
+| A, OE_BUS pin (Part 2 engine) | 19-20 (126-133 ns) | 19-20 | 16 clk (107 ns) |
+| A, helper, 1 flag | 21 (140 ns) | 22 | 15 clk (100 ns) |
+| **A, helper, 2 flags (Variation A)** | **21 (140 ns)** | **22** | **15 clk (100 ns)** |
+| B, OE_BUS pin | 20 (133 ns) | 20-21 | 16 clk (107 ns) |
+| B, helper, 1 flag | 22 (146 ns) | 23 | 14 clk (93 ns) |
+| **B, helper, 2 flags (Variation B)** | **22 (146 ns)** | **23** | **14 clk (93 ns)** |
+| A / B, helper 2 flags, naive start | 21 / 22 | 22 / 23 | same |
+
+Core0 stress changed none of these numbers. In every run, all S=36 bursts read
+0/4096. That covers 252 bursts: the 5 realistic ones, mixed, gaps, gaps after
+the restarts, and drive-off, in each of the 28 runs. Every restart burst read
+`spurious 0 wrong 0`, with 54-67 cycles lost as `zero`. `release_clk` was 5 in
+every run.
+
+- **The helper costs 2 clk.** One clk is the helper's `irq set` after its
+  `wait` completes. The other is the flag reaching the read SM's `wait irq`.
+- **The second flag costs 0 clk** on the read path. It is raised one
+  instruction after flag 0, which the read SM has already seen.
+- **Enabling the outputs after the pull (B) costs 1 clk** against A, with
+  either trigger. That is one instruction, `mov pindirs, ~null`, after `out`.
+  Part 2's 21 clk was the two-instruction `mov osr`/`out pindirs` form.
+- With the helper, 0.89 MHz consistently reads 1 clk later than 1.79 MHz. I
+  assume this is a phase effect between the helper, the flag and the fake's
+  clocking, but it is unexplained and within 1 clk.
+
+Raw lines, variation A (helper, 2 flags):
+
+```
+bus cycles 0 reads 0 writes 0 write_overrun 0
+fast engine: PIO0 + DMA, input sync bypass on, DMA bus priority on, order A (enable before pull), trigger helper 2 flags
+fast 1.79MHz S=36 (240 ns): mismatches 0/4096 (zero 0 stale 0 spurious 0 wrong 0) rel_nonzero 4096 lost 0   (x5)
+fast 1.79MHz mixed r/w S=36 (240 ns): mismatches 0/4096 (zero 0 stale 0 spurious 0 wrong 0) rel_nonzero 2731 lost 0
+fast 1.79MHz gaps r/w/unsel S=36 (240 ns): mismatches 0/4096 (zero 0 stale 0 spurious 0 wrong 0) rel_nonzero 2048 lost 0
+fast 1.79MHz restarts 46 under a gaps burst: spurious 0 wrong 0 (zero 64 = cycles lost to a restart)
+fast 1.79MHz gaps after restarts S=36 (240 ns): mismatches 0/4096 (zero 0 stale 0 spurious 0 wrong 0) rel_nonzero 2048 lost 0
+fast 1.79MHz drive off S=36 (240 ns): mismatches 0/4096 (zero 0 stale 0 spurious 0 wrong 0) rel_nonzero 0 lost 0
+fast 1.79MHz sweep 19:4096 20:4096 21:0 22:0 ... 40:0
+fast 1.79MHz response_clk 21 (140 ns after OE_BUS fell)
+fast 1.79MHz release_clk 5 (D0-D7 low on every cycle 5 clk after OE_BUS rose; -1 = not by 14)
+fast 0.89MHz S=72 (480 ns): mismatches 0/4096 (zero 0 stale 0 spurious 0 wrong 0) rel_nonzero 4096 lost 0
+fast 0.89MHz sweep 19:4096 20:4096 21:1 22:0 ... 82:0
+fast 0.89MHz response_clk 22 (146 ns after OE_BUS fell)
+selftest fast pass
+```
+
+Raw lines, variation B (helper, 2 flags):
+
+```
+fast engine: PIO0 + DMA, input sync bypass on, DMA bus priority on, order B (enable after pull), trigger helper 2 flags
+fast 1.79MHz S=36 (240 ns): mismatches 0/4096 (zero 0 stale 0 spurious 0 wrong 0) rel_nonzero 4096 lost 0   (x5)
+fast 1.79MHz mixed r/w S=36 (240 ns): mismatches 0/4096 (zero 0 stale 0 spurious 0 wrong 0) rel_nonzero 2731 lost 0
+fast 1.79MHz gaps r/w/unsel S=36 (240 ns): mismatches 0/4096 (zero 0 stale 0 spurious 0 wrong 0) rel_nonzero 2048 lost 0
+fast 1.79MHz restarts 46 under a gaps burst: spurious 0 wrong 0 (zero 67 = cycles lost to a restart)
+fast 1.79MHz gaps after restarts S=36 (240 ns): mismatches 0/4096 (zero 0 stale 0 spurious 0 wrong 0) rel_nonzero 2048 lost 0
+fast 1.79MHz drive off S=36 (240 ns): mismatches 0/4096 (zero 0 stale 0 spurious 0 wrong 0) rel_nonzero 0 lost 0
+fast 1.79MHz sweep 19:4096 20:4096 21:4096 22:0 23:0 ... 40:0
+fast 1.79MHz response_clk 22 (146 ns after OE_BUS fell)
+fast 1.79MHz release_clk 5 (D0-D7 low on every cycle 5 clk after OE_BUS rose; -1 = not by 14)
+fast 0.89MHz S=72 (480 ns): mismatches 0/4096 (zero 0 stale 0 spurious 0 wrong 0) rel_nonzero 4096 lost 0
+fast 0.89MHz sweep 19:4096 20:4096 21:4096 22:1 23:0 ... 82:0
+fast 0.89MHz response_clk 23 (153 ns after OE_BUS fell)
+selftest fast pass
+```
+
+B with the OE_BUS pin trigger, as left on the module:
+
+```
+fast engine: PIO0 + DMA, input sync bypass on, DMA bus priority on, order B (enable after pull), trigger OE_BUS pin
+fast 1.79MHz sweep 19:4096 20:0 21:0 ... 40:0
+fast 1.79MHz response_clk 20 (133 ns after OE_BUS fell)
+fast 0.89MHz sweep 19:4096 20:0 ... 82:0
+fast 0.89MHz response_clk 20 (133 ns after OE_BUS fell)
+selftest fast pass
+```
+
+### Flag correctness
+
+No stale or missed flag was seen in any of these cases:
+
+- write followed immediately by a read (mixed and gaps bursts);
+- an unselected gap before and after a read;
+- write -> read -> gap;
+- 46 restarts landing mid-cycle, including the naive start with no flag clear.
+
+Writes and gaps were never driven: `spurious 0` everywhere, and in the mixed
+burst `rel_nonzero` equals the read count. The naive start did not fail
+either. Because the stop and start each act on both SMs with one register
+write, the helper cannot raise a flag while the read SM is stopped. The
+rotated helper (beginning at `wait 1`) plus clearing the flags at start is
+still the safe form, since it skips a cycle already in progress instead of
+serving it late. I recommend keeping it.
+
+### Recommendation
+
+Keep one read program, with B ordering, and patch its first `wait` at load:
+
+- **Pico 2:** `wait 0 gpio 26`, the OE_BUS pin directly. 20 clk, margin
+  16 clk (107 ns). No helper SM, and the event SM can wait on the same pin.
+- **Plus-W:** `wait 1 irq 0` from a helper. 22 clk on this measurement,
+  margin 14 clk (93 ns), plus whatever its select decode adds (see below).
+
+The helper's 2 clk is affordable, but on the Pico 2 it buys nothing: the
+program has to be patched per board anyway, because the end-of-cycle wait has
+the opposite polarity on the two boards (OE_BUS high on the Pico 2, E low on
+the Plus-W). The helper would also cost one of PIO0's four SMs. B costs 1 clk
+over A and means a stalled DMA leaves D0-D7 released, so take it on both
+boards.
+
+### Plus-W helper sketch (not built; no Plus-W attached)
+
+The coordinator's sketch: two SMs, `jmp_pin` = /CTS (GP24) and /SCS (GP25)
+respectively.
+
+```
+.wrap_target
+    wait 1 gpio 26          ; E high
+    jmp pin skip            ; this select high: not ours
+    irq set 0
+    irq set 1
+skip:
+    wait 0 gpio 26          ; E low
+.wrap
+```
+
+Read SM end-of-cycle: `wait 0 gpio 26` (E falls). Problems with this sketch:
+
+1. **SM budget.** Two helpers, the read SM and the event SM take all four
+   PIO0 SMs, leaving nothing for a separate write-capture or bank SM. One
+   helper can test both selects instead. RP2350's `SHIFTCTRL.IN_COUNT` masks
+   `mov x, pins`: with in_base GP24 and in_count 2, and Y preloaded to 3,
+   `wait 1 gpio 26; mov x, pins; jmp x!=y sel` covers both selects at about
+   +1 clk over `jmp pin`. Because /CTS and /SCS are never both low, merged
+   flags are never ambiguous in either form.
+2. **Late /CTS.** It samples /CTS and /SCS 1-2 clk after E rises. The current
+   Plus-W CPU loop resamples at E rise precisely because the selects can
+   settle late (bench), so this sketch can miss a selected cycle and the CPU
+   reads 0x00. A robust helper loops on the selects while E is high, which
+   costs clk and logic. An alternative avoids this and the SM budget:
+   - Put the helper in **PIO1 with GPIOBASE = 16**, so GP40 is in its window.
+   - It waits on the hardware OE_BUS (U15, already E-qualified and late-select
+     safe): `wait 0 gpio 40`.
+   - It sets PIO0's flag with **`irq set 0 prev`**. PIO v1 IRQ index modes
+     reach the neighbouring block.
+
+   The latency of that cross-block flag is unmeasured. This route needs
+   JP2 1-2.
+3. **Writes.** The helper raises the flag for writes as well. The read SM's
+   `jmp pin` on R/W keeps writes undriven, as on the Pico 2, and the write
+   branch consumes the flag. With **JP2 2-3**, though, U10's /OE is PIN_OE_FW
+   (GP31). The read SM would have to side-set GP31 low on both its read and
+   write branches, and high at the end of the cycle. GP31 is in the window, so
+   that is possible, but it is new work and touches both branches.
+4. **Firmware-decoded `$FF60-$FF7F`** (`bus_fw_mask`). Neither /CTS nor /SCS
+   asserts for these addresses, so no select helper sees them. Serving them
+   needs a full 16-bit address match against a per-address mask, which is not
+   practical in PIO. That feature stays on a CPU path or is dropped from the
+   PIO build.
+5. **End-of-cycle polarity.** It differs between boards (see Recommendation).
+   It is one patched instruction.
+6. **Flag 1.** The event SM must consume flag 1 within the same cycle, or two
+   cycles' events merge into one.
