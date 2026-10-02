@@ -88,6 +88,7 @@ core0, and reaches the CoCo through the existing Becker rings.
 | Extended BASIC | `EX` at `$8000` |
 | Disk BASIC live | Entry flag from the loader (a DOS ROM cannot be probed once it is swapped out) |
 | CoCo 3 | `PEEK($FFFE) = $8C`, as `PICOCO.BAS` does today |
+| CoCo 3 RAM | Capability bits 6-7 (only with the CoCo 3 bit): `00` 128K, `01` 512K, `10` 1 MB, `11` 2 MB. MMU block numbers wrap at the RAM fitted, so the stub tests whether block `$00` is the same RAM as `$30`, then `$40`, then `$80`, through slot 2 (`$FFA2`, `$4000`-`$5FFF`: none of the stub's code, stack or frame). Every byte touched and `$FFA2` are restored |
 
 On a CoCo 3 the stub forces the 32-column compatibility screen first.
 
@@ -108,6 +109,10 @@ On a CoCo 3 the stub forces the 32-column compatibility screen first.
 | `18` | CoCo 3 warm restart | Selects 0.89 MHz, jumps to `$8C1B` |
 | `15` | Load sectors and jump: drive (1), LSN (3), count (1), load address (2), jump address (2) | NitrOS-9 boot track; plain DriveWire OP_READ |
 | `00` | End of list | Stub goes back to reading the keyboard |
+
+A leave action (`10`, `11`, `13`, `16`-`18`) is always preceded by a clear
+(`02`) and no text, so the launched program starts on a blank screen; the
+stub's clear also points BASIC's cursor (CURPOS, `$88`-`$89`) at the top-left.
 
 Before carrying out any of `10`-`15` the stub ends the UI session (section
 5.1), so the Becker port is back with the DriveWire server, bridge or net

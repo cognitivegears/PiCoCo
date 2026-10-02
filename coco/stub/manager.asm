@@ -57,7 +57,8 @@ KEYW    pshs y
         clr FLAGS,y
         bra MAIN
 
-* A = capability bits: 0 32K (a $7FFF write must take and not mirror $3FFF), 1 64K, 2 Extended BASIC, 4 CoCo 3
+* A = capability bits: 0 32K (a $7FFF write must take and not mirror $3FFF), 1 64K, 2 Extended BASIC,
+* 4 CoCo 3, 6-7 CoCo 3 RAM size (MEM3: 00 128K, 01 512K, 10 1 MB, 11 2 MB; 0 unless bit 4)
 DETECT  clrb
         ldx $8000
         cmpx #$4558
@@ -67,6 +68,10 @@ DET1    lda $FFFE
         cmpa #$8C
         bne DET2
         orb #$12                CoCo 3, and 64K with it
+        pshs b
+        jsr MEM3
+        ora ,s+
+        tfr a,b
 DET2    pshs b
         lda $7FFF
         ldb $3FFF
@@ -85,6 +90,71 @@ DET2N   coma
         sta $7FFF               put back whatever we changed
         puls b
 DET3    tfr b,a
+        rts
+
+* CoCo 3 RAM size, in caps bits 6-7: A = $00 128K, $40 512K, $80 1 MB, $C0 2 MB.
+* MMU block numbers wrap at the amount of RAM fitted, so block $00 is the same
+* RAM as $30 on 128K, as $40 on 512K, as $80 on 1 MB. Tested through slot 2
+* ($4000-$5FFF, register $FFA2), which holds none of our code, stack or frame.
+MEM3    lda $FFA2
+        pshs a                  what was mapped there; put back at the end
+        ldb #$30
+        bsr SAME
+        beq MEM128
+        ldb #$40
+        bsr SAME
+        beq MEM512
+        ldb #$80
+        bsr SAME
+        beq MEM1M
+        lda #$C0
+        bra MEM3X
+MEM1M   lda #$80
+        bra MEM3X
+MEM512  lda #$40
+        bra MEM3X
+MEM128  clra
+MEM3X   puls b
+        stb $FFA2
+        rts
+
+* Z set if MMU blocks $00 and B are the same RAM. Restores both bytes it
+* touches (block B's first, so a shared cell ends with its original value).
+SAME    stb ,-s                 S: blk
+        clra
+        sta $FFA2
+        lda $4000
+        sta ,-s                 S: byte0, blk
+        lda 1,s
+        sta $FFA2
+        lda $4000
+        sta ,-s                 S: byteB, byte0, blk
+        ldb #$5A
+        bsr PROBE
+        bne SAME9
+        ldb #$A5
+        bsr PROBE
+SAME9   tfr cc,b                keep the answer (and the interrupt masks) while restoring
+        lda 2,s
+        sta $FFA2
+        lda ,s
+        sta $4000
+        clra
+        sta $FFA2
+        lda 1,s
+        sta $4000
+        leas 3,s
+        tfr b,cc
+        rts
+
+* Write B to block blk, then see whether block $00 shows it. Z set if it does.
+* Called from SAME: the stack is return (2), byteB, byte0, blk.
+PROBE   lda 4,s
+        sta $FFA2
+        stb $4000
+        clra
+        sta $FFA2
+        cmpb $4000
         rts
 
 * discard whatever the Pico had queued
@@ -224,6 +294,7 @@ ATEXT1  cmpu #SCREEN+$0200
 
 * 02: clear to spaces (screen code $60)
 ACLR    ldu #SCREEN
+        stu $88                 BASIC's CURPOS: a launched program prints from the top-left
         lda #$60
 ACLR1   sta ,u+
         cmpu #SCREEN+$0200

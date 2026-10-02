@@ -16,6 +16,7 @@
 #define UI_CAP_ECB   0x04
 #define UI_CAP_DOS   0x08
 #define UI_CAP_COCO3 0x10
+#define UI_CAP_MEM3_MASK 0xC0       /* CoCo 3 RAM, only with UI_CAP_COCO3: 00 128K, 01 512K, 10 1 MB, 11 2 MB */
 
 #define UI_ACT_END   0x00
 #define UI_ACT_TEXT  0x01           /* offset hi, lo, length, screen codes */

@@ -115,15 +115,22 @@ TEST(caps_shown) {
     ASSERT(strstr(row, "ECB") != NULL);
 }
 
-TEST(coco3_header_has_no_ram_figure) {
-    setup();
-    ui_ctl(0xA5);
-    poll(2, 0, UI_CAP_64K | UI_CAP_32K | UI_CAP_ECB | UI_CAP_COCO3, 0);
-    char row[UI_COLS + 1];
-    ui_row_text(0, row);
-    ASSERT(strstr(row, "COCO 3") != NULL);
-    ASSERT(strstr(row, "K ") == NULL);
-    ASSERT(strstr(row, "ECB") == NULL);
+TEST(coco3_header_shows_ram_size) {
+    static const struct { int bits; const char *want; } t[] = {
+        { 0x00, "PICOCO  COCO 3 128K" }, { 0x40, "PICOCO  COCO 3 512K" },
+        { 0x80, "PICOCO  COCO 3 1M" },   { 0xC0, "PICOCO  COCO 3 2M" },
+    };
+    for (int i = 0; i < 4; i++) {
+        setup();
+        ui_ctl(0xA5);
+        poll(2, 0, UI_CAP_COCO3 | UI_CAP_ECB | UI_CAP_64K | UI_CAP_32K | t[i].bits, 0);
+        char row[UI_COLS + 1];
+        ui_row_text(0, row);
+        for (int k = UI_COLS - 1; k >= 0 && row[k] == ' '; k--) row[k] = '\0';
+        ASSERT(strcmp(row, t[i].want) == 0);
+        ASSERT(strstr(row, "64K") == NULL);
+        ASSERT(strstr(row, "ECB") == NULL);
+    }
 }
 
 TEST(second_poll_sends_only_changes) {
@@ -349,6 +356,30 @@ TEST(coco3_break_uses_the_coco3_warm_restart) {
     ASSERT_EQ(tx[0], UI_GO_OK);
 }
 
+/* A leave action is preceded by a clear and nothing else is drawn. */
+static void expect_clear_then(uint8_t act) {
+    int len = reply_ok();
+    ASSERT_EQ(len, 3);
+    ASSERT_EQ(tx[2], UI_ACT_CLEAR);
+    ASSERT_EQ(tx[3], act);
+    ASSERT_EQ(tx[4], UI_ACT_END);
+}
+
+TEST(launch_reply_clears_the_screen) {
+    setup();
+    mkfile("game.rom", "\x7E\xC0\x10", 8192);
+    open_with(UI_CAP_32K | UI_CAP_ECB);
+    poll(0, UI_KEY_ENTER, -1, 10);
+    expect_clear_then(UI_ACT_JUMP);
+}
+
+TEST(break_reply_clears_the_screen) {
+    setup();
+    open_with(UI_CAP_32K | UI_CAP_ECB);
+    poll(0, UI_KEY_BREAK, -1, 10);
+    expect_clear_then(UI_ACT_WARM);
+}
+
 /* The CoCo 1/2 codes are unchanged. */
 TEST(coco2_codes_unchanged) {
     setup();
@@ -437,7 +468,9 @@ int main(void) {
     RUN(inactive_until_ctl);
     RUN(first_poll_clears_and_draws);
     RUN(caps_shown);
-    RUN(coco3_header_has_no_ram_figure);
+    RUN(coco3_header_shows_ram_size);
+    RUN(launch_reply_clears_the_screen);
+    RUN(break_reply_clears_the_screen);
     RUN(second_poll_sends_only_changes);
     RUN(resend_repeats_last_reply);
     RUN(bad_poll_gets_no_reply);

@@ -82,8 +82,9 @@ static void load_list(void) {
 static void draw(void) {
     memset(scr, 0x60, sizeof scr);
     char line[UI_COLS + 1];
-    if (caps & UI_CAP_COCO3)    /* the stub only knows "64K or more" there, and every CoCo 3 has ECB */
-        snprintf(line, sizeof line, "PICOCO  COCO 3");
+    if (caps & UI_CAP_COCO3)    /* every CoCo 3 has ECB; the size is in bits 6-7 */
+        snprintf(line, sizeof line, "PICOCO  COCO 3 %s",
+                 (const char *[]){ "128K", "512K", "1M", "2M" }[(caps & UI_CAP_MEM3_MASK) >> 6]);
     else
         snprintf(line, sizeof line, "PICOCO  %s %s",
                  caps & UI_CAP_64K ? "64K" : caps & UI_CAP_32K ? "32K" : "16K",
@@ -136,8 +137,9 @@ static void on_poll(uint8_t flags, uint8_t key, uint8_t c) {
     uint8_t act = 0;
     if (first) { caps = c; load_list(); }
     else { memcpy(ack, sent, sizeof ack); act = on_key(key); }   /* a new poll acknowledges the last reply */
-    draw();
-    build_reply(first, act);
+    if (act) memset(scr, 0x60, sizeof scr);   /* leaving: the reply clears the screen, nothing to draw */
+    else draw();
+    build_reply(first || act, act);
 }
 
 static void on_go(void);              /* Task 2 */
