@@ -757,6 +757,11 @@ hand debug.
 
 ### 9.1 Deferred to v2.4
 
+- **A14/A15 to the module on a Pico 2 build (required).** Today they reach
+  only the Plus-W pad grid. Without A14 a 32K Program Pak cannot work
+  (bench 2026-10-02: Silpheed, Super Pitfall). Options and what it breaks:
+  `docs/ADDITIONAL_ROADMAP.md` section 9.
+
 Hardware items from the 2026-09-19 quality reviews that need a re-place
 or a bench MPI first, so they wait for the next spin rather than this
 order:

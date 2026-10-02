@@ -368,3 +368,42 @@ Spec: `docs/superpowers/specs/2026-10-01-rom-manager-design.md` section 10.
   while it pulses, because the FIRQ entry is `$C000`.
 - Loading `.BIN` and BASIC programs from a disk image without a DOS.
 - Extended BASIC served at `$8000` from a Plus-W (`RP2350B_IDEAS.md` §15).
+
+## 9. A14 (and A15) must reach the module on every build (hardware, required)
+
+**Limitation today.** A Pico 2 build sees A0-A13 only. All 26 header GPIOs
+are spent (`CLAUDE.md` "Pico 2 (module) only exposes 26 GPIO"), so A14 and
+A15 are buffered by U13 but land on Plus-W pad-grid pins a Pico 2 does not
+have. The firmware therefore cannot tell `$8000-$BFFF` from `$C000-$FEFF`.
+
+**What it breaks (bench 2026-10-02, CoCo 3).**
+- 32K Program Paks. Silpheed and Super Pitfall load but show corrupt
+  graphics: a CoCo 3 maps a 32K pak at `$8000-$FEFF` and the two halves are
+  told apart by A14. The firmware treats a 32K file as a `$FF40`-banked
+  image, which these paks are not.
+- Serving Extended BASIC at `$8000` (`RP2350B_IDEAS.md` section 15), for the
+  same reason plus A15.
+- Any later feature that decodes outside the `/CTS` and `/SCS` windows.
+
+**Required.** A later hardware revision must give every build A14, and A15
+with it if a pin can be found. This is a correction, not an option: a
+cartridge that cannot run Tandy's own 32K paks is incomplete.
+
+**Where the pin could come from (to decide at that revision).**
+- Make the Plus-W (RP2350B, 48 GPIO) the only supported module. It already
+  receives A14 on GP29 and A15 on GP30; the cost is the Pico 2 build.
+- Free header pins on the Pico 2 build: `OE_BUS` could be derived in the
+  module from `/CTS`, `/SCS` and E if those were routed in its place (three
+  pins for one, so no gain by itself); header pin 34 is shared by audio and
+  the JP5 `/CART` or `/NMI` drive; `HALT_GATE` is needed.
+- Latch or multiplex in hardware: a small latch or a 2:1 mux could put A14
+  and A15 on existing address pins during a part of the cycle the firmware
+  does not use them, at the cost of read-path time. Needs a timing study
+  against the fast-mode read path before it is believed.
+- An RP2350B on the carrier in place of a module.
+
+**Firmware side, once the pin exists.** `rom_load_mem` needs a linear 32K
+mode (two 16K halves selected by A14, distinct from the `$FF40` banked
+mode), and the manager needs to tell the two kinds of 32K image apart or be
+told. The Plus-W build can do this before any new board.
+
