@@ -26,34 +26,25 @@ typedef struct {
     uint32_t whooks_run;     /* write hooks executed on core1 */
 } bus_stats_t;   /* ponytail: addr_resample* = diagnostic, address changed between two samples after OE_BUS fell */
 
-/* Pico 2 PIO engine: the SM builds a table byte's address as (base >> 14) << 14
- * | A13..A0, so every ROM window (bus_table, each rom bank) is 16 KB aligned. */
-#ifdef PICOCO_PIO_ENGINE
-#define BUS_WINDOW_ALIGN __attribute__((aligned(BUS_TABLE_SIZE)))
-void bus_engine_drive(bool on);           /* core0: start/stop the SM (bus_drive) */
-void bus_engine_rebase(void);             /* core0: reload the SM's base after bus_rom_base changed */
-void bus_engine_tune(int bypass, int prio);   /* -1 = leave; input sync bypass, DMA bus priority */
-void bus_engine_get(bool *bypass, bool *prio);
-void bus_engine_variant(int order, int trig);   /* spike part 3: -1 = leave; see bus_core1.c */
-const char *bus_engine_desc(void);
-void bus_engine_resources(void (*line)(const char *s));
-#else
-#define BUS_WINDOW_ALIGN
-#endif
+/* The table the engine serves: eight 16 KB banks in one 128 KB-aligned block.
+ * The read SM builds a byte's address as &bus_mem | bank << 14 | A13..A0
+ * (bus_engine.pio). Bank 0 is the unbanked table (bus_table); a banked image
+ * fills banks 0..n-1. The I/O page ($FF00-$FFFF, idx 0x3F00-0x3FFF) comes
+ * from the current bank too, so the entries devices own (BUS_IO_LO..HI) are
+ * mirrored in every bank: write them only through bus_io_set, never from a
+ * ROM loader. */
+#define BUS_BANKS 8
+#define BUS_IO_LO 0x3F40           /* device-owned entries, mirrored in every bank */
+#define BUS_IO_HI 0x3F5F
+extern uint8_t bus_mem[BUS_BANKS][BUS_TABLE_SIZE];   /* aligned to 128 KB */
+#define bus_table (bus_mem[0])
+extern volatile uint8_t bus_bank;                     /* current bank, 0 when unbanked */
 
-extern uint8_t bus_table[BUS_TABLE_SIZE];
-
-/* ROM window source: bus_table by default, a 16 KB bank when a banked image
- * is loaded (rom.c). Swapped by the $FF40 write hook on core1; a pointer
- * store is atomic so a read in flight sees the old or the new bank whole. */
-extern const uint8_t *volatile bus_rom_base;
-void bus_set_rom_base(const uint8_t *p);   /* core0 store of bus_rom_base (also re-points the Pico 2 engine) */
-
-/* What a CoCo read of idx returns: ROM window from bus_rom_base, I/O page
- * ($FF00-$FFFF, idx >= 0x3F00) from bus_table. always_inline: used by core1. */
+/* What a CoCo read of idx returns. always_inline: used by core1. */
 static inline __attribute__((always_inline)) uint8_t bus_peek(uint16_t idx) {
-    return idx < 0x3F00 ? bus_rom_base[idx] : bus_table[idx];
+    return bus_mem[bus_bank][idx];
 }
+void bus_io_set(uint16_t idx, uint8_t v);             /* BUS_HOT: stores into all BUS_BANKS banks */
 
 extern volatile bus_stats_t bus_stats;
 extern volatile bool bus_drive;   /* false = never drive D0..D7 (capture-only, milestone 0.4); read by core1 each cycle */
@@ -78,7 +69,7 @@ void bus_trace_freeze_hot(void);              /* BUS_HOT; freezes (never thaws) 
 size_t bus_trace_copy(bus_trace_entry *out, size_t max);            /* oldest first, newest last */
 
 /* producer side (core1 loop and sim_bus): */
-void bus_on_read_done(uint16_t idx, uint32_t t_us);   /* runs hook for idx, traces (rw=1, data=bus_table[idx]), stats */
+void bus_on_read_done(uint16_t idx, uint32_t t_us);   /* runs hook for idx, traces (rw=1, data=bus_peek(idx)), stats */
 void bus_run_read_hooks(uint16_t idx);                           /* BUS_HOT; first half of bus_on_read_done */
 void bus_record_read(uint16_t idx, uint8_t data, uint32_t t_us);  /* BUS_HOT; second half: trace + counters */
 void bus_on_write(uint16_t idx, uint8_t data, uint32_t t_us);   /* pushes write event, traces, stats */

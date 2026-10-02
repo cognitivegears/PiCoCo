@@ -129,6 +129,28 @@ TEST(cart_autostart_decision) {
     rom_cart_set(CART_AUTO);
 }
 
+/* A banked load never writes the device-owned I/O entries, in any bank. */
+TEST(banked_load_leaves_io_entries) {
+    setup();
+    becker_write((const uint8_t *)"Q", 1);
+    sim_read(0xFF41);                         /* status hook: 0x02 / 'Q' in every bank */
+    for (int b = 0; b < ROM_MAX_BANKS; b++) ASSERT_EQ(bus_mem[b][BUS_IDX_BECKER_STATUS], 0x02);
+    fill_banks(8);
+    ASSERT_EQ(rom_load_mem(img, 8 * ROM_BANK_SIZE), 0);
+    for (int b = 0; b < ROM_MAX_BANKS; b++) {
+        ASSERT_EQ(bus_mem[b][BUS_IDX_BECKER_STATUS], 0x02);
+        ASSERT_EQ(bus_mem[b][BUS_IDX_BECKER_DATA], 'Q');
+        ASSERT_EQ(bus_mem[b][0x3EFF], b);
+    }
+    write_file("big.rom", 8 * ROM_BANK_SIZE);
+    ASSERT_EQ(rom_load_file(&store, "big.rom"), 0);
+    for (int b = 0; b < ROM_MAX_BANKS; b++) ASSERT_EQ(bus_mem[b][BUS_IDX_BECKER_STATUS], 0x02);
+    sim_write(0xFF40, 5);
+    ASSERT_EQ(sim_read(0xC001), 5);
+    ASSERT_EQ(sim_read(0xFF41), 0x02);        /* the same device read in bank 5 */
+    ASSERT_EQ(sim_read(0xFF42), 'Q');
+}
+
 TEST(bank_buf_bounds) {
     setup();
     ASSERT_EQ(rom_publish_banks(3), -2);
@@ -148,6 +170,7 @@ int main(void) {
     RUN(dos_signature);
     RUN(file_load_banked);
     RUN(cart_autostart_decision);
+    RUN(banked_load_leaves_io_entries);
     RUN(bank_buf_bounds);
     snprintf(cmd, sizeof(cmd), "rm -rf %s", g_dir); system(cmd);
     TEST_MAIN_END

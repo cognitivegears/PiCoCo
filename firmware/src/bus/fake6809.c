@@ -1,5 +1,6 @@
 #include "fake6809.h"
 #include "bus.h"
+#include "bus_engine.h"
 #include "rom.h"
 #include "hardware/pio.h"
 #include "hardware/clocks.h"
@@ -60,7 +61,7 @@ static void pins_to_sio(void) {
 static PIO const dpio = pio2;
 static int dsm = -1;
 static uint doff;
-#define DEC_BYPASS ((7ull << PIN_CTS) | (1ull << PIN_OE_BUS))   /* GP24-26 and GP40 */
+#define DEC_BYPASS (7ull << PIN_CTS)   /* GP24-26; GP40 keeps the synchroniser the engine's helper uses */
 static uint64_t dec_bypass_was;
 static void decode_start(void) {
     dsm = pio_claim_unused_sm(dpio, true);
@@ -83,7 +84,7 @@ static void decode_start(void) {
 static void decode_stop(void) {
     pio_sm_set_enabled(dpio, (uint)dsm, false);
     gpio_set_function(PIN_OE_BUS, GPIO_FUNC_SIO); gpio_set_dir(PIN_OE_BUS, GPIO_IN); gpio_pull_up(PIN_OE_BUS);
-    pio_set_input_sync_bypass_with_mask64(dpio, dec_bypass_was, DEC_BYPASS & ~(1ull << PIN_OE_BUS));   /* GP40's bit belongs to the engine's helper */
+    pio_set_input_sync_bypass_with_mask64(dpio, dec_bypass_was, DEC_BYPASS);
     pio_remove_program(dpio, &fake_decode_pw_program, doff);
     pio_sm_unclaim(dpio, (uint)dsm);
     dsm = -1;
@@ -257,9 +258,9 @@ int fake6809_selftest(fake_result_t *r, void (*line)(const char *s)) {
      * local staging copy): bank 0 filled with 0x00 and byte 0 marked, bank
      * 1 filled with 0x01. */
     rom_banks_begin();
-    memset(rom_bank_buf(0), 0x00, ROM_BANK_SIZE);
+    memset(rom_bank_buf(0), 0x00, BUS_IO_LO);         /* the I/O entries are the devices' */
     rom_bank_buf(0)[0] = 0xA5;
-    memset(rom_bank_buf(1), 0x01, ROM_BANK_SIZE);
+    memset(rom_bank_buf(1), 0x01, BUS_IO_LO);
     rom_publish_banks(2);
 
     /* Taking the pins over can blip OE_BUS once (seen on a bare Pico 2: one
@@ -438,7 +439,14 @@ static void fast_fill(void) {
     uint32_t s = 0x1234567u;
     for (uint32_t i = 0; i < FAST_WIN; i++) { uint8_t b = (uint8_t)xs32(&s); bus_table[i] = b ? b : 0x5A; }
     memcpy(io_save, &bus_table[FAST_IO], 32);
-    for (uint32_t i = 0; i < 32; i++) bus_table[FAST_IO + i] = (uint8_t)(0x80 | (i * 7 + 3));
+    for (uint32_t i = 0; i < 32; i++) bus_io_set((uint16_t)(FAST_IO + i), (uint8_t)(0x80 | (i * 7 + 3)));
+}
+/* Banks 1-7: each its own pattern (bank 0 is fast_fill's). */
+static void fast_fill_banks(void) {
+    for (int b = 1; b < BUS_BANKS; b++) {
+        uint32_t s = 0x1234567u + 0x9E3779B9u * (uint32_t)b;
+        for (uint32_t i = 0; i < FAST_WIN; i++) { uint8_t v = (uint8_t)xs32(&s); bus_mem[b][i] = v ? v : 0x5A; }
+    }
 }
 static uint32_t pick(uint32_t sel, uint8_t avoid) {
     uint32_t d;
@@ -451,6 +459,16 @@ static void fast_pattern(uint32_t sel) {
     pat_seed = 0x1234567u;
     uint8_t prev = 0;
     for (int k = 0; k < FAST_N; k++) { fast_desc[k] = pick(sel, prev); prev = desc_byte(fast_desc[k]); }
+}
+/* every 8th read an I/O-page read ($FF40-$FF5F, /SCS on a Plus-W), the walk
+ * kept so that no byte repeats the previous cycle's */
+static void fast_add_io(void) {
+    uint8_t prev = 0;
+    for (int k = 0; k < FAST_N; k++) {
+        if (k % 8 == 4) fast_desc[k] = pick(D_SCS, prev);
+        else if (desc_byte(fast_desc[k]) == prev) fast_desc[k] = pick(D_CTS, prev);
+        prev = desc_byte(fast_desc[k]);
+    }
 }
 /* every third cycle a CoCo write (R/W low) */
 static void fast_mix(void) {
@@ -525,7 +543,7 @@ typedef struct { uint32_t mism, zero, stale, rel_bad, lost, spur, wrong, restart
                  int spur_k; uint8_t spur_got, spur_prev; } fast_res_t;
 
 static int fdma_tx = -1, fdma_rx = -1;
-static bool fast_stress, fast_restart, fast_radio;
+static bool fast_stress, fast_restart, fast_switch, fast_radio;
 static uint32_t radio_results, radio_scans, radio_fails;
 static int radio_rc __attribute__((unused));
 static void (*fast_mid_burst)(void);     /* called once, ~200 us into a burst (decode probe) */
@@ -557,10 +575,15 @@ static void fast_burst(fast_res_t *r) {
     uint32_t t0 = time_us_32();
     uint32_t next_rs = t0 + 50;
     bool mid_done = false;
-    while (dma_channel_is_busy(fdma_rx) && time_us_32() - t0 < 20000) {
+    /* Done when the last RX word lands. Not dma_channel_is_busy(): a core
+     * reading DMA registers back to back delays DMA A's write into B's
+     * trigger by a clk now and then (measured: 89 of 4096 reads 1 clk late). */
+    while (((volatile uint32_t *)fast_rx)[FAST_N - 1] == 0xDEADBEEFu && time_us_32() - t0 < 20000) {
         if (fast_stress) memcpy(stress_buf, stress_buf + 2048, 2048), memcpy(stress_buf + 2048, stress_buf, 2048);
         /* restart the engine under a running burst: it comes back mid-cycle */
-        if (fast_restart && (int32_t)(time_us_32() - next_rs) >= 0) { bus_engine_rebase(); r->restarts++; next_rs += 50; }
+        if (fast_restart && (int32_t)(time_us_32() - next_rs) >= 0) { bus_engine_drive(true); r->restarts++; next_rs += 50; }
+        /* bank switch under a running burst (to the same bank: the bytes stay right) */
+        if (fast_switch && (int32_t)(time_us_32() - next_rs) >= 0) { bus_engine_set_bank(bus_bank); r->restarts++; next_rs += 50; }
         if (fast_mid_burst && !mid_done && time_us_32() - t0 > 200) { fast_mid_burst(); mid_done = true; }
 #ifdef PICOCO_BOARD_PLUSW
         /* radio busy: keep a scan running and the cyw43 driver polled, so its
@@ -671,8 +694,10 @@ static void probe_arm(void) {
     sm_config_set_fifo_join(&c, PIO_FIFO_JOIN_RX);
     sm_config_set_clkdiv(&c, 1.0f);
     pio_sm_init(dpio, (uint)psm, poff, &c);
-    pio_set_input_sync_bypass_with_mask64(dpio, (1ull << PIN_SCS) | (1ull << PIN_E) | (1ull << PIN_OE_BUS),
-                                          (1ull << PIN_SCS) | (1ull << PIN_E));   /* GP40 is already bypassed by the engine */
+    /* both edges unsynchronised, so the probe sees pad to pad; GP40 goes back
+     * to the engine's setting (synchronised) in probe_done. The helper shares
+     * the bit: this probe burst's own reads are not scored. */
+    pio_set_input_sync_bypass_with_mask64(dpio, ~0ull, (1ull << PIN_SCS) | (1ull << PIN_E) | (1ull << PIN_OE_BUS));
     pdma = dma_claim_unused_channel(true);
     dma_channel_config dc = dma_channel_get_default_config(pdma);
     channel_config_set_transfer_data_size(&dc, DMA_SIZE_32);
@@ -689,6 +714,7 @@ static void probe_done(bool from_scs, int *dmin, int *dmax, int *n) {
     while (dma_channel_is_busy(pdma) && time_us_32() - t0 < 10000) { }
     dma_channel_abort(pdma);                         /* never started: nothing captured, *n stays 0 */
     pio_sm_set_enabled(dpio, (uint)psm, false);
+    pio_set_input_sync_bypass_with_mask64(dpio, 0, 1ull << PIN_OE_BUS);
     dma_channel_unclaim(pdma);
     pio_remove_program(dpio, &decode_probe_pw_program, poff);
     pio_sm_unclaim(dpio, (uint)psm);
@@ -774,10 +800,7 @@ int fake6809_fast(int opts, void (*line)(const char *s)) {
         snprintf(buf, sizeof buf, "fast dma 8-bit write of %02x reaches the TX FIFO as %08lx", probe8, (unsigned long)pio->rxf[psm8]);
         line(buf);
         pio_sm_unclaim(pio, (uint)psm8);
-        bool byp, pri;
-        bus_engine_get(&byp, &pri);
-        snprintf(buf, sizeof buf, "fast engine: PIO0 + DMA, input sync bypass %s, DMA bus priority %s, %s", byp ? "on" : "off", pri ? "on" : "off", bus_engine_desc());
-        line(buf);
+        line("fast engine: PIO0 + DMA, input sync bypass on A0-A13 and R/W (OE_BUS synchronised), DMA bus priority on");
         snprintf(buf, sizeof buf, "fast test: fake 6809 pio1 sm%d, dma tx %d rx %d", sm, fdma_tx, fdma_rx);
         line(buf);
         bus_engine_resources(line);
@@ -863,11 +886,46 @@ int fake6809_fast(int opts, void (*line)(const char *s)) {
     fast_burst(&r);
     fast_line(line, "1.79MHz gaps after restarts", SREAL, &r);
     if (r.mism || r.lost) rc = -1;
+    fast_switch = true;                              /* bus_engine_set_bank every 50 us, mid-cycle included */
+    fast_burst(&r);
+    fast_switch = false;
+    snprintf(buf, sizeof buf, "fast 1.79MHz bank switches %lu under a gaps burst: mismatches %lu (zero %lu stale %lu spurious %lu wrong %lu)",
+             (unsigned long)r.restarts, (unsigned long)r.mism, (unsigned long)r.zero, (unsigned long)r.stale, (unsigned long)r.spur, (unsigned long)r.wrong);
+    line(buf);
+    if (r.mism || r.lost) rc = -1;                   /* wrong/stale = desync (a jmp between push and pull); zero = a read the pause made late */
     bus_drive_set(false);                            /* capture-only: nothing may be driven */
     fast_burst(&r);
     fast_line(line, "1.79MHz drive off", SREAL, &r);
     if (r.mism || r.lost) rc = -1;
     bus_drive_set(true);
+    {   /* banks: the bank number is part of the read SM's pointer */
+        fast_fill_banks();
+        int good = 0;
+        uint32_t bmis = 0;
+        for (int b = 0; b < BUS_BANKS; b++) {
+            bus_bank = (uint8_t)b;
+            bus_engine_set_bank((uint8_t)b);
+            fast_pattern(D_CTS);
+            fast_add_io();
+            fast_at(0, SREAL);
+            fast_burst(&r);
+            if (r.mism || r.lost) {
+                snprintf(buf, sizeof buf, "fast bank %d", b);
+                fast_line(line, buf, SREAL, &r);
+            } else good++;
+            bmis += r.mism;
+        }
+        bus_bank = 0;
+        bus_engine_set_bank(0);
+        snprintf(buf, sizeof buf, "fast banks: %d/%d banks read their own pattern, %lu mismatches", good, BUS_BANKS, (unsigned long)bmis);
+        line(buf);
+        if (good != BUS_BANKS) rc = -1;
+        int same = 0;
+        for (int b = 0; b < BUS_BANKS; b++) same += memcmp(&bus_mem[b][BUS_IO_LO], &bus_mem[0][BUS_IO_LO], BUS_IO_HI - BUS_IO_LO + 1) == 0;
+        snprintf(buf, sizeof buf, "fast io page: same in %d banks", same);
+        line(buf);
+        if (same != BUS_BANKS) rc = -1;
+    }
     fast_pattern(D_CTS);
 #ifdef PICOCO_BOARD_PLUSW
     /* late select: /CTS (ROM reads) and /SCS (I/O reads) fall 4 clk after E rose */
@@ -938,7 +996,7 @@ done:
     pio_remove_program(pio, &FAST_PROG, offset);
     pio_sm_unclaim(pio, sm);
     sm = -1;
-    memcpy(&bus_table[FAST_IO], io_save, 32);
+    for (int i = 0; i < 32; i++) bus_io_set((uint16_t)(FAST_IO + i), io_save[i]);
     rom_off();
     bus_drive_set(drive_was);
     line("selftest rom cleared; reload with rom load");

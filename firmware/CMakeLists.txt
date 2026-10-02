@@ -44,14 +44,14 @@ if(NOT PICOCO_HOST)
   add_executable(picoco ${CORE_SRC} ${FATFS_SRC}
     src/fs_flash.c src/dw/dw_store_fatfs.c
     src/plat_pico.c src/usb/usb_descriptors.c src/main.c
-    src/crash.c src/bus/bus_core1.c)
+    src/crash.c src/bus/bus_core1.c src/bus/bus_engine.c)
   if(PICOCO_BOARD STREQUAL "plusw")
     target_sources(picoco PRIVATE src/net/net.c src/net/net_selftest.c)
     target_link_libraries(picoco pico_cyw43_arch_lwip_poll pico_lwip_sntp)
   else()
     target_sources(picoco PRIVATE ${NET_STUB_SRC})
   endif()
-  # PIO + DMA bus engine (bus_core1.c) on both boards; the CPU loops are at tag fw-1.4-cpu-loop.
+  # PIO + DMA bus engine (bus_engine.c) on both boards; the CPU loops are at tag fw-1.4-cpu-loop.
   target_compile_definitions(picoco PRIVATE PICOCO_PIO_ENGINE=1)
   pico_generate_pio_header(picoco ${CMAKE_CURRENT_LIST_DIR}/src/bus/bus_engine.pio)
   if(PICOCO_BOARD STREQUAL "plusw")

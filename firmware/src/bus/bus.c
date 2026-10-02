@@ -1,8 +1,13 @@
 #include "bus.h"
+#include "bus_engine.h"
 #include <string.h>
 
-uint8_t bus_table[BUS_TABLE_SIZE] BUS_WINDOW_ALIGN;
-const uint8_t *volatile bus_rom_base = bus_table;
+#ifdef PICOCO_HOST
+uint8_t bus_mem[BUS_BANKS][BUS_TABLE_SIZE] = { { 0 } };   /* no engine: no alignment; initialized so it is not a common symbol (ld64 + ASan warn on its alignment) */
+#else
+uint8_t bus_mem[BUS_BANKS][BUS_TABLE_SIZE] __attribute__((aligned(BUS_BANKS * BUS_TABLE_SIZE)));
+#endif
+volatile uint8_t bus_bank;
 volatile bus_stats_t bus_stats;
 volatile bool bus_drive;
 
@@ -27,8 +32,8 @@ static bool trace_frozen;
 static bool trace_freeze_after;   /* set by core1 at a fault: freeze once that cycle is recorded */
 
 void bus_init(void) {
-    memset(bus_table, 0xFF, sizeof(bus_table));
-    bus_rom_base = bus_table;
+    memset(bus_mem, 0xFF, sizeof(bus_mem));
+    bus_bank = 0;
     wev_head = 0;
     wev_tail = 0;
     hook_count = 0;
@@ -46,23 +51,27 @@ void bus_init(void) {
 
 #ifdef PICOCO_PIO_ENGINE
 void bus_drive_set(bool on) { bus_drive = on; bus_engine_drive(on); }
-void bus_set_rom_base(const uint8_t *p) { bus_rom_base = p; bus_engine_rebase(); }
 #else
 void bus_drive_set(bool on) { bus_drive = on; }
-void bus_set_rom_base(const uint8_t *p) { bus_rom_base = p; }
+void bus_engine_set_bank(uint8_t bank) { bus_bank = bank; }   /* host: no engine to re-point */
 #endif
 bool bus_drive_get(void) { return bus_drive; }
 
+BUS_HOT void bus_io_set(uint16_t idx, uint8_t v) {
+    for (int b = 0; b < BUS_BANKS; b++) bus_mem[b][idx] = v;
+}
+
 BUS_HOT void bus_set_read(uint16_t idx, uint8_t v) {
     if (idx >= BUS_TABLE_SIZE) return;
-    bus_table[idx] = v;
+    if (idx >= BUS_IO_LO && idx <= BUS_IO_HI) bus_io_set(idx, v);
+    else bus_table[idx] = v;
 }
 
 void bus_set_read_range(uint16_t idx, const uint8_t *p, size_t n) {
     if (idx >= BUS_TABLE_SIZE) return;
     size_t max = BUS_TABLE_SIZE - idx;
     size_t cnt = n < max ? n : max;
-    memcpy(&bus_table[idx], p, cnt);
+    for (size_t i = 0; i < cnt; i++) bus_set_read((uint16_t)(idx + i), p[i]);   /* I/O entries mirrored */
 }
 
 int bus_add_read_hook(uint16_t idx, void (*fn)(void)) {

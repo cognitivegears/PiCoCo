@@ -15,21 +15,20 @@ static uint8_t from_coco_buf[FROM_COCO_SIZE];
 static ring_t to_coco, from_coco;
 
 /* ponytail: single writer — only core1 (the two read hooks below) writes
- * bus_table[0x3F41]/[0x3F42]; core0 (becker_write/becker_loopback_pump) only
+ * the 0x3F41/0x3F42 entries (through bus_io_set, every bank); core0 (becker_write/becker_loopback_pump) only
  * pushes into the ring. Two writers racing on those table entries could
  * publish a stale data byte alongside a fresh "ready" status and drop a
  * byte. Ceiling: a freshly pushed byte becomes visible on the poll after
  * the push — one extra $FF41 poll of latency, no lost bytes. */
 BUS_HOT void becker_refresh(void) {
     uint8_t b;
-    /* Direct stores, not bus_set_read(): this runs inside the bus cycle on
-     * core1 and two calls cost ~30 clk_sys cycles of a CoCo 2's budget. */
+    /* bus_io_set: the entries are mirrored in every bank (bus.h). */
     if (ring_peek(&to_coco, &b)) {
-        bus_table[BUS_IDX_BECKER_STATUS] = 0x02;
-        bus_table[BUS_IDX_BECKER_DATA] = b;
+        bus_io_set(BUS_IDX_BECKER_STATUS, 0x02);
+        bus_io_set(BUS_IDX_BECKER_DATA, b);
     } else {
-        bus_table[BUS_IDX_BECKER_STATUS] = 0x00;
-        bus_table[BUS_IDX_BECKER_DATA] = 0xFF;
+        bus_io_set(BUS_IDX_BECKER_STATUS, 0x00);
+        bus_io_set(BUS_IDX_BECKER_DATA, 0xFF);
     }
 }
 
@@ -50,10 +49,10 @@ static BUS_HOT void becker_data_hook(void) {
         __atomic_store_n(&to_coco.tail, t, __ATOMIC_RELEASE);
         becker_stats.reads++;
         if (h != t) {                        /* status stays 0x02 */
-            bus_table[BUS_IDX_BECKER_DATA] = to_coco.buf[t];
+            bus_io_set(BUS_IDX_BECKER_DATA, to_coco.buf[t]);
         } else {
-            bus_table[BUS_IDX_BECKER_STATUS] = 0x00;
-            bus_table[BUS_IDX_BECKER_DATA] = 0xFF;
+            bus_io_set(BUS_IDX_BECKER_STATUS, 0x00);
+            bus_io_set(BUS_IDX_BECKER_DATA, 0xFF);
         }
         return;
     }
