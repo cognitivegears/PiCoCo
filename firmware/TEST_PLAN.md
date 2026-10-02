@@ -544,7 +544,7 @@ Read-path regression first (the 2026-10-01 core1 change, I.5):
 Manager (no key has reached the stub on a CoCo 3 in any emulator, so keys
 come first, launches after):
 
-3. RESET twice within 3 s: the manager autostarts, header
+3. RESET twice within 2 s: the manager autostarts, header
    `PICOCO  COCO 3`. Boot log: `double reset: manager for this boot`.
 4. Arrows move the highlight.
 5. BREAK: record what happens (expected: the manager again, since a CoCo 3

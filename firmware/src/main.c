@@ -129,7 +129,8 @@ int main(void) {
      * the Pico's RUN pin through U13/R9 (hardware-design.md §4.5), so a CoCo
      * reset-button press reboots the Pico too and repeats this whole boot
      * sequence, pulse included — this is not power-on/Pico-reboot only. */
-    uint32_t cart_until = rom_cart_wanted() ? plat_now_ms() + 500 : 0;
+    /* Not after a double RESET: the manager is a DK image, and /CART would send BASIC to $C000. */
+    uint32_t cart_until = (rom_cart_wanted() && !dbl_reset) ? plat_now_ms() + 500 : 0;
 #endif
 #ifdef PIN_LED
     uint32_t last_blink = 0; bool led = false;

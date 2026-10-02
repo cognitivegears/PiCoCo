@@ -263,9 +263,7 @@ Becker mode, `$5A` returns it; see
 **Upgrading from 1.3.** A `picoco.cfg` with no `rom` line, including one saved
 after `rom off` by 1.3 or earlier, now boots the manager. On a machine with
 Extended BASIC the manager autostarts. To keep the old behaviour run `rom off`
-then `save` once. A config that has a `rom load ...` line is unaffected. On a
-CoCo 3 the manager cannot launch anything yet (it shows `COCO 3: NOT YET`); set
-a ROM from the USB console (`rom load <file>`, `save`).
+then `save` once. A config that has a `rom load ...` line is unaffected.
 
 Press RESET twice within 2 seconds to load the manager for that boot only; the
 saved ROM is unchanged. On a CoCo 3 nothing needs typing (a hardware RESET

@@ -23,8 +23,8 @@
 #define UI_ACT_JUMP  0x10           /* after a ROM swap: JMP $C000 */
 #define UI_ACT_COLD  0x11           /* after a ROM swap: cold restart */
 #define UI_ACT_WARM  0x13           /* warm restart: back to BASIC */
-#define UI_ACT_JUMP3 0x16           /* CoCo 3, after a ROM swap: $CC -> $FF90, ROM mode, JMP $C000 */
-#define UI_ACT_COLD3 0x17           /* CoCo 3, after a ROM swap: clear $71, JMP $8C1B (recopies the cart to RAM) */
+#define UI_ACT_JUMP3 0x16           /* CoCo 3, after a ROM swap: slow speed, $CC -> $FF90, ROM mode, JMP $C000 */
+#define UI_ACT_COLD3 0x17           /* CoCo 3, after a ROM swap: slow speed, clear $FEED and $71, JMP $8C1B (recopies the cart to RAM) */
 #define UI_ACT_WARM3 0x18           /* CoCo 3: JMP $8C1B with $71 untouched */
 
 #define UI_KEY_BREAK 0x03

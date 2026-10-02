@@ -25,7 +25,9 @@ size_t plat_bridge_write(const uint8_t *buf, size_t n);
 size_t plat_bridge_write_free(void);             /* bytes CDC0 can take now; 0 while nobody is listening */
 /* Real milliseconds since boot. The Pico is up and has released /HALT about
  * 3 ms after a reset (plus the debounce below), so this window is what the
- * person pressing RESET experiences. */
+ * person pressing RESET experiences. Not in `becker net` mode, where /HALT is
+ * held until the network is up: there the window closes while the screen is
+ * still dark, and only two quick presses count. */
 #define PICOCO_DOUBLE_RESET_MS 2000
 #define PICOCO_RESET_DEBOUNCE_MS 150   /* boots shorter than this never touch the marker */
 /* Spec 2026-10-01 §6.5: RESET twice inside the window brings the manager up
