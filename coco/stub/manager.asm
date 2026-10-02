@@ -33,7 +33,7 @@ FRAME   equ BUFSZ+10
 * Super Extended BASIC copies a DK cart to RAM and patches the copy as if it
 * were Disk BASIC (coco3.rom $C321): 3 bytes at $C0D9 and 11 NOPs at $C8B4,
 * or at $C0C6 if the byte at $C004 is $D6. Nothing of ours may sit there, and
-* $C004 must never be $D6 (it is the high byte of this jump's target, $C1).
+* $C004 must never be $D6 (it is the low byte of BEGIN's address, the jump target).
 START   jmp BEGIN
 
         rmb $C100-*

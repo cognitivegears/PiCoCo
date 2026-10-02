@@ -3,6 +3,9 @@ HDR = ../../firmware/src/ui/manager_rom.h
 
 all: manager.rom $(HDR)
 
+# a rejected image must not survive for the next make to accept
+.DELETE_ON_ERROR:
+
 manager.rom: manager.asm
 	lwasm --raw -o $@ --list=manager.lst $<
 	@python3 -c "import sys; d=open('$@','rb').read(); \
