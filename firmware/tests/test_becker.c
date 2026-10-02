@@ -74,6 +74,17 @@ TEST(unpolled_data_read_does_not_lose_byte) {
     ASSERT_EQ(becker_stats.reads, 1);
 }
 
+TEST(publish_order_never_shows_ready_with_stale_data) {
+    setup();
+    uint8_t b = 0x41;
+    becker_write(&b, 1);
+    sim_read(0xFF41);                       /* status poll publishes */
+    ASSERT_EQ(bus_table[BUS_IDX_BECKER_STATUS], 0x02);
+    ASSERT_EQ(bus_table[BUS_IDX_BECKER_DATA], 0x41);
+    sim_read(0xFF42);                       /* pops */
+    ASSERT_EQ(bus_table[BUS_IDX_BECKER_STATUS], 0x00);
+}
+
 TEST(coco_write_reaches_stream) {
     setup();
     sim_write(0x3F42, 0x52);
@@ -172,6 +183,7 @@ int main(void) {
     RUN(status_read_does_not_pop);
     RUN(status_poll_publishes_then_data_read_pops);
     RUN(unpolled_data_read_does_not_lose_byte);
+    RUN(publish_order_never_shows_ready_with_stale_data);
     RUN(coco_write_reaches_stream);
     RUN(tx_backpressure);
     RUN(rx_overrun_counted);

@@ -2,6 +2,7 @@
 #include "bus.h"
 #include "bus_engine.h"
 #include "rom.h"
+#include "becker.h"
 #include "hardware/pio.h"
 #include "hardware/clocks.h"
 #include "hardware/structs/sio.h"
@@ -994,6 +995,178 @@ static bool fast_check_events(void (*line)(const char *), uint32_t c0) {
     return !mism && counted == sel;
 }
 
+/* Becker at speed: core0 feeds the fake's TX FIFO itself (no DMA), so the
+ * next cycle can depend on an earlier read, as the CoCo's polling loop does:
+ * $FF41, 4 ROM fetches, $FF42 if the status had bit 1, repeat. The decision
+ * has the 4 fetches (4 cycles) to reach the FIFO. If core0 falls behind, the
+ * fake's `pull block` stretches E low and sets FDEBUG.TXSTALL: counted as a
+ * stall, so a pass is at speed. fast_desc[0-3] are the fetches, [4] $FF41,
+ * [5] $FF42 (bk_setup); fast_tx[0-5] their words at the current timing. */
+#define BK_N 2048
+#define BK_S 4
+#define BK_D 5
+static uint8_t bk_stream[BK_N], bk_got[BK_N + 64];   /* room for a few more than asked: phantoms */
+typedef struct { uint32_t cycles, polls, got, fill_bad, stalls; uint8_t last_st, last_d; } bk_res_t;
+static void bk_setup(void) {
+    pat_seed = 0xBECCu;
+    uint8_t prev = 0;
+    for (int j = 0; j < 4; j++) { fast_desc[j] = pick(D_CTS, prev); prev = desc_byte(fast_desc[j]); }
+    fast_desc[BK_S] = BUS_IDX_BECKER_STATUS | D_SCS | D_RD;
+    fast_desc[BK_D] = BUS_IDX_BECKER_DATA | D_SCS | D_RD;
+    /* nonzero (undriven), never 0xFF (the empty port's data), and unlike its
+     * two neighbours, so a lost or repeated byte is told from a phantom one */
+    uint32_t s = 0xBEC4E2u;
+    for (int i = 0; i < BK_N; i++) {
+        uint8_t b;
+        do b = (uint8_t)xs32(&s); while (b == 0 || b == 0xFF || (i > 0 && b == bk_stream[i - 1]) || (i > 1 && b == bk_stream[i - 2]));
+        bk_stream[i] = b;
+    }
+}
+/* script NULL: the client loop until n data bytes are read, with core0
+ * pushing bk_stream through becker_write as the ring drains. Else the n
+ * fast_desc indices in script, in order. core0 queues a byte only while the
+ * TX FIFO is full (4 cycles ahead). SRAM and interrupts off: a cold XIP fetch
+ * or a core0 IRQ would stall the fake (FDEBUG.TXSTALL) or overflow its 4-deep
+ * RX FIFO (a dropped result, FDEBUG.RXSTALL): either counts as a stall.
+ * becker_write and becker_tx_free stay in flash, warmed before the loop. */
+static void __no_inline_not_in_flash_func(bk_run)(const uint8_t *script, int n, bk_res_t *r) {
+    memset(r, 0, sizeof *r);
+    uint8_t fexp[4], kind[16];
+    for (int j = 0; j < 4; j++) fexp[j] = desc_byte(fast_desc[j]);
+    uint32_t sent = 0, recv = 0, st_seq = 0, dsent = 0;
+    uint32_t stall = (1u << (PIO_FDEBUG_TXSTALL_LSB + sm)) | (1u << (PIO_FDEBUG_RXSTALL_LSB + sm));
+    int pos = 0, st_val = 0, w = 0, fi = 0;
+    pio_sm_clear_fifos(pio, (uint)sm);
+    if (!script) { w = (int)becker_write(bk_stream, BK_N); (void)becker_tx_free(); }
+    watchdog_update();
+    uint32_t irq = save_and_disable_interrupts(), t0 = m33_hw->dwt_cyccnt;
+    for (;;) {
+        while (!pio_sm_is_rx_fifo_empty(pio, (uint)sm)) {
+            uint8_t b = (uint8_t)(pio->rxf[sm] >> 8), j = kind[recv & 15];
+            if (j == BK_S) { r->last_st = b; if (recv == st_seq) st_val = b | 0x100; }
+            else if (j == BK_D) { r->last_d = b; if (r->got < BK_N + 64) bk_got[r->got++] = b; }
+            else if (b != fexp[j]) r->fill_bad++;
+            recv++;
+        }
+        bool end = script ? pos == n : (pos == 0 && dsent == (uint32_t)n);
+        if (end || m33_hw->dwt_cyccnt - t0 > 15000000u) break;   /* 100 ms */
+        while (!pio_sm_is_tx_fifo_full(pio, (uint)sm) && sent - recv < 12) {
+            int j;
+            if (script) { if (pos == n) break; j = script[pos++]; }
+            else if (pos == 0 && dsent == (uint32_t)n) break;   /* the last byte is read: no more polls */
+            else if (pos == 0) { j = BK_S; st_seq = sent; st_val = 0; r->polls++; pos = 1; }
+            else if (pos < 5) { j = fi++ & 3; pos++; }
+            else if (!st_val) break;                     /* this group's status not back yet */
+            else if (st_val & 2) { j = BK_D; dsent++; pos = 0; }
+            else { pos = 0; continue; }                  /* not ready: poll again */
+            kind[sent & 15] = (uint8_t)j;
+            pio->txf[sm] = fast_tx[j];
+            if (sent++ == 3) pio->fdebug = stall;        /* stalled until the first words: clear that */
+        }
+        if (!script && pio_sm_is_tx_fifo_full(pio, (uint)sm) && w < BK_N && becker_tx_free()) w += (int)becker_write(&bk_stream[w], 1);
+    }
+    if (sent > 4 && (pio->fdebug & stall)) r->stalls++;
+    while (recv < sent && m33_hw->dwt_cyccnt - t0 < 16500000u) {   /* the cycles still in flight */
+        if (pio_sm_is_rx_fifo_empty(pio, (uint)sm)) continue;
+        uint8_t b = (uint8_t)(pio->rxf[sm] >> 8), j = kind[recv & 15];
+        if (j == BK_S) r->last_st = b;
+        else if (j == BK_D) { r->last_d = b; if (r->got < BK_N + 64) bk_got[r->got++] = b; }
+        recv++;
+    }
+    restore_interrupts(irq);
+    r->cycles = sent;
+}
+/* bk_got against bk_stream: lost (skipped or never read), duplicated (the
+ * previous byte again), phantom (anything else). */
+static void bk_score(uint32_t got, uint32_t *lost, uint32_t *dup, uint32_t *phantom) {
+    uint32_t i = 0;
+    *lost = *dup = *phantom = 0;
+    for (uint32_t j = 0; j < got; j++) {
+        uint8_t b = bk_got[j];
+        if (i < BK_N && b == bk_stream[i]) i++;
+        else if (i > 0 && b == bk_stream[i - 1]) (*dup)++;
+        else if (i + 1 < BK_N && b == bk_stream[i + 1]) { (*lost)++; i += 2; }
+        else (*phantom)++;
+    }
+    *lost += BK_N - i;
+}
+static bool bk_stream_line(void (*line)(const char *), const char *tag, const bk_res_t *r, uint32_t un0, uint32_t ov0) {
+    char buf[200];
+    uint32_t lost, dup, ph, un = becker_stats.underrun - un0, ov = becker_stats.overrun - ov0;
+    bk_score(r->got, &lost, &dup, &ph);
+    snprintf(buf, sizeof buf, "fast becker %s: %lu bytes, %lu lost, %lu duplicated, %lu phantom; underrun %lu, overrun %lu, %lu polls in %lu cycles, fetches bad %lu, stalls %lu",
+             tag, (unsigned long)r->got, (unsigned long)lost, (unsigned long)dup, (unsigned long)ph, (unsigned long)un, (unsigned long)ov,
+             (unsigned long)r->polls, (unsigned long)r->cycles, (unsigned long)r->fill_bad, (unsigned long)r->stalls);
+    line(buf);
+    return r->got == BK_N && !lost && !dup && !ph && !un && !ov && !r->fill_bad && !r->stalls;
+}
+
+/* $FF40 = n, then the same ROM address on the next three cycles (+0, +1, +2):
+ * which read first gives bank n's byte. Groups of 8: the write, the three
+ * reads, four unselected cycles. n is never the bank before it, and the
+ * address is one where the two banks differ. */
+static void fast_bank_pattern(void) {
+    uint32_t s = 0xB4A1Cu;
+    uint8_t cur = 0;
+    fast_nw = 0;
+    for (int k = 0; k < FAST_N; k += 8) {
+        uint8_t n = (uint8_t)((cur + 1 + xs32(&s) % (BUS_BANKS - 1)) % BUS_BANKS);
+        uint32_t a;
+        do a = xs32(&s) % FAST_WIN; while (bus_mem[n][a] == bus_mem[cur][a]);
+        fast_desc[k] = FAST_IO | D_SCS;              /* $FF40 */
+        fast_wdat[k] = n;
+        fast_wlist[fast_nw++] = n;
+        for (int i = 1; i < 8; i++) { fast_desc[k + i] = a | D_RD | (i < 4 ? D_CTS : 0); fast_wdat[k + i] = 0; }
+        cur = n;
+    }
+}
+/* hist[i]: switches first seen at +i (3: not by +2); bad: a read from
+ * neither bank, or the old bank after the new one. Starts from bank 0. */
+static void fast_bank_score(uint32_t hist[4], uint32_t *bad) {
+    uint8_t cur = 0;
+    memset(hist, 0, 4 * sizeof hist[0]);
+    *bad = 0;
+    for (int k = 0; k < FAST_N; k += 8) {
+        uint8_t n = fast_wdat[k];
+        uint16_t a = fast_desc[k + 1] & 0x3FFF;
+        int first = 3;
+        for (int i = 0; i < 3; i++) {
+            uint8_t got = (uint8_t)(fast_rx[k + 1 + i] >> 8);
+            if (got == bus_mem[n][a]) { if (first == 3) first = i; }
+            else if (got != bus_mem[cur][a] || first < 3) (*bad)++;
+        }
+        hist[first]++;
+        cur = n;
+    }
+}
+
+/* The $FF40 hook's latency, from core0 during a fast_bank_pattern burst
+ * (fast_mid_burst): for 16 writes, clk from the write's OE_BUS rise to
+ * bus_bank changing (the hook stores it just before the `set x` exec). SRAM:
+ * no XIP fetch in the spins. */
+static uint32_t hl_min, hl_max, hl_n;
+#ifdef PICOCO_BOARD_PLUSW
+#define OE_LOW() (!(sio_hw->gpio_hi_in & (1u << (PIN_OE_BUS - 32))))
+#else
+#define OE_LOW() (!(sio_hw->gpio_in & (1u << PIN_OE_BUS)))
+#endif
+static void __no_inline_not_in_flash_func(fast_hook_latency)(void) {
+    uint32_t irq = save_and_disable_interrupts(), t0 = m33_hw->dwt_cyccnt, t;
+    hl_min = ~0u; hl_max = 0; hl_n = 0;
+    while (hl_n < 16 && m33_hw->dwt_cyccnt - t0 < 1000000) {
+        if (!OE_LOW() || (sio_hw->gpio_in & (1u << PIN_RW))) continue;   /* a write's OE_BUS low */
+        uint8_t b = bus_bank;
+        while (OE_LOW()) { }
+        t = m33_hw->dwt_cyccnt;
+        while (bus_bank == b && m33_hw->dwt_cyccnt - t < 10000) { }
+        t = m33_hw->dwt_cyccnt - t;
+        if (t < hl_min) hl_min = t;
+        if (t > hl_max) hl_max = t;
+        hl_n++;
+    }
+    restore_interrupts(irq);
+}
+
 int fake6809_fast(int opts, void (*line)(const char *s)) {
     char buf[200];
     uint32_t c0 = bus_stats.cycles;
@@ -1285,6 +1458,90 @@ int fake6809_fast(int opts, void (*line)(const char *s)) {
         snprintf(buf, sizeof buf, "fast io page: same in %d banks", same);
         line(buf);
         if (same != BUS_BANKS) rc = -1;
+    }
+    {   /* Becker at speed: the client loop at both speeds (the 1.79 MHz one
+         * also the event rate with the hooks running), then status and data
+         * on consecutive cycles */
+        bk_res_t b;
+        bk_setup();
+        becker_refresh();                            /* fast_fill's pattern is in $FF41/$FF42; no cycle runs, so core1 is in no hook */
+        for (int sp = 0; sp < 2; sp++) {
+            fast_at(sp ? 3 : 0, sp ? SREAL89 : SREAL);
+            uint32_t un0 = becker_stats.underrun, ov0 = becker_stats.overrun;
+            uint32_t c0 = bus_stats.cycles, d0 = bus_stats.event_drop, l0 = bus_stats.event_lap;
+            bus_stats.event_lag_max = 0;
+            bk_run(NULL, BK_N, &b);
+            bool drained = events_drained();
+            bus_engine_check_drops();
+            if (!bk_stream_line(line, sp ? "0.89MHz" : "1.79MHz", &b, un0, ov0)) rc = -1;
+            if (sp) continue;
+            uint32_t counted = bus_stats.cycles - c0, drop = bus_stats.event_drop - d0, lap = bus_stats.event_lap - l0;
+            snprintf(buf, sizeof buf, "fast event rate with Becker 1.79MHz: counted %lu of %lu, lag max %lu, drop %lu, lap %lu",
+                     (unsigned long)counted, (unsigned long)b.cycles, (unsigned long)bus_stats.event_lag_max, (unsigned long)drop, (unsigned long)lap);
+            line(buf);
+            if (!drained || counted != b.cycles || drop || lap || bus_stats.event_lag_max >= BUS_EVENTS / 2) rc = -1;
+        }
+        /* a byte published by an earlier poll, then the port empty (that data
+         * read is an underrun, by design) */
+        static const uint8_t b2b[] = { 0, 1, 2, 3, BK_S, 0, 1, 2, 3, BK_S, BK_D, 0, 1, 2, 3 };
+        uint8_t res[5][4];
+        bool stable = true;
+        fast_at(0, SREAL);
+        for (int i = 0; i < 5; i++) {
+            uint8_t x = 0x5C;
+            becker_write(&x, 1);
+            bk_run(b2b, sizeof b2b, &b); res[i][0] = b.last_st; res[i][1] = b.last_d;
+            events_drained();
+            bk_run(b2b, sizeof b2b, &b); res[i][2] = b.last_st; res[i][3] = b.last_d;
+            events_drained();
+            if (memcmp(res[i], res[0], 4)) stable = false;
+        }
+        bus_trace_freeze(false);                     /* the empty-port reads froze it */
+        snprintf(buf, sizeof buf, "fast becker back-to-back: ready -> %02x,%02x; empty -> %02x,%02x (%s)",
+                 res[0][0], res[0][1], res[0][2], res[0][3], stable ? "stable" : "NOT stable");
+        line(buf);
+        if (!stable) rc = -1;
+        /* information: a poll on the cycle right after the read that took the
+         * last byte, before that read's hook has popped it (a 6809 client
+         * has a few cycles between the two) */
+        static const uint8_t d2s[] = { 0, 1, 2, 3, BK_S, 0, 1, 2, 3, BK_D, BK_S, 0, 1, 2, 3 };
+        uint8_t after[2];
+        for (int sp = 0; sp < 2; sp++) {
+            uint8_t x = 0x5C;
+            fast_at(sp ? 3 : 0, sp ? SREAL89 : SREAL);
+            becker_write(&x, 1);
+            bk_run(d2s, sizeof d2s, &b);
+            after[sp] = b.last_st;
+            events_drained();
+        }
+        snprintf(buf, sizeof buf, "fast becker data then status: the poll right after the last byte's read sees %02x at 1.79MHz, %02x at 0.89MHz (00 = not ready)",
+                 after[0], after[1]);
+        line(buf);
+    }
+    {   /* $FF40 at speed, through rom.c's hook, over the banks filled above */
+        rom_publish_banks(BUS_BANKS);
+        fast_bank_pattern();
+        for (int sp = 1; sp >= 0; sp--) {
+            bus_engine_set_bank(0);
+            fast_at(sp ? 3 : 0, sp ? SREAL89 : SREAL);
+            wdata_arm();
+            fast_mid_burst = fast_hook_latency;
+            fast_burst(&r);
+            fast_mid_burst = NULL;
+            wdata_disarm();
+            uint32_t h[4], bad;
+            fast_bank_score(h, &bad);
+            int k = h[3] ? 3 : h[2] ? 2 : h[1] ? 1 : 0;   /* the latest any switch took */
+            snprintf(buf, sizeof buf, "fast bank switch %s: new bank at +%d cycles%s (hook %lu..%lu clk); %u switches: +0 %lu, +1 %lu, +2 %lu, later %lu; bad %lu, lost %lu",
+                     sp ? "0.89MHz" : "1.79MHz", k, k == 3 ? " (not by +2)" : "", (unsigned long)hl_min, (unsigned long)hl_max, FAST_N / 8,
+                     (unsigned long)h[0], (unsigned long)h[1], (unsigned long)h[2], (unsigned long)h[3], (unsigned long)bad, (unsigned long)r.lost);
+            line(buf);
+            /* +0 or +1 at 0.89 MHz (spec 5: a switch may fetch one byte from
+             * the old bank), 1.79 MHz reported only. hook: OE_BUS rise of the
+             * write to the hook's bus_bank store, over 16 writes. */
+            if (bad || r.lost || !hl_n || (sp && k > 1)) rc = -1;
+        }
+        rom_banks_begin();                           /* unbanked: the hook is inert again */
     }
     fast_pattern(D_CTS);
 #ifdef PICOCO_BOARD_PLUSW

@@ -20,12 +20,15 @@ static ring_t to_coco, from_coco;
  * publish a stale data byte alongside a fresh "ready" status and drop a
  * byte. Ceiling: a freshly pushed byte becomes visible on the poll after
  * the push — one extra $FF41 poll of latency, no lost bytes. */
+/* The engine serves a read between any two of these stores, so the order is
+ * the protocol: publishing a byte, data then status (a poll in between sees
+ * "not ready"); emptying, status then data (never "ready" over a stale byte). */
 BUS_HOT void becker_refresh(void) {
     uint8_t b;
     /* bus_io_set: the entries are mirrored in every bank (bus.h). */
     if (ring_peek(&to_coco, &b)) {
-        bus_io_set(BUS_IDX_BECKER_STATUS, 0x02);
         bus_io_set(BUS_IDX_BECKER_DATA, b);
+        bus_io_set(BUS_IDX_BECKER_STATUS, 0x02);
     } else {
         bus_io_set(BUS_IDX_BECKER_STATUS, 0x00);
         bus_io_set(BUS_IDX_BECKER_DATA, 0xFF);

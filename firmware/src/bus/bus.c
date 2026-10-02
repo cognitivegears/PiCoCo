@@ -171,22 +171,32 @@ static inline __attribute__((always_inline)) void queue_write(uint16_t idx, uint
     }
 }
 
-/* One selected cycle (core1's event loop; the host simulator). The trace
- * store comes first, so a hook that freezes the trace keeps its own event.
- * Write hooks run before the write is queued, so core0 sees the effect of a
- * hook (a bank switch) no later than the write itself. */
-BUS_HOT void bus_event(uint32_t w) {
+static inline __attribute__((always_inline)) void trace_store(uint32_t w) {
     uint32_t n = trace_seq;
     trace_seq = n + 1;
     if (!trace_frozen) trace_ring[n & (BUS_TRACE_SIZE - 1)] = w | TRACE_TAG(n);   /* w's bits 23-31 are 0; if not, the copy's tag check drops it */
+}
+
+/* One selected cycle (core1's event loop; the host simulator). A write runs
+ * its hooks first: a $FF40 bank switch races the next cycle's `in x, 3`, so
+ * nothing goes in front of it; they also run before the write is queued, so
+ * core0 sees the effect of a hook no later than the write itself. A read
+ * keeps its order (the trace store, then the hooks, so a hook that freezes
+ * the trace keeps its own event) and its own path: with the Becker hooks at
+ * 1.79 MHz core1 has only a few clk per event to spare, and a shared path
+ * cost enough to lap the ring. */
+BUS_HOT void bus_event(uint32_t w) {
     uint16_t idx = BUS_EV_IDX(w);
-    bus_stats.cycles++;
-    if (BUS_EV_RD(w)) {
-        bus_stats.reads++;
-        run_read_hooks(idx);
-    } else {
-        bus_stats.writes++;
+    if (!BUS_EV_RD(w)) {
         run_write_hooks(idx, BUS_EV_DATA(w));
+        trace_store(w);
+        bus_stats.cycles++;
+        bus_stats.writes++;
         queue_write(idx, BUS_EV_DATA(w));
+        return;
     }
+    trace_store(w);
+    bus_stats.cycles++;
+    bus_stats.reads++;
+    run_read_hooks(idx);
 }
