@@ -616,3 +616,407 @@ Read SM end-of-cycle: `wait 0 gpio 26` (E falls). Problems with this sketch:
    It is one patched instruction.
 6. **Flag 1.** The event SM must consume flag 1 within the same cycle, or two
    cycles' events merge into one.
+
+## Part 4: Plus-W
+
+Commit: `709c4db`. All numbers come from a bare Waveshare RP2350B-Plus-W:
+radio present, no carrier, no CoCo, firmware 1.4 Plus-W build. `bus cycles 0`
+was confirmed before every self-test. The bare Pico 2 was unplugged for this
+part, so the Pico 2's last measured state is Part 3. Its build still
+compiles, and its fast test was refactored here without being run on
+hardware.
+
+### What was built
+
+**Read SM (PIO0, GPIO base 0).** This is the same `bus_engine_late`
+program (order B) as on the Pico 2. Three waits are patched at load, which
+are the only per-board differences:
+
+| wait | Pico 2 | Plus-W |
+|---|---|---|
+| `trig` (cycle start) | `wait 0 gpio 26` (OE_BUS) | `wait 1 irq 0` |
+| `wend` (write branch end) | `wait 1 gpio 26` | `wait 1 irq 2` |
+| `rend` (read end) | `wait 1 gpio 26` | `wait 1 irq 2` |
+
+**Why the end condition is a flag, not E falling.** U10 stays enabled until
+OE_BUS rises, which is U15's delay after E falls. The release sequence drives
+the pads low first (E9). Released on E alone, that low could reach the CoCo
+bus inside the 6809's data-hold time, before U10 turns off. So the helper
+also signals OE_BUS rising (flag 2), and the read SM releases on that, the
+same point the Pico 2 uses. Both branches consume flag 2, so a write cycle
+never leaves it set.
+
+**Helper `bus_sel_pw` (PIO2, GPIO base 16).** It waits for OE_BUS (GP40)
+low, raises PIO0 flags 0 (start) and 1 (for the later event SM), waits for
+OE_BUS high, and raises flag 2 (end). `irq next` from PIO2 wraps to PIO0.
+
+```
+.wrap_target
+    wait 1 gpio 40          ; start: a start while OE_BUS is low skips that cycle
+fall:
+    wait 0 gpio 40
+    irq next set 0
+flag1:
+    irq next set 1
+    wait 1 gpio 40
+    irq next set 2
+.wrap
+```
+
+**Start and stop.** `pio_set_sm_multi_mask_enabled(pio0, prev = helper,
+mask = read SM, ...)` starts or stops both SMs in one CTRL write, because
+PIO2 is PIO0's "prev" neighbour. Flags 0-2 are cleared in PIO0 before each
+start.
+
+**DMA A/B.** As on the Pico 2.
+
+**Calibration mode.** `bus engine trig pin` on the Plus-W makes the read SM
+wait on E itself: `wait 1 gpio 26` to start, `wait 0 gpio 26` to end, with
+no select decode at all. It is for measurement only, because it drives on
+unselected cycles.
+
+**PIO2's GPIO base.** The cyw43 driver gets there first. `net_init()` runs
+before the config replay, and `pio_claim_free_sm_and_add_program_for_gpio_range`
+searches PIO2 first and sets its base to 16 for GP36-GP39. `engine_init`
+uses PIO2 if its base is 16. If the radio did not initialise, it sets the
+base itself while PIO2 is still empty.
+
+### Resources (from `bus engine` / the fast test's own listing)
+
+```
+fast test: fake 6809 pio1 sm0, dma tx 2 rx 3
+bus engine read pio0 sm0, helper pio2 sm1, dma A 4 B 5
+pio0 gpio_base 0 claimed sm 0
+pio1 gpio_base 0 claimed sm 0
+pio2 gpio_base 16 claimed sm 0 1 2
+dma claimed 0 1 2 3 4 5
+```
+
+| user | PIO / SM | DMA |
+|---|---|---|
+| radio (cyw43 SPI, GP36-39) | PIO2 sm0 | 0, 1 |
+| engine read SM | PIO0 sm0 | A, B: 4, 5 in the test; 2, 3 when `bus drive on` comes from the config |
+| engine helper | PIO2 sm1 | none |
+| fake 6809 (test only) | PIO1 sm0 | 2, 3 |
+| fake decode (test only) | PIO2 sm2 | none |
+| decode probe (test only, per probe burst) | PIO2 sm3 | 6 |
+| 8-bit DMA probe (test only) | PIO1 (an idle SM) | one, transient |
+
+In production PIO2 holds the radio and the helper, two SMs. PIO0 holds the
+read SM, leaving three free for event capture and write capture.
+
+PIO2 is completely full during the test: four SMs, and about 21 of its 32
+instruction slots.
+
+### Test scaffolding
+
+**`fake6809_fast_pw` (PIO1).** Clkdiv 1, one DMA-fed TX word per cycle.
+Side-set is E (GP26). Out pins are GP8-GP25: A0-A13, R/W, LED, /CTS and /SCS.
+
+- E low is 42 clk.
+- Address, R/W and the selects change 25 clk before E rises.
+- E high is 42 clk.
+- D0-D7 are sampled at a programmable S counted from the fake's E-rise
+  instruction, and again k+1 clk after E falls (the release check).
+- 0.89 MHz uses an E-low extension and a longer E high (84 / 84).
+- **Late select**: in a late burst the words carry both selects high, and an
+  instruction patched to `set pins, v side 1` drops /CTS or /SCS at f = L+1
+  (L = 4, so 5 clk after E rose).
+
+**`fake_decode_pw` (PIO2), the fake U15.** It drives GP40 low while E is high
+and /CTS or /SCS is low. It waits for E high, then polls the selects
+(`mov x, pins` with IN_COUNT 2, then `jmp x!=y`) for as long as E stays high
+(`jmp pin`, with jmp_pin = E), so it catches a late select. It then drives
+GP40 low until E falls.
+
+- By instruction count, from E (with the select already low) to GP40 low:
+  `wait`, `mov`, `jmp`, `set` = 3-4 clk plus pad delay.
+- A late select is seen within the 3-clk poll loop.
+
+**`decode_probe_pw` (PIO2).** It samples GP25-GP40 every clk for 512 clk
+(captured by DMA) in the middle of a burst. It measures the fake's real
+delay between the E pad edge and the GP40 pad edge, as seen by one
+observer.
+
+```
+fast fake decode delay: E rise -> OE_BUS low 5..5 clk (6 cycles); late /SCS fall -> OE_BUS low 4..4 clk (7 cycles)
+```
+
+The real U15 path (two gate delays plus 33 Ω) is about 10 ns, roughly
+1.5 clk, so this fake is 3.5 clk pessimistic. The corrected figures below
+subtract the whole measured 5 clk (4 for late selects), which turns them
+into latency from when OE_BUS actually fell.
+
+**Realistic point.** S=36 after OE_BUS fell is 36 + 5 = 41 after E, which is
+past the fake's sample window. The window is E high, 42 clk, which leaves a
+maximum S of 40. So the realistic bursts sample at **S=40 after E rose = 35
+after the fake OE_BUS fell**. That is the CPU's latch point less about 2 clk
+of setup, and 1 clk earlier than the Pico 2's realistic point. At 0.89 MHz
+the point is S=77 after E.
+
+**Burst mix:**
+
+- 5 realistic ROM-read bursts.
+- Mixed: every third cycle a write.
+- Gaps, with `k%4` = /CTS ROM read, unselected, /SCS I/O read
+  ($FF40-$FF5F), write. Every other write is an /SCS write.
+- 45 engine restarts under a gaps burst, then a clean gaps burst.
+- Drive off.
+- Late /CTS and late /SCS (reads, and reads with writes), each with a sweep.
+- A main sweep, a release sweep, and 0.89 MHz.
+
+The test's options are as follows:
+
+- `stress`: a core0 memcpy loop runs during every burst.
+- `radio`: during every burst, a WiFi scan is kept running and `net_poll()` /
+  `cyw43_arch_poll()` is called, so the cyw43 PIO2 SM and its DMA move data.
+- `restarts`: after the first restart burst, 40 more restart bursts.
+
+The legacy `bus selftest` also runs the fake decode on a Plus-W.
+
+### Results
+
+These cover 11 full runs on the final build: 5 plain, 2 with stress, 2 with
+radio scanning, and 2 with radio while joining WiFi. The two
+radio-while-joining runs were done after a fix to the test; see "Found and
+fixed" below. Every run passed. All 9 non-join runs in the final matrix, and
+both join runs, read 0/4096 in every burst at the realistic point. That is
+117 bursts at S=40 in the 9-run matrix, plus 9 bursts at 0.89 MHz, plus the
+join runs.
+
+| | raw (after E rose) | corrected (after the fake OE_BUS fell) | margin to 36 |
+|---|---|---|---|
+| **1.79 MHz, helper 2 flags (the design)** | **28 clk (186 ns)** | **23 clk (153 ns)** | **13 clk (87 ns)** |
+| 1.79 MHz, helper 1 flag | 28 | 23 | 13 |
+| 1.79 MHz, calibration (E pin, no decode, no helper) | 20 | n/a | |
+| 0.89 MHz, helper 2 flags | 27-28 | 22-23 | |
+| late /CTS, select falls at f=5 | 31-32 | 26-27 after the select fell, 22-23 after the fake OE_BUS fell | |
+| late /SCS, select falls at f=5 | 31-32 | 26-27 / 22-23 | |
+| with radio scanning (2 runs) | 28 (late: 32) | 23 | 13 |
+| with radio joining (2 runs) | 27 | 22 | 14 |
+| with core0 stress (2 runs) | 28 | 23 | 13 |
+
+Notes on the table:
+
+- The ±1 clk between builds and runs (26 vs 27 for late selects, 27 vs 28 at
+  0.89 MHz) did not follow the radio, the stress load or the flag count.
+- `release_clk`: D0-D7 read low on every cycle 10 clk after E fell. That is
+  OE_BUS rising at +5, then the helper, the flag and the read SM.
+
+**Cost of the cross-block flag.** The calibration mode reads 20 clk from E,
+exactly the Pico 2's B-on-pin figure (20 from OE_BUS). That confirms the
+fake's clocking. The full Plus-W path is 28 from E, made up of:
+
+- 20: the engine;
+- 5: the fake decode (measured);
+- 3: the helper plus the cross-block flag.
+
+On the Pico 2 an intra-block helper cost 2 clk (Part 3), so `irq next` across
+blocks costs **about 1 clk more**, ±1 for the correction's resolution.
+Measured from OE_BUS, the Plus-W gives 23, against the Pico 2's 22 with an
+intra-block helper and 20 on the pin. The second flag costs 0 here too.
+
+**Late select.** Served correctly in every burst: 0 mismatches at the
+realistic point for late /CTS and late /SCS, including the variants with
+writes in between. The response, measured from when the fake OE_BUS fell, is
+22-23 clk, the same as the normal case. The engine does not care when the
+select arrives, as long as OE_BUS follows it.
+
+Raw lines, plain run 1:
+
+```
+bus cycles 0 reads 0 writes 0 write_overrun 0
+fast engine: PIO0 + DMA, input sync bypass on, DMA bus priority on, order B (enable after pull), trigger helper 2 flags
+fast test: fake 6809 pio1 sm0, dma tx 2 rx 3
+bus engine read pio0 sm0, helper pio2 sm1, dma A 4 B 5
+pio0 gpio_base 0 claimed sm 0
+pio1 gpio_base 0 claimed sm 0
+pio2 gpio_base 16 claimed sm 0 1 2
+dma claimed 0 1 2 3 4 5
+fast timing: cycle 84 clk (E low 42, E high 42), address+selects setup 25 clk to E rise, 4096 cycles back to back
+fast fake decode delay: E rise -> OE_BUS low 5..5 clk (6 cycles); late /SCS fall -> OE_BUS low 4..4 clk (6 cycles)
+fast realistic point: S=40 after E rose = 35 after the fake OE_BUS fell
+fast 1.79MHz S=40 (266 ns): mismatches 0/4096 (zero 0 stale 0 spurious 0 wrong 0) rel_nonzero 4096 lost 0   (x5)
+fast 1.79MHz mixed r/w S=40 (266 ns): mismatches 0/4096 (zero 0 stale 0 spurious 0 wrong 0) rel_nonzero 2731 lost 0
+fast 1.79MHz gaps r/w/unsel S=40 (266 ns): mismatches 0/4096 (zero 0 stale 0 spurious 0 wrong 0) rel_nonzero 2048 lost 0
+fast 1.79MHz restarts 45 under a gaps burst: spurious 0 wrong 0 (zero 75 = cycles lost to a restart)
+fast 1.79MHz gaps after restarts S=40 (266 ns): mismatches 0/4096 (zero 0 stale 0 spurious 0 wrong 0) rel_nonzero 2048 lost 0
+fast 1.79MHz drive off S=40 (266 ns): mismatches 0/4096 (zero 0 stale 0 spurious 0 wrong 0) rel_nonzero 0 lost 0
+fast 1.79MHz late /CTS S=40 (266 ns): mismatches 0/4096 (zero 0 stale 0 spurious 0 wrong 0) rel_nonzero 4096 lost 0
+fast 1.79MHz late /CTS + writes S=40 (266 ns): mismatches 0/4096 (zero 0 stale 0 spurious 0 wrong 0) rel_nonzero 2731 lost 0
+fast 1.79MHz late /CTS response_clk 32 after E rose (raw; 213 ns)
+fast 1.79MHz late /CTS: select fell at 5; response 27 clk after the select fell, 23 after the fake OE_BUS fell (fake delay 4)
+fast 1.79MHz late /SCS S=40 (266 ns): mismatches 0/4096 (zero 0 stale 0 spurious 0 wrong 0) rel_nonzero 4096 lost 0
+fast 1.79MHz late /SCS + writes S=40 (266 ns): mismatches 0/4096 (zero 0 stale 0 spurious 0 wrong 0) rel_nonzero 2731 lost 0
+fast 1.79MHz late /SCS response_clk 32 after E rose (raw; 213 ns)
+fast 1.79MHz late /SCS: select fell at 5; response 27 clk after the select fell, 23 after the fake OE_BUS fell (fake delay 4)
+fast 1.79MHz response_clk 28 after E rose (raw; 186 ns)
+fast 1.79MHz response_clk corrected 23..23 after the fake OE_BUS fell (raw 28 minus the fake delay 5..5); margin to 36: 13..13
+fast 1.79MHz release_clk 10 (D0-D7 low on every cycle 10 clk after E fell; -1 = not by 14)
+fast 0.89MHz S=77 (513 ns): mismatches 0/4096 (zero 0 stale 0 spurious 0 wrong 0) rel_nonzero 4096 lost 0
+fast 0.89MHz response_clk 28 after E rose (raw; 186 ns)
+selftest fast pass
+```
+
+Main sweep from an earlier run on the same design (`pw1`): 27 clk was the
+edge (`27:818`), and every S from 28 on read 0/4096.
+
+```
+fast 1.79MHz sweep 21:4096 22:4096 23:4096 24:4096 25:4096 26:4096 27:818 28:0 29:0 ... 40:0
+fast 1.79MHz late /SCS sweep ... 29:4096 30:4096 31:0 32:0 ... 40:0
+```
+
+Calibration and flag count (`bus engine trig pin|irq1|irq2`):
+
+```
+fast engine: ... trigger E pin (calibration, no dec
+fast 1.79MHz response_clk 20 after E rose (raw; 133 ns)
+fast 1.79MHz gaps r/w/unsel S=40 (266 ns): mismatches 1024/4096 (zero 0 stale 0 spurious 1024 wrong 0) ...   <- expected: no decode, so it drives on unselected cycles
+fast engine: ... trigger helper 1 flag
+fast 1.79MHz response_clk 28 after E rose (raw; 186 ns)
+fast engine: ... trigger helper 2 flags
+fast 1.79MHz response_clk 28 after E rose (raw; 186 ns)
+```
+
+Radio busy (scan running across the bursts; `net` was in "failed" with the
+link up and retrying its server connection):
+
+```
+fast timing: ... 4096 cycles back to back, radio busy (scans + cyw43 poll)
+fast 1.79MHz radio: scan active, 1 scans started so far (0 refused, last rc 0), 2 scan results so far, net failed
+fast 1.79MHz radio: scan active, 1 scans started so far (0 refused, last rc 0), 4 scan results so far, net failed
+fast 1.79MHz radio: scan active, 1 scans started so far (0 refused, last rc 0), 6 scan results so far, net failed
+...
+fast 1.79MHz restarts 45 under a gaps burst: spurious 0 wrong 0 (zero 89 = cycles lost to a restart)
+fast 1.79MHz response_clk corrected 23..23 after the fake OE_BUS fell (raw 28 minus the fake delay 5..5); margin to 36: 13..13
+selftest fast pass
+```
+
+Radio while joining (`becker net`, then the test; net stayed "joining" for
+the whole run):
+
+```
+fast 1.79MHz radio: scan active, 1 scans started so far (0 refused, last rc 0), 0 scan results so far, net joining
+...
+fast 1.79MHz late /SCS: select fell at 5; response 27 clk after the select fell, 23 after the fake OE_BUS fell (fake delay 4)
+fast 1.79MHz response_clk corrected 22..22 after the fake OE_BUS fell (raw 27 minus the fake delay 5..5); margin to 36: 14..14
+selftest fast pass
+```
+
+**Radio coexistence.** Neither response_clk nor the mismatch count moved with
+the radio busy: 0 mismatches throughout, and the same 27-28 clk raw. The
+read path's FIFOs are consumed only by DMA, and the radio's SPI SM and DMA
+channels share PIO2 and the bus without disturbing them.
+
+Restart loops (`bus selftest fast restarts`, three runs, the last with
+`radio`):
+
+```
+fast restarts: 40 bursts, 1800 restarts, spurious 0 wrong 0 zero 2829
+fast restarts: 40 bursts, 1800 restarts, spurious 0 wrong 0 zero 2834
+fast restarts: 40 bursts, 1800 restarts, spurious 0 wrong 0 zero 2452
+```
+
+Legacy `bus selftest` on the Plus-W, with the fake decode:
+
+```
+selftest read_bank0_marker ok
+selftest read_bank0_fill ok
+selftest read_top_of_window ok
+... (write/hook/counter checks skipped (spike))
+selftest burst first_ok_delay 24 (~205 ns after E rose)
+selftest burst_back_to_back ok
+selftest burst_within_480ns ok
+selftest response first_ok_delay 23 (~198 ns after E rose)
+selftest checks 7 mismatches 0 ring_overrun 0
+selftest pass
+```
+
+### Flag correctness
+
+No spurious drive, no missed cycle and nothing driven on writes or
+unselected cycles. This held in every case tested:
+
+- mixed bursts: write followed immediately by a read;
+- gaps bursts, which include /SCS I/O reads and /SCS writes;
+- late selects, on reads and with writes in between;
+- 495 restarts under the full runs, plus 5,400 in the restart loops,
+  including while the radio was busy.
+
+In the mixed and gaps bursts, `rel_nonzero` equals the number of reads every
+time.
+
+### Found and fixed
+
+1. **A stop from flash held the bus through two cycles.** The first restart
+   burst of a run showed `spurious 1 wrong 1`:
+
+   ```
+   fast 1.79MHz first spurious: cycle 99 (write, idx 2677) read c0; previous cycle's byte c0
+   ```
+
+   That restart was the first after the long test had cleared the
+   `engine_stop` code out of the XIP cache. The fetch of the two release
+   execs stalled between "SM disabled" and "pins released", so the previous
+   read's byte stayed on D0-D7 through a write cycle and the next read.
+
+   `engine_stop` now lives in SRAM (`__no_inline_not_in_flash_func`, with
+   `engine_enable` forced inline) and runs with interrupts off. After that,
+   5,400 more restarts and every full run read 0 spurious. This applies to
+   the Pico 2 as well; it never showed there in 46-restart bursts, but the
+   same window existed.
+2. **Test bug: the decode probe could hang the self-test.** With the radio
+   joining, a long cyw43 call inside the burst loop meant the probe was never
+   started. `probe_done` then waited forever and the watchdog reset the
+   module (`last reset watchdog`).
+
+   Probe bursts now skip the radio work, and the probe wait times out.
+
+### Removed with the Plus-W CPU loop
+
+- The Plus-W half of `bus_core1.c`. Both boards now idle core1.
+- `bus_fw_mask`, `bus_fw_enable`, `bus_fw_disable`, `bus_fw_selected`: the
+  firmware-decoded `$FF60-$FF7F` path. It had no console command. Its host
+  test `fw_decode_mask` was removed.
+- `bus_stats.hw_selected` and `fw_selected`. `status` now prints
+  `bus whooks N` only.
+- `BUS_OE_REG` / `BUS_OE_MASK` in both board headers (used only by the CPU
+  loops).
+- The legacy self-test's write, bank-switch, fw-decode and counter checks.
+  They were dead on both engine builds, and the engine build already
+  printed `skipped (spike)` for them.
+- `bus selftest net` now reports "not supported by this engine (no Becker
+  path)" instead of timing out.
+
+`PIN_OE_FW` (GP31) is still driven high at boot and never touched by the
+engine. JP2 2-3 is not supported.
+
+### What is left on the module
+
+It is running the final build (`709c4db`), console responsive. `save` was
+never run. The runs with `becker net` changed only runtime state, and a
+reboot afterwards returned the module to its saved boot behaviour: try
+`becker net` for about 10 s, then fall back to native, with `bus drive off`
+from its config. So the engine is idle until `bus drive on`.
+
+### What can break this design on the Plus-W
+
+Nothing failed outright. These are the limits:
+
+- **Measured on a fake decode.** U15's real delay (about 1.5 clk) is shorter
+  than the fake's 5, so on a board the engine sees OE_BUS earlier. Measured
+  from OE_BUS, the latency is the same 23 clk, which leaves 13 clk to the
+  36-clk point. That is 2-3 clk less margin than the Pico 2 on the pin (20).
+  The real U15 also handles a late select in hardware: OE_BUS simply falls
+  late. The fake's 3-clk select poll exists only for the bare-module test.
+- **PIO2 is shared with the cyw43 driver,** and the helper depends on PIO2
+  having GPIO base 16. The driver sets that base, and `engine_init` sets it
+  if the radio is absent. The design also depends on the helper living in
+  PIO2, because PIO2's `next` is PIO0. If a future change (a second radio
+  SM, an SDK change in claim order) moved the radio to PIO1 and left PIO2
+  at base 0, the helper could not live in PIO2. It would then need PIO1
+  with base 16 and `irq prev`.
+- **Untested here.** The radio's interaction with a real CoCo's bus noise;
+  a real U15 edge (glitches on OE_BUS with sync bypass on); and the Pico 2
+  side of this commit, which was not re-run because that module is
+  unplugged.
