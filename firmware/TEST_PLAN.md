@@ -542,7 +542,7 @@ the Pico. Never swap the ROM from the USB console while the stub is running.
 | J.1.5 one-shot launch | pass: after a power cycle `EXEC 49154` is the manager again | 2026-10-01 |
 | J.1.6 BREAK | pass: back to `OK`; `EXEC 49154` re-enters | 2026-10-01 |
 | J.1.7 no USB | pass on cart power alone | 2026-10-01 |
-| J.1.8 counters | | |
+| J.1.8 counters | pass: after 35 minutes in the manager on cart power, 16.9 M bus cycles, `underrun 0`, `overrun 0`, `oe_glitch 0`, `addr_resample 0`; `rom now load manager` | 2026-10-01 |
 | J.1.9 idle session | pass: highlight still moves after 5 minutes idle | 2026-10-01 |
 
 ## How to resume with Claude
