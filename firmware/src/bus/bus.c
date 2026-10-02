@@ -126,7 +126,8 @@ void bus_trace_freeze(bool freeze) {
 
 bool bus_trace_frozen(void) { return trace_frozen; }
 
-/* core1, from a hook inside bus_event: the current event is already stored. */
+/* core1, from a hook inside bus_event: a read's event is already stored, a
+ * write's comes after its hooks and is left out. */
 BUS_HOT void bus_trace_freeze_hot(void) {
     if (!trace_frozen) { trace_end = trace_seq; trace_frozen = true; }
 }

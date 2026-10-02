@@ -28,9 +28,11 @@ BUS_HOT void becker_refresh(void) {
     /* bus_io_set: the entries are mirrored in every bank (bus.h). */
     if (ring_peek(&to_coco, &b)) {
         bus_io_set(BUS_IDX_BECKER_DATA, b);
+        __atomic_signal_fence(__ATOMIC_SEQ_CST);   /* the order above: kept here, not by bus_io_set's being in another file */
         bus_io_set(BUS_IDX_BECKER_STATUS, 0x02);
     } else {
         bus_io_set(BUS_IDX_BECKER_STATUS, 0x00);
+        __atomic_signal_fence(__ATOMIC_SEQ_CST);
         bus_io_set(BUS_IDX_BECKER_DATA, 0xFF);
     }
 }
@@ -55,6 +57,7 @@ static BUS_HOT void becker_data_hook(void) {
             bus_io_set(BUS_IDX_BECKER_DATA, to_coco.buf[t]);
         } else {
             bus_io_set(BUS_IDX_BECKER_STATUS, 0x00);
+            __atomic_signal_fence(__ATOMIC_SEQ_CST);   /* status then data, as in becker_refresh */
             bus_io_set(BUS_IDX_BECKER_DATA, 0xFF);
         }
         return;

@@ -74,7 +74,8 @@ TEST(unpolled_data_read_does_not_lose_byte) {
     ASSERT_EQ(becker_stats.reads, 1);
 }
 
-TEST(publish_order_never_shows_ready_with_stale_data) {
+/* The end states only: the store order inside becker_refresh is not visible here. */
+TEST(poll_publishes_data_and_ready_pop_clears_ready) {
     setup();
     uint8_t b = 0x41;
     becker_write(&b, 1);
@@ -183,7 +184,7 @@ int main(void) {
     RUN(status_read_does_not_pop);
     RUN(status_poll_publishes_then_data_read_pops);
     RUN(unpolled_data_read_does_not_lose_byte);
-    RUN(publish_order_never_shows_ready_with_stale_data);
+    RUN(poll_publishes_data_and_ready_pop_clears_ready);
     RUN(coco_write_reaches_stream);
     RUN(tx_backpressure);
     RUN(rx_overrun_counted);

@@ -1473,34 +1473,35 @@ int fake6809_fast(int opts, void (*line)(const char *s)) {
             bk_run(NULL, BK_N, &b);
             bool drained = events_drained();
             bus_engine_check_drops();
-            if (!bk_stream_line(line, sp ? "0.89MHz" : "1.79MHz", &b, un0, ov0)) rc = -1;
+            if (!bk_stream_line(line, sp ? "0.89MHz" : "1.79MHz", &b, un0, ov0) || !drained) rc = -1;
             if (sp) continue;
             uint32_t counted = bus_stats.cycles - c0, drop = bus_stats.event_drop - d0, lap = bus_stats.event_lap - l0;
             snprintf(buf, sizeof buf, "fast event rate with Becker 1.79MHz: counted %lu of %lu, lag max %lu, drop %lu, lap %lu",
                      (unsigned long)counted, (unsigned long)b.cycles, (unsigned long)bus_stats.event_lag_max, (unsigned long)drop, (unsigned long)lap);
             line(buf);
-            if (!drained || counted != b.cycles || drop || lap || bus_stats.event_lag_max >= BUS_EVENTS / 2) rc = -1;
+            if (counted != b.cycles || drop || lap || bus_stats.event_lag_max >= BUS_EVENTS / 2) rc = -1;
         }
         /* a byte published by an earlier poll, then the port empty (that data
          * read is an underrun, by design) */
         static const uint8_t b2b[] = { 0, 1, 2, 3, BK_S, 0, 1, 2, 3, BK_S, BK_D, 0, 1, 2, 3 };
         uint8_t res[5][4];
-        bool stable = true;
+        static const uint8_t want[4] = { 0x02, 0x5C, 0x00, 0xFF };
+        bool stable = true, drained = true;
         fast_at(0, SREAL);
         for (int i = 0; i < 5; i++) {
             uint8_t x = 0x5C;
             becker_write(&x, 1);
             bk_run(b2b, sizeof b2b, &b); res[i][0] = b.last_st; res[i][1] = b.last_d;
-            events_drained();
+            drained &= events_drained();
             bk_run(b2b, sizeof b2b, &b); res[i][2] = b.last_st; res[i][3] = b.last_d;
-            events_drained();
+            drained &= events_drained();
             if (memcmp(res[i], res[0], 4)) stable = false;
         }
         bus_trace_freeze(false);                     /* the empty-port reads froze it */
-        snprintf(buf, sizeof buf, "fast becker back-to-back: ready -> %02x,%02x; empty -> %02x,%02x (%s)",
-                 res[0][0], res[0][1], res[0][2], res[0][3], stable ? "stable" : "NOT stable");
+        snprintf(buf, sizeof buf, "fast becker back-to-back: ready -> %02x,%02x; empty -> %02x,%02x (%s)%s",
+                 res[0][0], res[0][1], res[0][2], res[0][3], stable ? "stable" : "NOT stable", drained ? "" : ", events NOT drained");
         line(buf);
-        if (!stable) rc = -1;
+        if (!stable || !drained || memcmp(res[0], want, 4)) rc = -1;
         /* information: a poll on the cycle right after the read that took the
          * last byte, before that read's hook has popped it (a 6809 client
          * has a few cycles between the two) */

@@ -33,7 +33,7 @@ extern volatile uint32_t bus_events[BUS_EVENTS];   /* Pico: 8 KB aligned (DMA C'
  * 0x0000-0x3EFF and 0x3F40-0x3F5F). core1 writes it back into every slot it
  * has consumed. */
 #define BUS_EV_NONE 0xFFFFFFFFu
-void bus_event(uint32_t w);                    /* BUS_HOT: one cycle: trace, counters, hooks, write queue */
+void bus_event(uint32_t w);                    /* BUS_HOT: one cycle: a write runs its hooks, then trace, counters, write queue; a read trace, counters, hooks */
 
 typedef struct { uint32_t seq; uint16_t idx; uint8_t rw; uint8_t data; } bus_trace_entry;   /* seq: events since bus_init */
 typedef struct {
@@ -89,5 +89,5 @@ bool bus_pop_write(uint16_t *idx, uint8_t *data);                   /* core0 con
  * events up to the freeze; `trace run` (freeze false) starts it afresh. */
 void bus_trace_freeze(bool freeze);
 bool bus_trace_frozen(void);
-void bus_trace_freeze_hot(void);              /* BUS_HOT; freezes (never thaws); the current event is kept */
+void bus_trace_freeze_hot(void);              /* BUS_HOT; freezes (never thaws); a read hook's own event is kept, a write hook's is not (stored after its hooks) */
 size_t bus_trace_copy(bus_trace_entry *out, size_t max);            /* the last max events, oldest first */
