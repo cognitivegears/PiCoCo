@@ -509,6 +509,42 @@ the same fault. The Plus-W loop still has the old order.
 | CoCo 2, firmware 2ee4b76 | fail: 11 clean passes then a desync; later runs failed on the first sector | 2026-10-01 |
 | CoCo 2, fixed read path | pass: 55 minutes, `PASS 00D1` (209 passes), `SUM 83CB ERR 0000` throughout. Board: 1.59 G bus cycles, `dw reads 132445` all clean, `becker reads 34302611 underrun 0 overrun 0`, `oe_glitch 0`, `addr_resample 0`, `late_precompute` 181 M (11 % of cycles served from the fresh sample, expected back to back) | 2026-10-01 |
 
+## J. ROM manager (stub + firmware UI)
+
+Spec `docs/superpowers/specs/2026-10-01-rom-manager-design.md`. The manager
+is a stub ROM in the firmware (`rom load manager`); the screens are drawn by
+the Pico. Never swap the ROM from the USB console while the stub is running.
+
+### J.1 16K CoCo 2, no Extended BASIC
+
+1. Power on, `EXEC 49154`: screen shows `PICOCO  16K NO ECB`, `ROMS`, the
+   `.ROM` files sorted, the first highlighted.
+2. Down / up arrows move the highlight; it stops at both ends.
+3. ENTER on `HDBDW3BCK.ROM`: `NEEDS EXTENDED BASIC`, still in the manager.
+4. ENTER on `CARTTEST.ROM`: the cart test starts by itself and prints
+   `PASS` lines (TEST_PLAN I.5). `status`: `rom now load carttest.rom`,
+   `rom next load manager`.
+5. Power-cycle: `EXEC 49154` is the manager again (launch is one-shot).
+6. BREAK in the manager: back to `OK`. `EXEC 49154` enters it again.
+7. Pull USB, power-cycle, `EXEC 49154`: works on cart power alone.
+8. `status` after all of it: `underrun 0`, `oe_glitch 0`, `addr_resample 0`.
+9. With the manager on screen, unplug and replug nothing, just wait 5
+   minutes, then press down: the highlight still moves (idle session).
+
+### J.2 Results
+
+| Check | Result | Date |
+|---|---|---|
+| J.1.1 first screen | pass: `PICOCO  16K NO ECB` (the `$3FFF` mirror check reports 16K on the real machine), list drawn | 2026-10-01 |
+| J.1.2 arrows | pass | 2026-10-01 |
+| J.1.3 DOS ROM refused | pass: `NEEDS EXTENDED BASIC`, stays in the manager | 2026-10-01 |
+| J.1.4 launch carttest | pass: starts with no typing and prints PASS lines; `rom now load carttest.rom`, `rom next load manager`; `dw reads 1712` clean, `underrun 0`, `oe_glitch 0`, `addr_resample 0`. The manager screen is not cleared first, so the pak draws over it | 2026-10-01 |
+| J.1.5 one-shot launch | pass: after a power cycle `EXEC 49154` is the manager again | 2026-10-01 |
+| J.1.6 BREAK | pass: back to `OK`; `EXEC 49154` re-enters | 2026-10-01 |
+| J.1.7 no USB | pass on cart power alone | 2026-10-01 |
+| J.1.8 counters | | |
+| J.1.9 idle session | pass: highlight still moves after 5 minutes idle | 2026-10-01 |
+
 ## How to resume with Claude
 
 Plug the Pico in, then say "resume the bench test plan at step A" (or

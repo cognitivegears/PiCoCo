@@ -263,6 +263,18 @@ And on the bench:
    register in the always-on domain the clock already uses.
 6. The double-RESET window by feel.
 
+Settled by the first plan (2026-10-01): entry at `$C002` only, so check 4
+holds; `POLCAT` keeps Y and works with interrupts masked on a CoCo 2
+(emulator and bench); the 32K probe must reject a mirror of `$3FFF`, and
+does on the 16K machine. BREAK returns to BASIC from an `EXEC` entry. Still
+open for the second plan: checks 1-3, 5 and 6.
+
+Added by the first plan: `rom launch <file>` (section 6.4's one-shot load;
+`rom load` also sets the next-boot ROM, so the manager must not use it).
+Carried to the second plan: clear the screen before jumping to a launched
+ROM; a sequence byte in the poll so a reply later than the stub's ~1.3 s
+timeout cannot leave it one reply behind.
+
 ## 9. Testing
 
 - **Host (`firmware/tests/test_ui.c`, new suite):** drive `ui_poll` with
