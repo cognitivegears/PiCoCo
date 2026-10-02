@@ -20,9 +20,10 @@
 
 #define PICOCO_BOARD_PLUSW 1
 #define PICOCO_HAVE_NET 1   /* RM2 radio: firmware/src/net/net.c is compiled in */
-/* Pad-grid signals (all in sio_hw->gpio_in, bits < 32). The Plus-W core1
- * loop (bus_core1.c) samples the address on Q and drives U10 /OE itself
- * from PIN_OE_FW when JP2 is in the 2-3 position. GP34/GP42 (audio) are
+/* Pad-grid signals (all in sio_hw->gpio_in, bits < 32). The PIO engine
+ * (bus_core1.c) uses /R/W and, through its helper in a GPIO-base-16 PIO block,
+ * OE_BUS (GP40); E only in its calibration mode. PIN_OE_FW stays high (U10
+ * enabled by OE_BUS only: JP2 1-2; 2-3 is not supported by the engine). GP34/GP42 (audio) are
  * left untouched: not driven, not pulled. */
 #define PIN_CTS     24
 #define PIN_SCS     25
@@ -36,10 +37,6 @@
 #define PICOCO_INPUT_MASK ((0xFFULL << PIN_D0) | (0x3FFFULL << PIN_A0) | (1ULL << PIN_RW) \
                            | (0x7FULL << 24) | (1ULL << PIN_OE_BUS))
 
-/* core1's raw OE_BUS poll (bus_core1.c): GP40 is bit 8 of sio_hw->gpio_hi_in
- * (GP32..GP47's register), not sio_hw->gpio_in. */
-#define BUS_OE_REG  gpio_hi_in
-#define BUS_OE_MASK (1u << (PIN_OE_BUS - 32))
 
 /* On-flash FAT filesystem: same firmware headroom as the Pico 2 build, rest
  * of the Plus-W's 16 MB flash goes to the partition (see fs_flash.h). */

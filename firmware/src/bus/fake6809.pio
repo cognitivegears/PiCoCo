@@ -115,3 +115,69 @@ public relchk:
     in pins, 8      side 1        ; t=k+1: D0-D7 after the rise
     push noblock    side 1        ; t=k+2
 .wrap
+
+; Plus-W fast fake 6809 (`bus selftest fast` on a Plus-W): PIO1 (GPIO base 0),
+; clkdiv 1, one TX word per cycle by DMA. Side-set = E (GP26).
+; out pins GP8..GP25 (18): A0-A13, R/W, LED (0), /CTS, /SCS; set pins GP24-25.
+;   TX word: [17:0] those pins, [24:18] pre, [31:25] post.
+;   RX word: [15:8] D0-D7 at f = L+3+pre after E rose, [7:0] D0-D7 k+1 clk
+;            after E fell (release check).
+; t=0 is E falling, f=0 is E rising. E low = 42 + 14*e (t=17: address,
+; R/W and selects change, 25 clk before E rises). E high = L + pre + post + 5.
+; Patched per burst: `eset` (e), `erise` delay (L), `lset` (nop, or in a
+; late-select burst `set pins, v` so the select falls at f = L+1), and the
+; first pull / `relchk` delays (k + m = 13) as on the Pico 2.
+.program fake6809_fast_pw
+.side_set 1
+.wrap_target
+    pull block      side 0 [10]   ; t=k+3 .. 16
+    out pins, 18    side 0        ; t=17: next address, R/W, selects
+public eset:
+    set x, 0        side 0        ; t=18: e
+hiext:
+    jmp x-- hiext   side 0 [13]   ; t=19..32 for e=0
+    out x, 7        side 0        ; t=33: pre
+    out y, 7        side 0 [7]    ; t=34..41: post
+public erise:
+    nop             side 1        ; f=0: E rises; delay L in a late-select burst
+public lset:
+    nop             side 1        ; f=L+1: late-select burst: the select falls here
+lo:
+    jmp x-- lo      side 1        ; pre+1 clk
+    in pins, 8      side 1        ; f = L+3+pre: the CPU's latch point
+postl:
+    jmp y-- postl   side 1        ; post+1 clk
+public relchk:
+    nop             side 0 [3]    ; E falls: t=0..k
+    in pins, 8      side 0        ; t=k+1: D0-D7 after E fell
+    push noblock    side 0        ; t=k+2
+.wrap
+
+; Fake OE_BUS for a bare Plus-W (the carrier's U15 is not there): OE_BUS
+; (GP40) low while E is high and /CTS or /SCS is low. Runs in the GPIO-base-16
+; block. in_base GP24 with in_count 2 (/CTS, /SCS), jmp_pin GP26 (E),
+; set_base GP40, y = 3. From E rising (select already low) to GP40 low:
+; the wait, mov, jmp, set = 3-4 clk; a late select is polled every 3 clk.
+.program fake_decode_pw
+.pio_version 1
+.wrap_target
+top:
+    wait 1 gpio 26          ; E high
+poll:
+    mov x, pins             ; x = /SCS:/CTS
+    jmp x!=y hit            ; a select is low
+    jmp pin poll            ; E still high: keep looking (late select)
+.wrap
+hit:
+    set pins, 0             ; OE_BUS low
+    wait 0 gpio 26          ; E falls
+    set pins, 1             ; OE_BUS high
+    jmp top
+
+; Decode-delay probe (same block): one 16-bit sample of GP25..GP40 per clk,
+; two per RX word (bit 0 /SCS, bit 1 E, bit 15 OE_BUS), drained by DMA.
+.program decode_probe_pw
+.pio_version 1
+.wrap_target
+    in pins, 16
+.wrap

@@ -17,10 +17,6 @@
 /* Pull-up input pins for main.c's gpio_setup(): D0-7, A0-13, /R/W, OE_BUS. */
 #define PICOCO_INPUT_MASK ((0xFFULL << PIN_D0) | (0x3FFFULL << PIN_A0) | (1ULL << PIN_RW) | (1ULL << PIN_OE_BUS))
 
-/* core1's raw OE_BUS poll (bus_core1.c): on a Pico 2, OE_BUS is bit 26 of
- * sio_hw->gpio_in, same register as the address/data/RW bits. */
-#define BUS_OE_REG  gpio_in
-#define BUS_OE_MASK (1u << PIN_OE_BUS)
 
 /* On-flash FAT filesystem: firmware occupies 0x000000..0x17FFFF, this
  * partition is the rest of the Pico 2's 4 MB flash (see fs_flash.h). */

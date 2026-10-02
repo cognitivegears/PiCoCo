@@ -22,4 +22,7 @@ void    fake6809_end(void);
 
 /* Pico 2: `bus selftest fast` - DMA-fed back-to-back reads at 1.79 and 0.89 MHz
  * timing (fake6809_fast in fake6809.pio). 0 pass, -1 fail, -2 refused: bus live. */
-int fake6809_fast(bool stress, void (*line)(const char *s));
+#define FAST_OPT_STRESS 1   /* core0 memcpy loop during every burst */
+#define FAST_OPT_RADIO  2   /* Plus-W: WiFi scans + cyw43 polling during every burst */
+#define FAST_OPT_RESTARTS 4 /* stop after 40 more engine-restart bursts */
+int fake6809_fast(int opts, void (*line)(const char *s));

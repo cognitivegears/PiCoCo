@@ -6,8 +6,12 @@
 ; Per read: the SM pushes the address of the table byte; DMA A moves it into
 ; DMA B's READ_ADDR_TRIG; DMA B copies that one byte into the TX FIFO.
 ;
-; Cycle start (`trig`): `wait 1 irq 0` from the bus_sel_p2 helper, or patched
-; at load to `wait 0 gpio 26` (OE_BUS pin directly). Spike part 3.
+; Cycle start (`trig`) and the two end-of-cycle waits (`wend`, `rend`) are
+; patched per board at load (bus_core1.c):
+;   Pico 2:  trig `wait 0 gpio 26` (OE_BUS pin), ends `wait 1 gpio 26` as assembled
+;            (or trig `wait 1 irq 0` from bus_sel_p2, spike part 3).
+;   Plus-W:  trig `wait 1 irq 0`, ends `wait 1 irq 2`, both raised in this block
+;            by bus_sel_pw, which watches OE_BUS (GP40) from a GPIO-base-16 PIO.
 
 ; Variation A: outputs enabled before the pull (drive 0x00 until the byte lands).
 .program bus_engine
@@ -18,6 +22,7 @@ top:
 public trig:
     wait 1 irq 0            ; selected cycle (helper flag, cleared here)
     jmp pin rd              ; R/W high = CoCo read
+public wend:
     wait 1 gpio 26          ; a write: never drive
     jmp top
 rd:
@@ -26,6 +31,7 @@ rd:
     mov pindirs, ~null      ; drive now: the pads still hold 0x00 from the last release
     pull block              ; the byte, from DMA B
     out pins, 8
+public rend:
     wait 1 gpio 26          ; end of the cycle
     mov pins, null [1]      ; RP2350-E9: drive low two clk...
     mov pindirs, null       ; ...then release
@@ -41,6 +47,7 @@ top:
 public trig:
     wait 1 irq 0
     jmp pin rd
+public wend:
     wait 1 gpio 26
     jmp top
 rd:
@@ -49,6 +56,7 @@ rd:
     pull block
     out pins, 8
     mov pindirs, ~null
+public rend:
     wait 1 gpio 26
     mov pins, null [1]
     mov pindirs, null
@@ -66,4 +74,20 @@ public fall:
     irq set 0
 public flag1:
     irq set 1               ; patched to a nop for one flag
+.wrap
+
+; Select helper (Plus-W): runs in a PIO block with GPIO base 16 (the one the
+; cyw43 driver also uses), watches the board's OE_BUS on GP40 and raises the
+; read SM's flags in PIO0 across blocks (`next` wraps from PIO2 to PIO0).
+.program bus_sel_pw
+.pio_version 1
+.wrap_target
+    wait 1 gpio 40          ; starts here: a start while OE_BUS is low skips that cycle
+public fall:
+    wait 0 gpio 40          ; OE_BUS low: selected and E high
+    irq next set 0          ; read SM: cycle start
+public flag1:
+    irq next set 1          ; event SM (later); patched to a nop for one flag
+    wait 1 gpio 40          ; OE_BUS high: cycle over
+    irq next set 2          ; read SM: release
 .wrap

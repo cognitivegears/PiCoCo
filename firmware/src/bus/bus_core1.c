@@ -1,48 +1,56 @@
 #include "bus.h"
-#include "hardware/structs/sio.h"
 #include "hardware/sync.h"
-#include "hardware/timer.h"
-#include PICOCO_BOARD_H
-
-/* OE_BUS lives in a different SIO register on each board (gpio_in on a Pico
- * 2, gpio_hi_in on a Plus-W where it's GP40) — BUS_OE_REG/BUS_OE_MASK come
- * from the board header so this file reads the right one either way.
- * Address/data/RW are always in gpio_in on both boards. */
-#define OE_HIGH() (sio_hw->BUS_OE_REG & BUS_OE_MASK)
-#define RW_MASK (1u << PIN_RW)
-#define D_MASK  (0xFFu << PIN_D0)
-
-/* core1 entry: launched once from main.c after config replay, never returns.
- * Flash-free per Plan B - everything reachable from here must be BUS_HOT or
- * static inline (see the nm/objdump acceptance check in the task report). */
-#ifndef PICOCO_BOARD_PLUSW
-/* Pico 2: the PIO + DMA engine (bus_engine.pio) serves ROM-window and I/O-page
- * reads with no CPU in the per-cycle path; core1 has nothing to do. The CPU
- * loop this replaced is at tag fw-1.4-cpu-loop. Spike scope: no read hooks,
- * no write capture, no trace or counters, so the Becker port does not work on
- * this build.
- *
- * DMA A: PIO0 RX (the table byte's address) -> DMA B READ_ADDR_TRIG, endless.
- * DMA B: that byte -> PIO0 TX, 8-bit, count 1, re-armed by every A write.
- * Everything below runs on core0. */
 #include "hardware/pio.h"
 #include "hardware/dma.h"
 #include "hardware/structs/busctrl.h"
 #include "bus_engine.pio.h"
+#include PICOCO_BOARD_H
 #include <stdio.h>
 
+/* The PIO + DMA engine (bus_engine.pio) serves ROM-window and I/O-page reads
+ * with no CPU in the per-cycle path, on both boards; core1 has nothing to do.
+ * The CPU loops this replaced are at tag fw-1.4-cpu-loop. Spike scope: no read
+ * hooks, no write capture, no trace or counters, so the Becker port does not
+ * work on this build, and the Plus-W's firmware-decoded $FF60-$FF7F
+ * (bus_fw_mask) is gone.
+ *
+ * Read SM: PIO0 (GPIO base 0). Pico 2: it waits on OE_BUS (GP26) itself.
+ * Plus-W: OE_BUS is GP40, outside PIO0's window, so bus_sel_pw watches it from
+ * PIO2 (GPIO base 16, shared with the cyw43 driver) and raises PIO0 flags 0
+ * (start), 1 (event SM, later) and 2 (end) across blocks.
+ * DMA A: PIO0 RX (the table byte's address) -> DMA B READ_ADDR_TRIG, endless.
+ * DMA B: that byte -> PIO0 TX, 8-bit, count 1, re-armed by every A write.
+ * Everything below runs on core0. */
+
 static PIO const epio = pio0;
+static PIO hpio;                 /* helper's block: pio0 (Pico 2), pio2 (Plus-W) */
 static int esm = -1, hsm, edma_a, edma_b;
 static uint eoff, hoff;
 static const pio_program_t *eprog;
 static bool erunning;
 static bool ebypass = true, eprio = true;   /* measured defaults, see docs/superpowers/specs/2026-10-02-pio-engine-spike.md */
-/* Spike part 3 knobs. eorder: 0 = A (enable before pull), 1 = B (enable after).
- * etrig: 0 = OE_BUS pin, 1 = helper one flag, 2 = helper two flags,
- * 3 = helper two flags started at `wait 0` with no flag clear (the naive form). */
-static int eorder = 1, etrig = 0;   /* recommended: B on the pin (spike part 3) */
-
+/* Spike knobs. eorder: 0 = A (enable before pull), 1 = B (enable after).
+ * etrig: 0 = pin (Pico 2: OE_BUS; Plus-W: E rise/fall, a calibration mode with
+ * no select decode at all), 1 = helper one flag, 2 = helper two flags,
+ * 3 = helper two flags started mid-cycle with no flag clear (naive form). */
+static int eorder = 1;
+#ifdef PICOCO_BOARD_PLUSW
+static int etrig = 2;            /* the Plus-W design: helper on OE_BUS */
+#define HELPER_PROG      bus_sel_pw_program
+#define HELPER_CFG       bus_sel_pw_program_get_default_config
+#define HELPER_FLAG1     bus_sel_pw_offset_flag1
+#define HELPER_FALL      bus_sel_pw_offset_fall
+#define HELPER_INSTR     bus_sel_pw_program_instructions
+#define ENG_IN_MASK ((0x3FFFu << PIN_A0) | (1u << PIN_RW) | (1u << PIN_E))
+#else
+static int etrig = 0;            /* recommended: B on the pin (spike part 3) */
+#define HELPER_PROG      bus_sel_p2_program
+#define HELPER_CFG       bus_sel_p2_program_get_default_config
+#define HELPER_FLAG1     bus_sel_p2_offset_flag1
+#define HELPER_FALL      bus_sel_p2_offset_fall
+#define HELPER_INSTR     bus_sel_p2_program_instructions
 #define ENG_IN_MASK ((0x3FFFu << PIN_A0) | (1u << PIN_RW) | (1u << PIN_OE_BUS))
+#endif
 
 static void engine_load(void) {
     if (eprog) pio_remove_program(epio, eprog, eoff);
@@ -57,19 +65,39 @@ static void engine_load(void) {
     sm_config_set_clkdiv(&c, 1.0f);
     pio_sm_init(epio, (uint)esm, eoff, &c);
     pio_sm_set_enabled(epio, (uint)esm, false);
-    if (!etrig)
-        epio->instr_mem[eoff + (eorder ? bus_engine_late_offset_trig : bus_engine_offset_trig)] = (uint16_t)pio_encode_wait_gpio(false, PIN_OE_BUS);
-    epio->instr_mem[hoff + bus_sel_p2_offset_flag1] = etrig >= 2 ? bus_sel_p2_program_instructions[bus_sel_p2_offset_flag1] : (uint16_t)pio_encode_nop();
+    uint trig = eoff + (eorder ? bus_engine_late_offset_trig : bus_engine_offset_trig);
+    uint wend = eoff + (eorder ? bus_engine_late_offset_wend : bus_engine_offset_wend);
+    uint rend = eoff + (eorder ? bus_engine_late_offset_rend : bus_engine_offset_rend);
+#ifdef PICOCO_BOARD_PLUSW
+    if (!etrig) {                /* calibration: E itself, no decode */
+        epio->instr_mem[trig] = (uint16_t)pio_encode_wait_gpio(true, PIN_E);
+        epio->instr_mem[wend] = epio->instr_mem[rend] = (uint16_t)pio_encode_wait_gpio(false, PIN_E);
+    } else {                     /* flags 0 (start) and 2 (end) from bus_sel_pw */
+        epio->instr_mem[wend] = epio->instr_mem[rend] = (uint16_t)pio_encode_wait_irq(true, false, 2);
+    }
+#else
+    (void)wend; (void)rend;
+    if (!etrig) epio->instr_mem[trig] = (uint16_t)pio_encode_wait_gpio(false, PIN_OE_BUS);
+#endif
+    hpio->instr_mem[hoff + HELPER_FLAG1] = etrig >= 2 ? HELPER_INSTR[HELPER_FLAG1] : (uint16_t)pio_encode_nop();
 }
 
 static void engine_init(void) {
     esm = (int)pio_claim_unused_sm(epio, true);
-    hsm = (int)pio_claim_unused_sm(epio, true);
-    hoff = pio_add_program(epio, &bus_sel_p2_program);
-    pio_sm_config hc = bus_sel_p2_program_get_default_config(hoff);
+#ifdef PICOCO_BOARD_PLUSW
+    /* `irq next` from PIO2 lands in PIO0. The cyw43 driver normally got here
+     * first and set PIO2's GPIO base to 16; if not, set it (PIO2 still empty). */
+    hpio = pio2;
+    if (pio_get_gpio_base(hpio) != 16) hard_assert(pio_set_gpio_base(hpio, 16) == PICO_OK);
+#else
+    hpio = epio;
+#endif
+    hsm = (int)pio_claim_unused_sm(hpio, true);
+    hoff = pio_add_program(hpio, &HELPER_PROG);
+    pio_sm_config hc = HELPER_CFG(hoff);
     sm_config_set_clkdiv(&hc, 1.0f);
-    pio_sm_init(epio, (uint)hsm, hoff, &hc);
-    pio_sm_set_enabled(epio, (uint)hsm, false);
+    pio_sm_init(hpio, (uint)hsm, hoff, &hc);
+    pio_sm_set_enabled(hpio, (uint)hsm, false);
     pio_sm_set_pins_with_mask(epio, (uint)esm, 0, 0xFFu << PIN_D0);
     pio_sm_set_pindirs_with_mask(epio, (uint)esm, 0, 0xFFu << PIN_D0);
     for (int g = PIN_D0; g < PIN_D0 + 8; g++) pio_gpio_init(epio, (uint)g);
@@ -94,12 +122,28 @@ static void engine_init(void) {
                           dma_encode_endless_transfer_count(), true);
 }
 
-static void engine_stop(void) {
-    pio_set_sm_mask_enabled(epio, (1u << esm) | (1u << hsm), false);
-    /* Two direct execs, a few clk: pio_sm_set_pins_with_mask() goes pin by pin
-     * and left D0-D7 driven for ~1 us, into the next cycles (spike part 3). */
+/* Read SM and helper start and stop in one register write. Plus-W: PIO2 is
+ * PIO0's "prev" neighbour. */
+static inline __attribute__((always_inline)) void engine_enable(bool on, bool helper) {
+#ifdef PICOCO_BOARD_PLUSW
+    pio_set_sm_multi_mask_enabled(epio, helper ? (1u << hsm) : 0, 1u << esm, 0, on);
+#else
+    pio_set_sm_mask_enabled(epio, (1u << esm) | (helper ? (1u << hsm) : 0), on);
+#endif
+}
+
+/* From the disable to the release must be a few clk: whatever was on D0-D7
+ * stays driven until the two execs land. pio_sm_set_pins_with_mask() went pin
+ * by pin and left them driven ~1 us (spike part 3); then, from flash, the
+ * first stop after the XIP cache had been cleared out stalled on the fetch of
+ * the execs and held a byte through the next two cycles (Plus-W, part 4). So:
+ * SRAM, interrupts off. */
+static void __no_inline_not_in_flash_func(engine_stop)(void) {
+    uint32_t irq = save_and_disable_interrupts();
+    engine_enable(false, true);
     epio->sm[esm].instr = pio_encode_mov(pio_pins, pio_null);       /* E9: low first... */
     epio->sm[esm].instr = 0xA063u;                                  /* ...then `mov pindirs, null` */
+    restore_interrupts(irq);
     erunning = false;
 }
 
@@ -111,16 +155,19 @@ static void engine_start(void) {
     busy_wait_at_least_cycles(64);
     pio_sm_clear_fifos(epio, (uint)esm);
     pio_sm_restart(epio, (uint)esm);
-    pio_sm_restart(epio, (uint)hsm);
+    pio_sm_restart(hpio, (uint)hsm);
     pio_sm_put(epio, (uint)esm, (uint32_t)(uintptr_t)bus_rom_base >> 14);
     pio_sm_exec(epio, (uint)esm, pio_encode_pull(false, true));
     pio_sm_exec(epio, (uint)esm, pio_encode_mov(pio_x, pio_osr));
     pio_sm_exec(epio, (uint)esm, pio_encode_jmp(eoff + (eorder ? bus_engine_late_wrap_target : bus_engine_wrap_target)));
-    pio_sm_exec(epio, (uint)hsm, pio_encode_jmp(hoff + (etrig == 3 ? bus_sel_p2_offset_fall : 0)));
-    if (etrig != 3) epio->irq = 3u;                  /* no flag left from before the stop */
+    pio_sm_exec(hpio, (uint)hsm, pio_encode_jmp(hoff + (etrig == 3 ? HELPER_FALL : 0)));
+    if (etrig != 3) epio->irq = 7u;                  /* no flag left from before the stop (the flags live in PIO0) */
     epio->input_sync_bypass = ebypass ? (epio->input_sync_bypass | ENG_IN_MASK) : (epio->input_sync_bypass & ~ENG_IN_MASK);
+#ifdef PICOCO_BOARD_PLUSW
+    pio_set_input_sync_bypass_with_mask64(hpio, ebypass ? (1ull << PIN_OE_BUS) : 0, 1ull << PIN_OE_BUS);
+#endif
     busctrl_hw->priority = eprio ? (BUSCTRL_BUS_PRIORITY_DMA_R_BITS | BUSCTRL_BUS_PRIORITY_DMA_W_BITS) : 0;
-    pio_set_sm_mask_enabled(epio, (1u << esm) | (etrig ? (1u << hsm) : 0), true);   /* together: no flag raised before the read SM runs */
+    engine_enable(true, etrig != 0);                 /* together: no flag raised before the read SM runs */
     erunning = true;
 }
 
@@ -153,144 +200,36 @@ void bus_engine_variant(int order, int trig) {
     if (run) engine_start();
 }
 const char *bus_engine_desc(void) {
+#ifdef PICOCO_BOARD_PLUSW
+    static const char *const t[] = { "trigger E pin (calibration, no decode)", "trigger helper 1 flag", "trigger helper 2 flags", "trigger helper 2 flags naive start" };
+#else
     static const char *const t[] = { "trigger OE_BUS pin", "trigger helper 1 flag", "trigger helper 2 flags", "trigger helper 2 flags naive start" };
+#endif
     static char buf[64];
     snprintf(buf, sizeof buf, "order %s, %s", eorder ? "B (enable after pull)" : "A (enable before pull)", t[etrig]);
     return buf;
+}
+
+/* Who holds what: the engine's own SMs/channels and every claimed SM and DMA
+ * channel in the chip (the cyw43 driver's included). */
+void bus_engine_resources(void (*line)(const char *s)) {
+    char buf[128];
+    if (esm < 0) { line("bus engine not started"); return; }
+    snprintf(buf, sizeof buf, "bus engine read pio0 sm%d, helper pio%u sm%d, dma A %d B %d",
+             esm, pio_get_index(hpio), hsm, edma_a, edma_b);
+    line(buf);
+    for (uint i = 0; i < NUM_PIOS; i++) {
+        PIO p = pio_get_instance(i);
+        int pos = snprintf(buf, sizeof buf, "pio%u gpio_base %u claimed sm", i, pio_get_gpio_base(p));
+        for (uint s = 0; s < 4; s++) if (pio_sm_is_claimed(p, s)) pos += snprintf(buf + pos, sizeof buf - pos, " %u", s);
+        line(buf);
+    }
+    int pos = snprintf(buf, sizeof buf, "dma claimed");
+    for (uint ch = 0; ch < NUM_DMA_CHANNELS; ch++) if (dma_channel_is_claimed(ch)) pos += snprintf(buf + pos, sizeof buf - pos, " %u", ch);
+    line(buf);
 }
 
 BUS_HOT void bus_core1_main(void) {
     (void)save_and_disable_interrupts();
     for (;;) __wfe();
 }
-#else  /* PICOCO_BOARD_PLUSW */
-#define E_MASK     (1u << PIN_E)
-#define Q_MASK     (1u << PIN_Q)
-#define CTS_MASK   (1u << PIN_CTS)
-#define SCS_MASK   (1u << PIN_SCS)
-#define A14_MASK   (1u << PIN_A14)
-#define A15_MASK   (1u << PIN_A15)
-#define OEFW_MASK  (1u << PIN_OE_FW)
-#define DECODE_MASK ((0x3FFFu << PIN_A0) | RW_MASK | CTS_MASK | SCS_MASK | A14_MASK | A15_MASK)
-
-/* End of a cycle we drove: U10 off, then the pads driven low before release
- * so no bits linger on them (RP2350-E9, see the Pico 2 loop; an A4 chip does
- * not need it, an A2 does). Everything here delays the next back-to-back
- * cycle, so there is no multi-sample E filter as on the Pico 2: bare Plus-W
- * self-test 2026-10-01, burst response 352-366 ns before this macro and
- * 425-454 ns with a three-sample filter and two clears, against 480. */
-#define PLUSW_READ_END() do { \
-        while (sio_hw->gpio_in & E_MASK) { } \
-        sio_hw->gpio_set = OEFW_MASK; \
-        sio_hw->gpio_clr = D_MASK; \
-        sio_hw->gpio_oe_clr = D_MASK; \
-    } while (0)
-
-/* Selected = /CTS or /SCS asserted, or the full 16-bit address is in bus_fw_mask. */
-static inline __attribute__((always_inline)) bool plusw_selected(uint32_t in) {
-    if ((in & (CTS_MASK | SCS_MASK)) != (CTS_MASK | SCS_MASK)) return true;
-    uint16_t addr = ((in >> PIN_A0) & 0x3FFF) | ((in & A14_MASK) ? 0x4000 : 0) | ((in & A15_MASK) ? 0x8000 : 0);
-    return bus_fw_selected(addr, bus_fw_mask);
-}
-
-/* Plus-W: decode during E low, act during E high. Works with JP2 in either
- * position (1-2: U15 also enables U10 for hardware-selected cycles, which is
- * consistent with what we do; 2-3: only PIN_OE_FW enables it, which is what
- * lets $FF60-$FF7F respond). Reads take a fast path: the response (index,
- * data byte, hw/fw stat bucket) is precomputed from the Q-time sample while
- * E is still low, so the work after E rises is one compare and two pin
- * writes. Any decode-bit change caught at the E-rise resample falls through
- * to the full path below, which recomputes everything from the fresh
- * sample. */
-BUS_HOT void bus_core1_main(void) {
-    (void)save_and_disable_interrupts();
-    /* E-low wait lives here, once, not at the top of the loop: post-cycle
-     * work (a write hook, bus_on_read_done) that overruns E low must not
-     * drop the next real cycle. The Pico 2 loop already serves a late
-     * cycle instead of skipping it (its top just waits for OE_BUS low,
-     * which is still true if E stayed high the whole time core1 was
-     * busy); this loop matches that by starting each iteration at the
-     * Q-high wait instead of re-checking E low first. */
-    while (sio_hw->gpio_in & E_MASK) { }
-    for (;;) {
-        while (!(sio_hw->gpio_in & Q_MASK)) { }         /* wait Q high: address valid */
-        uint32_t in = sio_hw->gpio_in;
-        bool sel = plusw_selected(in);                  /* head start from the Q-time sample */
-        /* Precompute the read response during E low: after E rises the fast path
-         * below is one compare and two pin writes. Any change in the decode
-         * bits at E rise (late /CTS, address settling) falls through to the
-         * full path, which recomputes everything from the fresh sample. */
-        uint16_t idx = (in >> PIN_A0) & 0x3FFF;
-        uint32_t dset = (uint32_t)bus_peek(idx) << PIN_D0;
-        bool fast_read = sel && (in & RW_MASK) && bus_drive;
-        if (fast_read) {                                /* latch only: the outputs are off until E rises */
-            sio_hw->gpio_clr = D_MASK;
-            sio_hw->gpio_set = dset;
-        }
-        while (!(sio_hw->gpio_in & E_MASK)) { }         /* wait E high */
-        /* /CTS and /SCS are decoded downstream of the address (SAM/GIME) and need only
-         * meet setup before E rises, so re-check them now; the Pico 2 bench needed the
-         * same resample. */
-        uint32_t in2 = sio_hw->gpio_in;
-        if (fast_read && !((in ^ in2) & DECODE_MASK)) {
-            sio_hw->gpio_oe_set = D_MASK;
-            sio_hw->gpio_clr = OEFW_MASK;               /* U10 outward */
-            PLUSW_READ_END();
-            bus_on_read_done(idx, time_us_32());
-            if ((in & (CTS_MASK | SCS_MASK)) != (CTS_MASK | SCS_MASK)) bus_stats.hw_selected++; else bus_stats.fw_selected++;
-            continue;
-        }
-        uint32_t dif = (in ^ in2) & DECODE_MASK;
-        if (dif) {
-            bus_stats.addr_resample++;
-            bus_stats.addr_resample_bits |= (dif >> PIN_A0) & 0x3FFF;
-            in = in2;
-            sel = plusw_selected(in);
-        }
-        bool hw = ((in & (CTS_MASK | SCS_MASK)) != (CTS_MASK | SCS_MASK));
-        /* OE_BUS is U15's own E-qualified hardware decode (readable on GP40
-         * in either JP2 position); catches a /CTS or /SCS that asserts too
-         * late for the resample above to see. A cycle rescued this way is
-         * hardware-selected by definition, even though `in`'s /CTS,/SCS
-         * bits read high. */
-        if (!sel) { sel = !OE_HIGH(); if (sel) hw = true; }
-        if (!sel) { while (sio_hw->gpio_in & E_MASK) { } continue; }   /* not selected: still wait out E low before the next cycle */
-        idx = (in >> PIN_A0) & 0x3FFF;                  /* declared above; `in` may now be in2 */
-        if (in & RW_MASK) {                             /* CoCo read */
-            if (bus_drive) {
-                sio_hw->gpio_clr = D_MASK;
-                sio_hw->gpio_set = (uint32_t)bus_peek(idx) << PIN_D0;
-                sio_hw->gpio_oe_set = D_MASK;
-                sio_hw->gpio_clr = OEFW_MASK;           /* U10 outward */
-                PLUSW_READ_END();
-            } else {
-                while (sio_hw->gpio_in & E_MASK) { }
-            }
-            bus_on_read_done(idx, time_us_32());
-        } else {                                        /* CoCo write: last sample while E was high */
-            /* Also in capture-only mode: U10's direction is RW_BUF (hardware), so enabling
-             * it here only lets the CoCo's write data in. */
-            sio_hw->gpio_clr = OEFW_MASK;               /* U10 inward */
-            uint32_t d, prev = sio_hw->gpio_in;
-            for (;;) {
-                d = sio_hw->gpio_in;
-                if (!(d & E_MASK)) break;
-                prev = d;
-            }
-            sio_hw->gpio_set = OEFW_MASK;
-            /* Discharge the pads U10 was driving (see the Pico 2 loop). With JP2 1-2
-             * U10 is enabled by OE_BUS, which rises a little after E falls: wait for
-             * it before driving against U10. */
-            while (!OE_HIGH()) { }
-            sio_hw->gpio_clr = D_MASK;
-            sio_hw->gpio_oe_set = D_MASK;
-            sio_hw->gpio_clr = D_MASK;
-            sio_hw->gpio_oe_clr = D_MASK;
-            bus_on_write(idx, (uint8_t)((prev >> PIN_D0) & 0xFF), time_us_32());
-        }
-        /* Counted after servicing, not in the E-rise-to-data window: keeps
-         * that window free of anything but the transfer itself. */
-        if (hw) bus_stats.hw_selected++; else bus_stats.fw_selected++;
-    }
-}
-#endif

@@ -53,6 +53,41 @@ static void pins_to_sio(void) {
     gpio_set_dir(PIN_LED, GPIO_OUT);
 #endif
 }
+
+/* Fake OE_BUS for a bare module (the carrier's U15 is absent): fake_decode_pw
+ * in PIO2, the GPIO-base-16 block the engine's helper and the cyw43 driver
+ * share, drives GP40 from the fake 6809's E, /CTS and /SCS. */
+static PIO const dpio = pio2;
+static int dsm = -1;
+static uint doff;
+#define DEC_BYPASS ((7ull << PIN_CTS) | (1ull << PIN_OE_BUS))   /* GP24-26 and GP40 */
+static uint64_t dec_bypass_was;
+static void decode_start(void) {
+    dsm = pio_claim_unused_sm(dpio, true);
+    doff = pio_add_program(dpio, &fake_decode_pw_program);
+    pio_sm_config c = fake_decode_pw_program_get_default_config(doff);
+    sm_config_set_in_pins(&c, PIN_CTS);
+    sm_config_set_in_pin_count(&c, 2);               /* mov x, pins = /SCS:/CTS only */
+    sm_config_set_jmp_pin(&c, PIN_E);
+    sm_config_set_set_pins(&c, PIN_OE_BUS, 1);
+    sm_config_set_clkdiv(&c, 1.0f);
+    pio_sm_init(dpio, (uint)dsm, doff, &c);
+    pio_sm_set_pins_with_mask64(dpio, (uint)dsm, 1ull << PIN_OE_BUS, 1ull << PIN_OE_BUS);   /* high before the pad is ours */
+    pio_sm_set_pindirs_with_mask64(dpio, (uint)dsm, 1ull << PIN_OE_BUS, 1ull << PIN_OE_BUS);
+    pio_gpio_init(dpio, PIN_OE_BUS);
+    pio_sm_exec(dpio, (uint)dsm, pio_encode_set(pio_y, 3));   /* both selects high */
+    dec_bypass_was = (uint64_t)dpio->input_sync_bypass << pio_get_gpio_base(dpio);
+    pio_set_input_sync_bypass_with_mask64(dpio, DEC_BYPASS, DEC_BYPASS);
+    pio_sm_set_enabled(dpio, (uint)dsm, true);
+}
+static void decode_stop(void) {
+    pio_sm_set_enabled(dpio, (uint)dsm, false);
+    gpio_set_function(PIN_OE_BUS, GPIO_FUNC_SIO); gpio_set_dir(PIN_OE_BUS, GPIO_IN); gpio_pull_up(PIN_OE_BUS);
+    pio_set_input_sync_bypass_with_mask64(dpio, dec_bypass_was, DEC_BYPASS & ~(1ull << PIN_OE_BUS));   /* GP40's bit belongs to the engine's helper */
+    pio_remove_program(dpio, &fake_decode_pw_program, doff);
+    pio_sm_unclaim(dpio, (uint)dsm);
+    dsm = -1;
+}
 /* One bus cycle: six TX words (P0, P1, P2, sample-delay control, P3, P4—
  * see fake6809.pio's fake6809_pw header). For writes, D0..D7 are driven from
  * core0's SIO for the duration (core1 only samples them on a write). E high
@@ -149,10 +184,16 @@ static int start(void) {
     pins_to_pio();
     pio_sm_init(pio, sm, offset, &c);
     pio_sm_set_enabled(pio, sm, true);
+#ifdef PICOCO_BOARD_PLUSW
+    decode_start();
+#endif
     return 0;
 }
 
 static void stop(void) {
+#ifdef PICOCO_BOARD_PLUSW
+    decode_stop();
+#endif
     pio_sm_set_enabled(pio, sm, false);
     pins_to_sio();
     pio_remove_program(pio, &PROGRAM, offset);
@@ -234,87 +275,14 @@ int fake6809_selftest(fake_result_t *r, void (*line)(const char *s)) {
     CHECK("read_bank0_marker", cycle(0xC000, true, true, 0, SAMPLE_LATE) == 0xA5);
     CHECK("read_bank0_fill",   cycle(0xC001, true, true, 0, SAMPLE_LATE) == 0x00);
     CHECK("read_top_of_window", cycle(0xFEFF, true, true, 0, SAMPLE_LATE) == 0x00);
-#ifdef PICOCO_PIO_ENGINE
     (void)cyc0; (void)wr0;
-    /* Pico 2 PIO engine spike: no write path, no hooks, no counters. */
+    /* PIO engine spike: no write path, no hooks, no counters. */
     #define SKIP(name) line("selftest " name " skipped (spike)")
     SKIP("bank_switch_next_read"); SKIP("bank_switch_back");
     SKIP("becker_status_read");    /* banked: the engine serves the I/O page from the bank buffer */
     SKIP("writes_counted"); SKIP("unselected_ignored"); SKIP("write_data_captured");
     SKIP("no_ring_overrun"); SKIP("cycles_counted");
     #undef SKIP
-#else
-    cycle(0xFF40, false, true, 1, SAMPLE_LATE);            /* bank select 1 */
-    CHECK("bank_switch_next_read", cycle(0xC001, true, true, 0, SAMPLE_LATE) == 0x01);
-    cycle(0xFF40, false, true, 0, SAMPLE_LATE);
-    CHECK("bank_switch_back", cycle(0xC001, true, true, 0, SAMPLE_LATE) == 0x00);
-    CHECK("becker_status_read", cycle(0xFF41, true, true, 0, SAMPLE_LATE) == 0x00);
-    for (int i = 0; i < 10; i++) cycle(0xFF42, false, true, (uint8_t)i, SAMPLE_LATE);
-    busy_wait_us(2);   /* core1 finishes bus_on_* a few hundred ns after the PIO has already pushed the cycle's result */
-    CHECK("writes_counted", bus_stats.writes - wr0 == 10 + 2);
-    uint32_t before = bus_stats.cycles;
-    cycle(0xC001, true, false, 0, SAMPLE_LATE);            /* unselected: core1 must not see it */
-    busy_wait_us(2);
-    CHECK("unselected_ignored", bus_stats.cycles == before);
-#ifdef PICOCO_BOARD_PLUSW
-    uint32_t fw0 = bus_stats.fw_selected, cyc_fw = bus_stats.cycles;
-    cycle(0xFF7E, true, false, 0, SAMPLE_LATE);            /* not enabled: ignored */
-    CHECK("fw_unenabled_ignored", bus_stats.cycles == cyc_fw);
-    bus_fw_enable(0xFF7E);
-    bus_set_read(0x3F7E, 0x9F);
-    CHECK("fw_read", cycle(0xFF7E, true, false, 0, SAMPLE_LATE) == 0x9F);
-    uint32_t wr_fw = bus_stats.writes;
-    cycle(0xFF7E, false, false, 0x42, SAMPLE_LATE);
-    busy_wait_us(2);
-    CHECK("fw_write_queued", bus_stats.writes == wr_fw + 1 && bus_stats.fw_selected == fw0 + 2);
-    CHECK("fw_other_page_ignored", (cycle(0xBF7E, true, false, 0, SAMPLE_LATE), bus_stats.fw_selected == fw0 + 2));
-    bus_fw_disable(0xFF7E);
-    bus_set_read(0x3F7E, 0xFF);
-#endif
-    /* Drain the write ring now and check every captured event, in order:
-     * the two bank-select writes, the ten $FF42 writes, and (Plus-W) the
-     * one firmware-decoded write above. Also stops these bytes leaking
-     * into the DriveWire server later (becker_refresh polls the same ring). */
-    {
-        static const uint16_t exp_idx[] = {
-            0x3F40, 0x3F40, 0x3F42, 0x3F42, 0x3F42, 0x3F42, 0x3F42, 0x3F42, 0x3F42, 0x3F42, 0x3F42, 0x3F42,
-#ifdef PICOCO_BOARD_PLUSW
-            0x3F7E,
-#endif
-        };
-        static const uint8_t exp_data[] = {
-            1, 0, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9,
-#ifdef PICOCO_BOARD_PLUSW
-            0x42,
-#endif
-        };
-        busy_wait_us(2);
-        bool ok = true;
-        for (size_t i = 0; i < sizeof(exp_idx) / sizeof(exp_idx[0]); i++) {
-            uint16_t widx = 0xFFFF; uint8_t wdata = 0;
-            bool have = bus_pop_write(&widx, &wdata);
-            if (!have || widx != exp_idx[i] || wdata != exp_data[i]) {
-                if (ok) {   /* report the first mismatch only */
-                    snprintf(buf, sizeof buf, "selftest write %u: got %s%04x/%02x want %04x/%02x",
-                             (unsigned)i, have ? "" : "(empty) ", widx, wdata, exp_idx[i], exp_data[i]);
-                    line(buf);
-                }
-                ok = false;
-            }
-        }
-        CHECK("write_data_captured", ok);
-    }
-    busy_wait_us(2);
-    CHECK("no_ring_overrun", bus_stats.write_overrun == ov0);
-#ifdef PICOCO_BOARD_PLUSW
-#define CYCLES_EXPECTED (8 + 10 + 2)   /* + fw_read + fw_write_queued */
-#else
-#define CYCLES_EXPECTED (8 + 10)
-#endif
-    busy_wait_us(2);
-    CHECK("cycles_counted", bus_stats.cycles - cyc0 == CYCLES_EXPECTED);   /* 6 reads + 2 bank writes + 10 $FF42 writes; the unselected cycle is not seen */
-#undef CYCLES_EXPECTED
-#endif
     float ns_per = 1e9f * CLKDIV / (float)clock_get_hz(clk_sys);
 #ifdef PICOCO_BOARD_PLUSW
     {
@@ -340,8 +308,8 @@ int fake6809_selftest(fake_result_t *r, void (*line)(const char *s)) {
          * before E falls; 480 ns is the initial budget, to be revisited
          * against a scope. */
         CHECK("burst_within_480ns", r->burst_first_ok_delay >= 0 && r->burst_delay_ns <= 480);
-        busy_wait_us(2);
-        CHECK("burst_cycles_counted", bus_stats.cycles - cburst == 8);
+        (void)cburst;
+        line("selftest burst_cycles_counted skipped (spike)");
     }
 #endif
 
@@ -433,62 +401,142 @@ int fake6809_selftest(fake_result_t *r, void (*line)(const char *s)) {
     return fails ? -1 : 0;
 }
 
-#ifndef PICOCO_BOARD_PLUSW
-/* `bus selftest fast`: real back-to-back 1.79 MHz cycles. fake6809_fast (PIO1,
- * clkdiv 1) is fed one word per cycle by DMA and its samples are captured by
- * DMA, so nothing on core0 can stretch a cycle. Timing is in fake6809.pio. */
+#ifdef PICOCO_PIO_ENGINE
+/* `bus selftest fast`: real back-to-back 1.79 MHz cycles, DMA-fed, so nothing
+ * on core0 can stretch a cycle. Pico 2: fake6809_fast (PIO1) drives OE_BUS
+ * directly. Plus-W: fake6809_fast_pw (PIO1) drives E, /CTS, /SCS and
+ * fake_decode_pw (PIO2) makes OE_BUS on GP40 from them, as U15 would. Timing
+ * is in fake6809.pio. */
 #include "hardware/dma.h"
+#include "hardware/watchdog.h"
+#include "net.h"
+#ifdef PICOCO_BOARD_PLUSW
+#include "pico/cyw43_arch.h"
+#endif
 
 #define FAST_N 4096
-#define FAST_UNSEL (1u << 17)            /* TX word: OE_BUS stays high this cycle */
 #define FAST_WIN 0x3F00                  /* ROM window: table indices 0x0000-0x3EFF */
-static uint32_t fast_tx[FAST_N], fast_rx[FAST_N];
-static uint8_t  stress_buf[4096];
+#define FAST_IO  0x3F40                  /* /SCS window: table indices 0x3F40-0x3F5F */
+/* cycle descriptor: [13:0] table index, [14] R/W (1 = read), [16:15] select:
+ * 0 none, 1 /CTS (ROM window), 2 /SCS (I/O window) */
+#define D_RD   (1u << 14)
+#define D_SEL(d) (((d) >> 15) & 3u)
+#define D_CTS  (1u << 15)
+#define D_SCS  (2u << 15)
+static uint32_t fast_desc[FAST_N], fast_tx[FAST_N], fast_rx[FAST_N];
+static uint8_t  stress_buf[4096], io_save[32];
 
 static uint32_t xs32(uint32_t *s) { uint32_t x = *s; x ^= x << 13; x ^= x >> 17; x ^= x << 5; return *s = x; }
+static uint32_t pat_seed = 0x1234567u;
 
-/* Table fill and address walk: every byte nonzero (an undriven bus reads 0x00)
- * and every cycle's byte differs from the previous cycle's. */
-static void fast_pattern(void) {
+static uint8_t desc_byte(uint32_t d) { return bus_peek((uint16_t)(d & 0x3FFF)); }
+
+/* Table fill (ROM window, and the 32-byte /SCS window, saved for restore) and
+ * an address walk: every byte nonzero (an undriven bus reads 0x00) and every
+ * read's byte differs from the previous cycle's. */
+static void fast_fill(void) {
     uint32_t s = 0x1234567u;
     for (uint32_t i = 0; i < FAST_WIN; i++) { uint8_t b = (uint8_t)xs32(&s); bus_table[i] = b ? b : 0x5A; }
-    uint16_t prev = 0;
-    for (int k = 0; k < FAST_N; k++) {
-        uint16_t idx;
-        do idx = (uint16_t)(xs32(&s) % FAST_WIN); while (bus_peek(idx) == bus_peek(prev));
-        fast_tx[k] = idx | 0x4000u;      /* R/W high: read */
-        prev = idx;
-    }
+    memcpy(io_save, &bus_table[FAST_IO], 32);
+    for (uint32_t i = 0; i < 32; i++) bus_table[FAST_IO + i] = (uint8_t)(0x80 | (i * 7 + 3));
 }
-
-/* every third cycle a CoCo write (R/W low) when on */
-static void fast_mix(bool on) {
-    for (int k = 0; k < FAST_N; k++) fast_tx[k] = (on && k % 3 == 2) ? (fast_tx[k] & ~0x4000u) : (fast_tx[k] | 0x4000u);
+static uint32_t pick(uint32_t sel, uint8_t avoid) {
+    uint32_t d;
+    do d = (sel == D_SCS ? FAST_IO + xs32(&pat_seed) % 32 : xs32(&pat_seed) % FAST_WIN) | sel | D_RD;
+    while (desc_byte(d) == avoid);
+    return d;
+}
+/* ROM reads (or, Plus-W late /SCS bursts, I/O reads), all selected */
+static void fast_pattern(uint32_t sel) {
+    pat_seed = 0x1234567u;
+    uint8_t prev = 0;
+    for (int k = 0; k < FAST_N; k++) { fast_desc[k] = pick(sel, prev); prev = desc_byte(fast_desc[k]); }
+}
+/* every third cycle a CoCo write (R/W low) */
+static void fast_mix(void) {
+    for (int k = 2; k < FAST_N; k += 3) fast_desc[k] &= ~D_RD;
 }
 /* k%4: 0 read, 1 unselected, 2 read, 3 write: covers write->read, read->gap,
- * gap->read and write->read->gap. Off: all selected reads. */
-static void fast_gaps(bool on) {
+ * gap->read and write->read->gap. Plus-W: the k%4==2 read is an I/O (/SCS)
+ * read and every other write is an /SCS write. */
+static void fast_gaps(void) {
+    fast_pattern(D_CTS);
+    uint8_t prev = 0;
     for (int k = 0; k < FAST_N; k++) {
-        uint32_t w = (fast_tx[k] | 0x4000u) & ~FAST_UNSEL;
-        if (on && k % 4 == 1) w |= FAST_UNSEL;
-        if (on && k % 4 == 3) w &= ~0x4000u;
-        fast_tx[k] = w;
+        uint32_t d = fast_desc[k];
+#ifdef PICOCO_BOARD_PLUSW
+        if (k % 4 == 2) d = pick(D_SCS, prev);
+        if (k % 8 == 7) d = (FAST_IO + 2) | D_SCS;
+#endif
+        if (k % 4 == 1) d &= ~(3u << 15);
+        if (k % 4 == 3) d &= ~D_RD;
+        fast_desc[k] = d;
+        if ((d & D_RD) && D_SEL(d)) prev = desc_byte(d);
+    }
+    (void)prev;
+}
+
+#ifdef PICOCO_BOARD_PLUSW
+#define FAST_PROG    fake6809_fast_pw_program
+#define FAST_INSTR   fake6809_fast_pw_program_instructions
+#define FAST_RELCHK  fake6809_fast_pw_offset_relchk
+static int fast_L;                       /* late select: clk after E rose, 0 = with the address */
+static uint32_t fast_late_sel;
+/* E-high budget: pre + post = 37 - L (1.79 MHz) or 79 - L (0.89 MHz); S counts
+ * from E rising: S = L + 3 + pre. */
+#define S0()         (fast_L + 3)
+#define SUM(e)       ((e) ? 79 - fast_L : 37 - fast_L)
+static void fast_set_late(int L, uint32_t sel) {
+    fast_L = L;
+    fast_late_sel = L ? sel : 0;
+    uint16_t er = FAST_INSTR[fake6809_fast_pw_offset_erise];
+    pio->instr_mem[offset + fake6809_fast_pw_offset_erise] = (er & ~0x0F00u) | (uint16_t)((L ? L - 1 : 0) << 8);
+    pio->instr_mem[offset + fake6809_fast_pw_offset_lset] = L
+        ? (uint16_t)(pio_encode_set(pio_pins, sel == D_CTS ? 2 : 1) | (1u << 12))   /* side 1: E stays high */
+        : FAST_INSTR[fake6809_fast_pw_offset_lset];
+}
+static void fast_timing(int e, int pre, int post) {
+    pio->instr_mem[offset + fake6809_fast_pw_offset_eset] = (uint16_t)pio_encode_set(pio_x, (uint)e);
+    for (int k = 0; k < FAST_N; k++) {
+        uint32_t d = fast_desc[k], sel = d & (3u << 15);
+        uint32_t w = (d & 0x7FFFu)
+                   | ((fast_late_sel || sel != D_CTS) ? (1u << 16) : 0)
+                   | ((fast_late_sel || sel != D_SCS) ? (1u << 17) : 0);
+        fast_tx[k] = w | ((uint32_t)pre << 18) | ((uint32_t)post << 25);
     }
 }
-
+#else
+#define FAST_PROG    fake6809_fast_program
+#define FAST_INSTR   fake6809_fast_program_instructions
+#define FAST_RELCHK  fake6809_fast_offset_relchk
+#define S0()         1
+#define SUM(e)       ((e) ? 81 : 39)
 static void fast_timing(int e, int pre, int post) {
-    for (int k = 0; k < FAST_N; k++)
-        fast_tx[k] = (fast_tx[k] & (0x7FFFu | FAST_UNSEL)) | ((uint32_t)e << 15) | ((uint32_t)pre << 18) | ((uint32_t)post << 25);
+    for (int k = 0; k < FAST_N; k++) {
+        uint32_t d = fast_desc[k];
+        fast_tx[k] = (d & 0x7FFFu) | ((uint32_t)e << 15) | (D_SEL(d) ? 0 : (1u << 17)) | ((uint32_t)pre << 18) | ((uint32_t)post << 25);
+    }
 }
+#endif
+/* sample point S (clk after OE_BUS fell on a Pico 2, after E rose on a Plus-W) */
+static void fast_at(int e, int s) { int pre = s - S0(); fast_timing(e, pre, SUM(e) - pre); }
 
-typedef struct { uint32_t mism, zero, stale, rel_bad, lost, spur, wrong, restarts; int first_k; uint16_t first_idx; uint8_t first_exp, first_got; } fast_res_t;
+typedef struct { uint32_t mism, zero, stale, rel_bad, lost, spur, wrong, restarts, scans; int first_k; uint16_t first_idx; uint8_t first_exp, first_got;
+                 int spur_k; uint8_t spur_got, spur_prev; } fast_res_t;
 
 static int fdma_tx = -1, fdma_rx = -1;
-static bool fast_stress, fast_restart;
+static bool fast_stress, fast_restart, fast_radio;
+static uint32_t radio_results, radio_scans, radio_fails;
+static int radio_rc __attribute__((unused));
+static void (*fast_mid_burst)(void);     /* called once, ~200 us into a burst (decode probe) */
+
+#ifdef PICOCO_BOARD_PLUSW
+static int radio_cb(void *env, const cyw43_ev_scan_result_t *r) { (void)env; if (r) radio_results++; return 0; }
+#endif
 
 static void fast_burst(fast_res_t *r) {
     memset(r, 0, sizeof *r);
-    r->first_k = -1;
+    r->first_k = r->spur_k = -1;
     for (int k = 0; k < FAST_N; k++) fast_rx[k] = 0xDEADBEEFu;
     dma_channel_config c = dma_channel_get_default_config(fdma_rx);
     channel_config_set_transfer_data_size(&c, DMA_SIZE_32);
@@ -504,14 +552,27 @@ static void fast_burst(fast_res_t *r) {
     channel_config_set_dreq(&c, pio_get_dreq(pio, sm, true));
     channel_config_set_high_priority(&c, true);
     dma_channel_configure(fdma_tx, &c, &pio->txf[sm], fast_tx, FAST_N, false);
+    watchdog_update();
     dma_start_channel_mask((1u << fdma_rx) | (1u << fdma_tx));
     uint32_t t0 = time_us_32();
     uint32_t next_rs = t0 + 50;
+    bool mid_done = false;
     while (dma_channel_is_busy(fdma_rx) && time_us_32() - t0 < 20000) {
         if (fast_stress) memcpy(stress_buf, stress_buf + 2048, 2048), memcpy(stress_buf + 2048, stress_buf, 2048);
-#ifdef PICOCO_PIO_ENGINE
         /* restart the engine under a running burst: it comes back mid-cycle */
         if (fast_restart && (int32_t)(time_us_32() - next_rs) >= 0) { bus_engine_rebase(); r->restarts++; next_rs += 50; }
+        if (fast_mid_burst && !mid_done && time_us_32() - t0 > 200) { fast_mid_burst(); mid_done = true; }
+#ifdef PICOCO_BOARD_PLUSW
+        /* radio busy: keep a scan running and the cyw43 driver polled, so its
+         * PIO2 SPI state machine and its DMA channels move data during the burst */
+        if (fast_radio && !fast_mid_burst) {         /* not in a probe burst: a long cyw43 call there would miss the probe start */
+            if (!cyw43_wifi_scan_active(&cyw43_state)) {
+                cyw43_wifi_scan_options_t opt = { 0 };
+                radio_rc = cyw43_wifi_scan(&cyw43_state, &opt, NULL, radio_cb);
+                if (radio_rc == 0) { r->scans++; radio_scans++; } else radio_fails++;
+            }
+            net_poll(time_us_32() / 1000);
+        }
 #endif
     }
     if (dma_channel_is_busy(fdma_rx)) {          /* a dropped push (RX full) leaves the count short */
@@ -521,34 +582,44 @@ static void fast_burst(fast_res_t *r) {
     }
     uint8_t prev = 0;
     for (int k = 0; k < FAST_N; k++) {
-        uint16_t idx = fast_tx[k] & 0x3FFF;
-        bool drv = bus_drive && (fast_tx[k] & 0x4000u) && !(fast_tx[k] & FAST_UNSEL);   /* a write or bus drive off: the pads must stay undriven (0x00) */
+        uint32_t d = fast_desc[k];
+        uint16_t idx = d & 0x3FFF;
+        bool drv = bus_drive && (d & D_RD) && D_SEL(d);   /* a write, unselected, or bus drive off: the pads must stay undriven (0x00) */
         uint8_t exp = drv ? bus_peek(idx) : 0, got = (uint8_t)(fast_rx[k] >> 8), rel = (uint8_t)fast_rx[k];
         if (rel) r->rel_bad++;
         if (got != exp) {
             r->mism++;
             if (got == 0) r->zero++; else if (got == prev) r->stale++;
-            if (!drv) r->spur++; else if (got) r->wrong++;
+            if (!drv) { if (r->spur_k < 0) { r->spur_k = k; r->spur_got = got; r->spur_prev = prev; } r->spur++; }
+            else if (got) r->wrong++;
             if (r->first_k < 0) { r->first_k = k; r->first_idx = idx; r->first_exp = exp; r->first_got = got; }
         }
         prev = exp;
     }
 }
 
-/* Patch the release-check point: `rel` nop delay k, first pull delay 13-k. */
+/* Patch the release-check point: `relchk` nop delay k, first pull delay 13-k. */
 static void fast_set_rel(int k) {
-    uint16_t p = fake6809_fast_program_instructions[0], n = fake6809_fast_program_instructions[fake6809_fast_offset_relchk];
+    uint16_t p = FAST_INSTR[0], n = FAST_INSTR[FAST_RELCHK];
     pio->instr_mem[offset] = (p & ~0x0F00u) | (uint16_t)((13 - k) << 8);
-    pio->instr_mem[offset + fake6809_fast_offset_relchk] = (n & ~0x0F00u) | (uint16_t)(k << 8);
+    pio->instr_mem[offset + FAST_RELCHK] = (n & ~0x0F00u) | (uint16_t)(k << 8);
 }
 
 static void fast_line(void (*line)(const char *), const char *tag, int s, const fast_res_t *r) {
-    char buf[160];
+    char buf[200];
     snprintf(buf, sizeof buf, "fast %s S=%d (%u ns): mismatches %lu/%d (zero %lu stale %lu spurious %lu wrong %lu) rel_nonzero %lu lost %lu%s",
              tag, s, (unsigned)(s * 20 / 3), (unsigned long)r->mism, FAST_N, (unsigned long)r->zero,
              (unsigned long)r->stale, (unsigned long)r->spur, (unsigned long)r->wrong,
              (unsigned long)r->rel_bad, (unsigned long)r->lost, r->restarts ? " (restarts)" : "");
     line(buf);
+#ifdef PICOCO_BOARD_PLUSW
+    if (fast_radio) {
+        snprintf(buf, sizeof buf, "fast %s radio: scan %s, %lu scans started so far (%lu refused, last rc %d), %lu scan results so far, net %s",
+                 tag, cyw43_wifi_scan_active(&cyw43_state) ? "active" : "idle", (unsigned long)radio_scans, (unsigned long)radio_fails, radio_rc,
+                 (unsigned long)radio_results, net_state_name(net_state()));
+        line(buf);
+    }
+#endif
     if (r->first_k >= 0) {
         snprintf(buf, sizeof buf, "fast %s first bad cycle %d idx %04x want %02x got %02x",
                  tag, r->first_k, r->first_idx, r->first_exp, r->first_got);
@@ -556,15 +627,15 @@ static void fast_line(void (*line)(const char *), const char *tag, int s, const 
     }
 }
 
-/* Sweep the sample point S = 1..smax at one clock rate; print per-S mismatch
- * counts (S = 1..lowsum+1) and return response_clk: the smallest S from which every later S reads
+/* Sweep the sample point over the whole high phase; print per-S mismatch
+ * counts and return response_clk: the smallest S from which every later S reads
  * the whole burst correctly (-1: never). */
-static int fast_sweep(void (*line)(const char *), const char *tag, int e, int lowsum) {
+static int fast_sweep(void (*line)(const char *), const char *tag, int e) {
     char buf[200];
     int pos = snprintf(buf, sizeof buf, "fast %s sweep", tag), stable = -1, inbuf = 0;
     fast_res_t r;
-    for (int s = 1; s <= lowsum + 1; s++) {
-        fast_timing(e, s - 1, lowsum - (s - 1));
+    for (int s = S0(); s <= S0() + SUM(e); s++) {
+        fast_at(e, s);
         fast_burst(&r);
         if (r.mism == 0) { if (stable < 0) stable = s; } else stable = -1;
         pos += snprintf(buf + pos, sizeof buf - pos, " %d:%lu", s, (unsigned long)r.mism);
@@ -572,89 +643,194 @@ static int fast_sweep(void (*line)(const char *), const char *tag, int e, int lo
         if (pos > 150) { line(buf); pos = snprintf(buf, sizeof buf, "fast %s sweep", tag); inbuf = 0; }
     }
     if (inbuf) line(buf);
+#ifdef PICOCO_BOARD_PLUSW
+    snprintf(buf, sizeof buf, "fast %s response_clk %d after E rose (raw; %d ns)", tag, stable, stable < 0 ? -1 : stable * 20 / 3);
+#else
     snprintf(buf, sizeof buf, "fast %s response_clk %d (%d ns after OE_BUS fell)", tag, stable, stable < 0 ? -1 : stable * 20 / 3);
+#endif
     line(buf);
     return stable;
 }
 
-int fake6809_fast(bool stress, void (*line)(const char *s)) {
-    char buf[128];
+#ifdef PICOCO_BOARD_PLUSW
+/* Decode-delay probe: decode_probe_pw in PIO2 samples GP25..GP40 every clk
+ * (bit 0 /SCS, bit 1 E, bit 15 OE_BUS) for 512 clk, ~6 cycles, from ~200 us
+ * into a burst. The fake's own delay, E rise (or the late /SCS fall) to GP40
+ * falling, as seen by one observer: that is what the corrected numbers subtract. */
+#define PROBE_WORDS 256
+static uint32_t probe_buf[PROBE_WORDS];
+static int psm = -1, pdma = -1;
+static uint poff;
+static void probe_go(void) { pio_sm_set_enabled(dpio, (uint)psm, true); }
+static void probe_arm(void) {
+    psm = pio_claim_unused_sm(dpio, true);
+    poff = pio_add_program(dpio, &decode_probe_pw_program);
+    pio_sm_config c = decode_probe_pw_program_get_default_config(poff);
+    sm_config_set_in_pins(&c, PIN_SCS);
+    sm_config_set_in_shift(&c, true, true, 32);      /* shift right, autopush: sample 1 in [15:0], sample 2 in [31:16] */
+    sm_config_set_fifo_join(&c, PIO_FIFO_JOIN_RX);
+    sm_config_set_clkdiv(&c, 1.0f);
+    pio_sm_init(dpio, (uint)psm, poff, &c);
+    pio_set_input_sync_bypass_with_mask64(dpio, (1ull << PIN_SCS) | (1ull << PIN_E) | (1ull << PIN_OE_BUS),
+                                          (1ull << PIN_SCS) | (1ull << PIN_E));   /* GP40 is already bypassed by the engine */
+    pdma = dma_claim_unused_channel(true);
+    dma_channel_config dc = dma_channel_get_default_config(pdma);
+    channel_config_set_transfer_data_size(&dc, DMA_SIZE_32);
+    channel_config_set_read_increment(&dc, false);
+    channel_config_set_write_increment(&dc, true);
+    channel_config_set_dreq(&dc, pio_get_dreq(dpio, (uint)psm, false));
+    channel_config_set_high_priority(&dc, true);
+    dma_channel_configure(pdma, &dc, probe_buf, &dpio->rxf[psm], PROBE_WORDS, true);
+    fast_mid_burst = probe_go;
+}
+/* min/max clk from the reference edge (E rise, or /SCS fall when late) to OE_BUS low */
+static void probe_done(bool from_scs, int *dmin, int *dmax, int *n) {
+    uint32_t t0 = time_us_32();
+    while (dma_channel_is_busy(pdma) && time_us_32() - t0 < 10000) { }
+    dma_channel_abort(pdma);                         /* never started: nothing captured, *n stays 0 */
+    pio_sm_set_enabled(dpio, (uint)psm, false);
+    dma_channel_unclaim(pdma);
+    pio_remove_program(dpio, &decode_probe_pw_program, poff);
+    pio_sm_unclaim(dpio, (uint)psm);
+    fast_mid_burst = NULL;
+    *dmin = 99; *dmax = -1; *n = 0;
+    int ref = -1, prev = -1;
+    for (int i = 0; i < PROBE_WORDS * 2; i++) {
+        uint32_t v = (probe_buf[i / 2] >> ((i & 1) * 16)) & 0xFFFF;
+        bool e = v & 2, scs = v & 1, oe = v & 0x8000;
+        if (prev >= 0) {
+            bool pe = prev & 2, pscs = prev & 1;
+            if (!from_scs && e && !pe) ref = i;
+            if (from_scs && e && !scs && pscs) ref = i;
+        }
+        if (ref >= 0 && !oe) { int d = i - ref; if (d < *dmin) *dmin = d; if (d > *dmax) *dmax = d; (*n)++; ref = -1; }
+        prev = (int)v;
+    }
+}
+#endif
+
+int fake6809_fast(int opts, void (*line)(const char *s)) {
+    char buf[200];
     uint32_t c0 = bus_stats.cycles;
     sleep_ms(100);
     if (bus_stats.cycles != c0) return -2;
     if (!pins_idle_10ms()) return -2;
     sm = pio_claim_unused_sm(pio, false);
     if (sm < 0) return -1;
-    offset = pio_add_program(pio, &fake6809_fast_program);
+    offset = pio_add_program(pio, &FAST_PROG);
+#ifdef PICOCO_BOARD_PLUSW
+    pio_sm_config c = fake6809_fast_pw_program_get_default_config(offset);
+    sm_config_set_out_pins(&c, PIN_A0, 18);          /* A0-A13, R/W, LED, /CTS, /SCS */
+    sm_config_set_set_pins(&c, PIN_CTS, 2);
+    sm_config_set_sideset_pins(&c, PIN_E);
+    /* idle: selects high, E low, R/W high */
+    pio_sm_set_pins_with_mask(pio, sm, (1u << PIN_CTS) | (1u << PIN_SCS) | (1u << PIN_RW), 0x7FFFFu << PIN_A0);
+    for (int g = PIN_A0; g <= PIN_E; g++) pio_gpio_init(pio, g);
+    pio_sm_set_consecutive_pindirs(pio, sm, PIN_A0, PIN_E - PIN_A0 + 1, true);
+#else
     pio_sm_config c = fake6809_fast_program_get_default_config(offset);
     sm_config_set_out_pins(&c, PIN_A0, 15);
-    sm_config_set_in_pins(&c, PIN_D0);
     sm_config_set_sideset_pins(&c, PIN_OE_BUS);
+    pins_to_pio();
+#endif
+    sm_config_set_in_pins(&c, PIN_D0);
     sm_config_set_out_shift(&c, true, false, 32);
     sm_config_set_in_shift(&c, false, false, 32);
     sm_config_set_clkdiv(&c, 1.0f);
-    pins_to_pio();
     uint32_t bypass_was = pio->input_sync_bypass;
     pio->input_sync_bypass = bypass_was | D_MASK;   /* sample D0-D7 at the stated clk, not 2 clk later */
     pio_sm_init(pio, sm, offset, &c);
     fdma_tx = dma_claim_unused_channel(true);
     fdma_rx = dma_claim_unused_channel(true);
-    fast_stress = stress;
+    fast_stress = opts & FAST_OPT_STRESS;
+    fast_radio = opts & FAST_OPT_RADIO;
+    radio_results = radio_scans = radio_fails = 0;
     bool drive_was = bus_drive_get();
     bus_drive_set(true);
     rom_banks_begin();                               /* unbanked: the window is bus_table */
-    fast_pattern();
+    fast_fill();
+    fast_pattern(D_CTS);
     fast_set_rel(3);
+#ifdef PICOCO_BOARD_PLUSW
+    fast_set_late(0, 0);
+    decode_start();
+#endif
     pio_sm_set_enabled(pio, sm, true);
-#ifdef PICOCO_PIO_ENGINE
-    {   /* What an 8-bit DMA write puts in a 32-bit TX FIFO: PIO2 SM0, never started. */
-        PIO p2 = pio2;
-        pio_sm_claim(p2, 0);
-        pio_sm_clear_fifos(p2, 0);
-        static uint8_t probe = 0xA7;
+    {   /* What an 8-bit DMA write puts in a 32-bit TX FIFO: an idle PIO1 SM, never started. */
+        int psm8 = pio_claim_unused_sm(pio, true);
+        pio_sm_clear_fifos(pio, (uint)psm8);
+        static uint8_t probe8 = 0xA7;
         int ch = dma_claim_unused_channel(true);
         dma_channel_config dc = dma_channel_get_default_config(ch);
         channel_config_set_transfer_data_size(&dc, DMA_SIZE_8);
         channel_config_set_read_increment(&dc, false);
         channel_config_set_write_increment(&dc, false);
-        dma_channel_configure(ch, &dc, &p2->txf[0], &probe, 1, true);
+        dma_channel_configure(ch, &dc, &pio->txf[psm8], &probe8, 1, true);
         dma_channel_wait_for_finish_blocking(ch);
         dma_channel_unclaim(ch);
-        pio_sm_exec(p2, 0, pio_encode_pull(false, true));
-        pio_sm_exec(p2, 0, pio_encode_mov(pio_isr, pio_osr));
-        pio_sm_exec(p2, 0, pio_encode_push(false, true));
-        snprintf(buf, sizeof buf, "fast dma 8-bit write of %02x reaches the TX FIFO as %08lx", probe, (unsigned long)p2->rxf[0]);
+        pio_sm_exec(pio, (uint)psm8, pio_encode_pull(false, true));
+        pio_sm_exec(pio, (uint)psm8, pio_encode_mov(pio_isr, pio_osr));
+        pio_sm_exec(pio, (uint)psm8, pio_encode_push(false, true));
+        snprintf(buf, sizeof buf, "fast dma 8-bit write of %02x reaches the TX FIFO as %08lx", probe8, (unsigned long)pio->rxf[psm8]);
         line(buf);
-        pio_sm_unclaim(p2, 0);
+        pio_sm_unclaim(pio, (uint)psm8);
         bool byp, pri;
         bus_engine_get(&byp, &pri);
         snprintf(buf, sizeof buf, "fast engine: PIO0 + DMA, input sync bypass %s, DMA bus priority %s, %s", byp ? "on" : "off", pri ? "on" : "off", bus_engine_desc());
         line(buf);
+        snprintf(buf, sizeof buf, "fast test: fake 6809 pio1 sm%d, dma tx %d rx %d", sm, fdma_tx, fdma_rx);
+        line(buf);
+        bus_engine_resources(line);
     }
-#endif
+#ifdef PICOCO_BOARD_PLUSW
+    snprintf(buf, sizeof buf, "fast timing: cycle 84 clk (E low 42, E high 42), address+selects setup 25 clk to E rise, %d cycles back to back%s%s",
+             FAST_N, fast_stress ? ", core0 memcpy stress" : "", fast_radio ? ", radio busy (scans + cyw43 poll)" : "");
+#else
     snprintf(buf, sizeof buf, "fast timing: cycle %d clk (high 42, low 42), address setup 25 clk, %d cycles back to back%s",
-             84, FAST_N, stress ? ", core0 memcpy stress" : "");
+             84, FAST_N, fast_stress ? ", core0 memcpy stress" : "");
+#endif
     line(buf);
 
     fast_res_t r;
     int rc = 0;
-    for (int i = 0; i < 5; i++) {                    /* (a) realistic: S=36 (240 ns) at 1.79 MHz */
-        fast_timing(0, 35, 39 - 35);
+#ifdef PICOCO_BOARD_PLUSW
+    /* The fake decode's own delay, measured, so it can be taken out. */
+    int dmin, dmax, dn, lmin, lmax, ln;
+    fast_at(0, 38);
+    probe_arm(); fast_burst(&r); probe_done(false, &dmin, &dmax, &dn);
+    fast_pattern(D_SCS); fast_set_late(4, D_SCS); fast_at(0, 38);
+    probe_arm(); fast_burst(&r); probe_done(true, &lmin, &lmax, &ln);
+    fast_set_late(0, 0); fast_pattern(D_CTS);
+    snprintf(buf, sizeof buf, "fast fake decode delay: E rise -> OE_BUS low %d..%d clk (%d cycles); late /SCS fall -> OE_BUS low %d..%d clk (%d cycles)",
+             dmin, dmax, dn, lmin, lmax, ln);
+    line(buf);
+    if (dn == 0) { dmin = dmax = 4; line("fast fake decode delay not captured: assuming 4"); }
+    /* realistic point: 36 clk after OE_BUS fell = 36 + the fake's worst delay after E rose */
+    int sreal = 36 + dmax; if (sreal > S0() + SUM(0)) sreal = S0() + SUM(0);
+    snprintf(buf, sizeof buf, "fast realistic point: S=%d after E rose = %d after the fake OE_BUS fell", sreal, sreal - dmax);
+    line(buf);
+#define SREAL sreal
+#define SREAL89 (72 + dmax)
+#else
+#define SREAL 36
+#define SREAL89 72
+#endif
+    for (int i = 0; i < 5; i++) {                    /* (a) realistic, 1.79 MHz */
+        fast_at(0, SREAL);
         fast_burst(&r);
-        fast_line(line, "1.79MHz", 36, &r);
+        fast_line(line, "1.79MHz", SREAL, &r);
         if (r.mism || r.lost) rc = -1;
     }
-    fast_mix(true);                                  /* reads with writes between them: writes must never be driven */
-    fast_timing(0, 35, 4);
+    fast_mix();                                      /* reads with writes between them: writes must never be driven */
+    fast_at(0, SREAL);
     fast_burst(&r);
-    fast_line(line, "1.79MHz mixed r/w", 36, &r);
+    fast_line(line, "1.79MHz mixed r/w", SREAL, &r);
     if (r.mism || r.lost) rc = -1;
-    fast_mix(false);
-    fast_gaps(true);                                 /* unselected gaps: never driven, no stale trigger */
+    fast_gaps();                                     /* unselected gaps: never driven, no stale trigger */
+    fast_at(0, SREAL);
     fast_burst(&r);
-    fast_line(line, "1.79MHz gaps r/w/unsel", 36, &r);
+    fast_line(line, "1.79MHz gaps r/w/unsel", SREAL, &r);
     if (r.mism || r.lost) rc = -1;
-#ifdef PICOCO_PIO_ENGINE
     fast_restart = true;                             /* engine restarted every 50 us under the burst */
     fast_burst(&r);
     fast_restart = false;
@@ -662,40 +838,107 @@ int fake6809_fast(bool stress, void (*line)(const char *s)) {
              (unsigned long)r.restarts, (unsigned long)r.spur, (unsigned long)r.wrong, (unsigned long)r.zero);
     line(buf);
     if (r.spur || r.wrong || r.lost) rc = -1;
-    fast_burst(&r);
-    fast_line(line, "1.79MHz gaps after restarts", 36, &r);
-    if (r.mism || r.lost) rc = -1;
-#endif
-    fast_gaps(false);
-    bus_drive_set(false);                            /* capture-only: nothing may be driven */
-    fast_burst(&r);
-    fast_line(line, "1.79MHz drive off", 36, &r);
-    if (r.mism || r.lost) rc = -1;
-    bus_drive_set(true);
-    int resp = fast_sweep(line, "1.79MHz", 0, 39);   /* (b) */
-    if (resp < 0 || resp > 36) rc = -1;
-    {   /* release: earliest point after the rise where D0-D7 read 0 for the whole burst */
-        int rel_ok = -1;
-        fast_timing(0, 35, 4);
-        for (int k = 0; k <= 13 && rel_ok < 0; k++) { fast_set_rel(k); fast_burst(&r); if (!r.rel_bad && !r.mism) rel_ok = k + 1; }
-        fast_set_rel(3);
-        snprintf(buf, sizeof buf, "fast 1.79MHz release_clk %d (D0-D7 low on every cycle %d clk after OE_BUS rose; -1 = not by 14)", rel_ok, rel_ok);
+    if (r.spur_k >= 0) {
+        snprintf(buf, sizeof buf, "fast 1.79MHz first spurious: cycle %d (%s, idx %04x) read %02x; previous cycle's byte %02x",
+                 r.spur_k, (fast_desc[r.spur_k] & D_RD) ? "unselected" : "write", (unsigned)(fast_desc[r.spur_k] & 0x3FFF), r.spur_got, r.spur_prev);
         line(buf);
     }
-    fast_timing(3, 71, 81 - 71);                     /* (c) 0.89 MHz: high 84, low 84, S=72 (480 ns) */
+    if (opts & FAST_OPT_RESTARTS) {                  /* repeat just the restart burst */
+        uint32_t tot_rs = 0, tot_sp = 0, tot_wr = 0, tot_z = 0, bursts = 0;
+        for (int i = 0; i < 40; i++) {
+            fast_restart = true; fast_burst(&r); fast_restart = false;
+            tot_rs += r.restarts; tot_sp += r.spur; tot_wr += r.wrong; tot_z += r.zero; bursts++;
+            if (r.spur_k >= 0) {
+                snprintf(buf, sizeof buf, "fast restarts: burst %d spurious %lu, first at cycle %d (%s) read %02x, previous cycle's byte %02x",
+                         i, (unsigned long)r.spur, r.spur_k, (fast_desc[r.spur_k] & D_RD) ? "unselected" : "write", r.spur_got, r.spur_prev);
+                line(buf);
+            }
+        }
+        snprintf(buf, sizeof buf, "fast restarts: %lu bursts, %lu restarts, spurious %lu wrong %lu zero %lu", (unsigned long)bursts,
+                 (unsigned long)tot_rs, (unsigned long)tot_sp, (unsigned long)tot_wr, (unsigned long)tot_z);
+        line(buf);
+        if (tot_sp || tot_wr) rc = -1;
+        goto done;
+    }
     fast_burst(&r);
-    fast_line(line, "0.89MHz", 72, &r);
+    fast_line(line, "1.79MHz gaps after restarts", SREAL, &r);
     if (r.mism || r.lost) rc = -1;
-    fast_sweep(line, "0.89MHz", 3, 81);
+    bus_drive_set(false);                            /* capture-only: nothing may be driven */
+    fast_burst(&r);
+    fast_line(line, "1.79MHz drive off", SREAL, &r);
+    if (r.mism || r.lost) rc = -1;
+    bus_drive_set(true);
+    fast_pattern(D_CTS);
+#ifdef PICOCO_BOARD_PLUSW
+    /* late select: /CTS (ROM reads) and /SCS (I/O reads) fall 4 clk after E rose */
+    for (int which = 0; which < 2; which++) {
+        uint32_t sel = which ? D_SCS : D_CTS;
+        const char *tag = which ? "1.79MHz late /SCS" : "1.79MHz late /CTS";
+        fast_pattern(sel);
+        fast_set_late(4, sel);
+        fast_at(0, SREAL);
+        fast_burst(&r);
+        fast_line(line, tag, SREAL, &r);
+        if (r.mism || r.lost) rc = -1;
+        fast_mix();
+        fast_at(0, SREAL);
+        fast_burst(&r);
+        snprintf(buf, sizeof buf, "%s + writes", tag);
+        fast_line(line, buf, SREAL, &r);
+        if (r.mism || r.lost) rc = -1;
+        fast_pattern(sel);
+        int lr = fast_sweep(line, tag, 0);
+        int dl = lmax;                              /* both late selects take the same poll path; the /SCS probe stands for both */
+        snprintf(buf, sizeof buf, "fast %s: select fell at %d; response %d clk after the select fell, %d after the fake OE_BUS fell (fake delay %d)",
+                 tag, fast_L + 1, lr - (fast_L + 1), lr - (fast_L + 1) - dl, dl);
+        line(buf);
+        if (lr < 0) rc = -1;
+    }
+    fast_set_late(0, 0);
+    fast_pattern(D_CTS);
+#endif
+    int resp = fast_sweep(line, "1.79MHz", 0);       /* (b) */
+#ifdef PICOCO_BOARD_PLUSW
+    snprintf(buf, sizeof buf, "fast 1.79MHz response_clk corrected %d..%d after the fake OE_BUS fell (raw %d minus the fake delay %d..%d); margin to 36: %d..%d",
+             resp - dmax, resp - dmin, resp, dmin, dmax, 36 - (resp - dmin), 36 - (resp - dmax));
+    line(buf);
+    if (resp < 0 || resp - dmax > 36) rc = -1;
+#else
+    if (resp < 0 || resp > 36) rc = -1;
+#endif
+    {   /* release: earliest point after the end of the cycle where D0-D7 read 0 for the whole burst */
+        int rel_ok = -1;
+        fast_at(0, SREAL);
+        for (int k = 0; k <= 13 && rel_ok < 0; k++) { fast_set_rel(k); fast_burst(&r); if (!r.rel_bad && !r.mism) rel_ok = k + 1; }
+        fast_set_rel(3);
+#ifdef PICOCO_BOARD_PLUSW
+        snprintf(buf, sizeof buf, "fast 1.79MHz release_clk %d (D0-D7 low on every cycle %d clk after E fell; -1 = not by 14)", rel_ok, rel_ok);
+#else
+        snprintf(buf, sizeof buf, "fast 1.79MHz release_clk %d (D0-D7 low on every cycle %d clk after OE_BUS rose; -1 = not by 14)", rel_ok, rel_ok);
+#endif
+        line(buf);
+    }
+    fast_at(3, SREAL89);                              /* (c) 0.89 MHz: high 84, low 84 */
+    fast_burst(&r);
+    fast_line(line, "0.89MHz", SREAL89, &r);
+    if (r.mism || r.lost) rc = -1;
+    fast_sweep(line, "0.89MHz", 3);
+done:
+#undef SREAL
+#undef SREAL89
 
     pio_sm_set_enabled(pio, sm, false);
+#ifdef PICOCO_BOARD_PLUSW
+    decode_stop();
+#endif
     dma_channel_unclaim(fdma_tx);
     dma_channel_unclaim(fdma_rx);
     pio->input_sync_bypass = bypass_was;
     pins_to_sio();
-    pio_remove_program(pio, &fake6809_fast_program, offset);
+    pio_remove_program(pio, &FAST_PROG, offset);
     pio_sm_unclaim(pio, sm);
     sm = -1;
+    memcpy(&bus_table[FAST_IO], io_save, 32);
     rom_off();
     bus_drive_set(drive_was);
     line("selftest rom cleared; reload with rom load");

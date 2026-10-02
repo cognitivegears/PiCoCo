@@ -225,6 +225,9 @@ static int cmd_bus(int argc, char **argv) {
     if (strcasecmp(argv[1], "selftest") == 0) {
         if (argc >= 3 && strcasecmp(argv[2], "net") == 0) {
 #ifdef PICOCO_HAVE_NET
+#ifdef PICOCO_PIO_ENGINE
+            return cerr("bus selftest net: not supported by this engine (no Becker path)");
+#endif
             int rc = net_selftest(selftest_line);
             if (rc == -2) return cerr("bus selftest net: needs becker net with the link up, and no CoCo attached");
             if (rc != 0) return cerr("selftest FAIL");
@@ -237,9 +240,16 @@ static int cmd_bus(int argc, char **argv) {
 #ifndef PICOCO_HAVE_FAKE6809
         return cerr("bus selftest: pico only (host build)");
 #else
-#ifndef PICOCO_BOARD_PLUSW
+#ifdef PICOCO_PIO_ENGINE
         if (argc >= 3 && strcasecmp(argv[2], "fast") == 0) {
-            int rc = fake6809_fast(argc >= 4 && strcasecmp(argv[3], "stress") == 0, selftest_line);
+            int opts = 0;
+            for (int i = 3; i < argc; i++) {
+                if (strcasecmp(argv[i], "stress") == 0) opts |= FAST_OPT_STRESS;
+                else if (strcasecmp(argv[i], "radio") == 0) opts |= FAST_OPT_RADIO;
+                else if (strcasecmp(argv[i], "restarts") == 0) opts |= FAST_OPT_RESTARTS;
+                else return cerr("usage: bus selftest fast [stress] [radio] [restarts]");
+            }
+            int rc = fake6809_fast(opts, selftest_line);
             if (rc == -2) return cerr("bus selftest: bus is live (CoCo attached), refused");
             if (rc != 0) return cerr("selftest fast FAIL");
             outf("selftest fast pass\n");
@@ -277,6 +287,7 @@ static int cmd_bus(int argc, char **argv) {
         bool b, p;
         bus_engine_get(&b, &p);
         outf("bus engine bypass %s prio %s, %s\n", b ? "on" : "off", p ? "on" : "off", bus_engine_desc());
+        bus_engine_resources(selftest_line);
         return 0;
     }
 #endif
@@ -309,7 +320,7 @@ static int cmd_status(void) {
          bus_stats.cycles, bus_stats.reads, bus_stats.writes, bus_stats.write_overrun);
     outf("bus addr_resample %u bits %04x late_precompute %u\n", bus_stats.addr_resample, bus_stats.addr_resample_bits, bus_stats.late_precompute);
     outf("bus oe_glitch %u resample_key %08x in %08x\n", bus_stats.oe_glitch, (unsigned)bus_stats.resample_key, (unsigned)bus_stats.resample_in);
-    outf("bus whooks %u hw_sel %u fw_sel %u\n", bus_stats.whooks_run, bus_stats.hw_selected, bus_stats.fw_selected);
+    outf("bus whooks %u\n", bus_stats.whooks_run);
     outf("bus drive %s\n", bus_drive_get() ? "on" : "off");
     outf("last reset %s\n", plat_last_reset());
     outf("dw hdbdos %s\n", g_dw->hdbdos ? "on" : "off"); /* DWINIT can flip this remotely */

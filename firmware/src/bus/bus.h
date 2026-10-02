@@ -24,8 +24,6 @@ typedef struct {
     uint32_t oe_glitch;       /* Pico 2 loop: OE_BUS sampled high once mid-read, then low again (see bus_core1.c) */
     uint32_t late_precompute; /* Pico 2 loop: cycle began before an idle sample was taken (back-to-back reads); served by the redrive path, benign */
     uint32_t whooks_run;     /* write hooks executed on core1 */
-    uint32_t hw_selected;    /* Plus-W loop: cycles selected by /CTS or /SCS */
-    uint32_t fw_selected;    /* Plus-W loop: cycles selected by bus_fw_mask ($FF60-$FF7F) */
 } bus_stats_t;   /* ponytail: addr_resample* = diagnostic, address changed between two samples after OE_BUS fell */
 
 /* Pico 2 PIO engine: the SM builds a table byte's address as (base >> 14) << 14
@@ -38,6 +36,7 @@ void bus_engine_tune(int bypass, int prio);   /* -1 = leave; input sync bypass, 
 void bus_engine_get(bool *bypass, bool *prio);
 void bus_engine_variant(int order, int trig);   /* spike part 3: -1 = leave; see bus_core1.c */
 const char *bus_engine_desc(void);
+void bus_engine_resources(void (*line)(const char *s));
 #else
 #define BUS_WINDOW_ALIGN
 #endif
@@ -58,16 +57,6 @@ static inline __attribute__((always_inline)) uint8_t bus_peek(uint16_t idx) {
 
 extern volatile bus_stats_t bus_stats;
 extern volatile bool bus_drive;   /* false = never drive D0..D7 (capture-only, milestone 0.4); read by core1 each cycle */
-
-/* Firmware address decode (Plus-W with JP2 2-3). One bit per address in
- * $FF60-$FF7F; written by core0 only (32-bit store, atomic), read by core1
- * every cycle. Everything else is hardware-selected by /CTS and /SCS. */
-extern volatile uint32_t bus_fw_mask;
-int  bus_fw_enable(uint16_t addr);    /* 0 ok, -1 if addr is outside $FF60-$FF7F */
-void bus_fw_disable(uint16_t addr);
-static inline __attribute__((always_inline)) bool bus_fw_selected(uint16_t addr, uint32_t mask) {
-    return (addr & 0xFFE0) == 0xFF60 && ((mask >> (addr & 0x1F)) & 1u);
-}
 
 void bus_drive_set(bool on);
 bool bus_drive_get(void);

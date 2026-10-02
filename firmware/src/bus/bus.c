@@ -5,7 +5,6 @@ uint8_t bus_table[BUS_TABLE_SIZE] BUS_WINDOW_ALIGN;
 const uint8_t *volatile bus_rom_base = bus_table;
 volatile bus_stats_t bus_stats;
 volatile bool bus_drive;
-volatile uint32_t bus_fw_mask;
 
 typedef struct { uint16_t idx; uint8_t data; } bus_write_ev_t;
 #define WEV_SIZE 256
@@ -42,19 +41,7 @@ void bus_init(void) {
     bus_stats.writes = 0;
     bus_stats.write_overrun = 0;
     bus_stats.whooks_run = 0;
-    bus_stats.hw_selected = 0;
-    bus_stats.fw_selected = 0;
     bus_drive = false;
-    bus_fw_mask = 0;
-}
-
-int bus_fw_enable(uint16_t addr) {
-    if ((addr & 0xFFE0) != 0xFF60) return -1;
-    bus_fw_mask |= 1u << (addr & 0x1F);
-    return 0;
-}
-void bus_fw_disable(uint16_t addr) {
-    if ((addr & 0xFFE0) == 0xFF60) bus_fw_mask &= ~(1u << (addr & 0x1F));
 }
 
 #ifdef PICOCO_PIO_ENGINE
