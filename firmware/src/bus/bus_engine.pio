@@ -33,7 +33,8 @@ rd:
     in x, 3                 ; x = bank, as it is now
     in pins, 14             ; isr = &bus_mem[x][A13..A0]
     push noblock
-    pull block              ; the byte, from DMA B
+public wbyte:
+    pull block              ; the byte, from DMA B (bus_engine_tick: stuck here = stalled)
     out pins, 8
     mov pindirs, ~null      ; drive only once the byte is in the latch
 public rend:

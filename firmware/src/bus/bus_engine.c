@@ -3,6 +3,7 @@
 #include "hardware/sync.h"
 #include "hardware/pio.h"
 #include "hardware/dma.h"
+#include "hardware/structs/dma_debug.h"
 #include "hardware/structs/busctrl.h"
 #include "hardware/structs/sio.h"
 #include "bus_engine.pio.h"
@@ -222,11 +223,41 @@ void bus_engine_check_drops(void) {
     if (epio->fdebug & bit) { epio->fdebug = bit; bus_stats.event_drop++; }
 }
 
+/* Stall guard: the read SM waiting at `pull` with DMA B idle and OE_BUS high
+ * has lost its byte (the cycle is over, nothing will come); seen on two ticks
+ * in a row, restart it, the same stop and start as `bus drive`. OE_BUS high:
+ * a served read sits at `pull` with B idle too (12-20 % of samples under a
+ * reads burst, measured), so without it a busy bus restarted the engine on a
+ * few % of tick pairs (25 restarts in one `bus selftest fast` stall burst); a
+ * served read is past `pull` long before OE_BUS rises.
+ * Registers only (PIO, DMA, SIO), never the ring. */
 void bus_engine_tick(uint32_t now_ms) {
     static uint32_t last;
+    static bool stalled;
     if (now_ms == last) return;
     last = now_ms;
     bus_engine_check_drops();
+    bool s = esm >= 0 && (epio->ctrl & (1u << (PIO_CTRL_SM_ENABLE_LSB + esm)))   /* not with bus drive off */
+          && pio_sm_get_pc(epio, (uint)esm) == eoff + bus_read_offset_wbyte && !dma_channel_is_busy((uint)edma_b)
+          && gpio_get(PIN_OE_BUS);
+    if (s && stalled) { engine_stop(); engine_start(); bus_stats.engine_stall++; s = false; }
+    stalled = s;
+}
+
+/* `bus selftest fast` stall: DMA A paused (true) leaves a read's pointer in
+ * the RX FIFO and the read SM at `pull`, D0-D7 released. Resumed (false) with
+ * that pointer dropped, so the SM is left stalled for the guard. Call it
+ * between cycles. */
+void bus_engine_test_stall(bool stall) {
+    if (stall) { hw_clear_bits(&dma_hw->ch[edma_a].al1_ctrl, DMA_CH0_CTRL_TRIG_EN_BITS); return; }
+    while (!pio_sm_is_rx_fifo_empty(epio, (uint)esm)) (void)pio_sm_get(epio, (uint)esm);
+    dma_debug_hw->ch[edma_a].dbg_ctdreq = 0;         /* A still counts that pointer as due: recount */
+    hw_set_bits(&dma_hw->ch[edma_a].al1_ctrl, DMA_CH0_CTRL_TRIG_EN_BITS);
+}
+
+/* The slot DMA C writes next (bus_core1.c, on a suspected lap only). */
+BUS_HOT uint32_t bus_engine_event_pos(void) {
+    return (dma_hw->ch[edma_c].write_addr >> 2) & (BUS_EVENTS - 1);
 }
 
 /* Before engine_init only core0 runs (core1 starts after bus_engine_init),

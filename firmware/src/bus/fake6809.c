@@ -575,6 +575,7 @@ static bool fast_stress, fast_restart, fast_switch, fast_radio;
 static uint32_t radio_results, radio_scans, radio_fails;
 static int radio_rc __attribute__((unused));
 static void (*fast_mid_burst)(void);     /* called once, ~200 us into a burst (decode probe) */
+static uint32_t fast_tick;               /* nonzero: the stall guard runs on every pass, on made-up ms from here */
 
 #ifdef PICOCO_BOARD_PLUSW
 static int radio_cb(void *env, const cyw43_ev_scan_result_t *r) { (void)env; if (r) radio_results++; return 0; }
@@ -720,6 +721,7 @@ static void fast_burst(fast_res_t *r) {
             r->restarts++; next_rs += 50;
         }
         if (fast_mid_burst && !mid_done && time_us_32() - t0 > 200) { fast_mid_burst(); mid_done = true; }
+        if (fast_tick) { busy_wait_at_least_cycles(xs32(&sw_seed) % 128); bus_engine_tick(fast_tick++); }   /* random spacing: not phase-locked to the bus */
         fast_pop();                              /* the write queue holds 255: keep it drained (and off core0's devices) */
 #ifdef PICOCO_BOARD_PLUSW
         /* radio busy: keep a scan running and the cyw43 driver polled, so its
@@ -945,8 +947,10 @@ static void wdata_disarm(void) {
     fast_wdrive = false;
 }
 
-/* Every selected write arrived through bus_pop_write, in order, with its data. */
-static bool fast_check_writes(void (*line)(const char *), uint32_t ov0) {
+/* Every selected write arrived through bus_pop_write, in order, with its data.
+ * Returns the writes lost, out of order or wrong (0 = all captured); line NULL:
+ * no line. */
+static uint32_t fast_check_writes(void (*line)(const char *), uint32_t ov0) {
     char buf[160];
     uint32_t lost = 0, order = 0, wrong = 0, n = 0;
     int p = 0;
@@ -963,8 +967,8 @@ static bool fast_check_writes(void (*line)(const char *), uint32_t ov0) {
     lost += bus_stats.write_overrun - ov0;
     snprintf(buf, sizeof buf, "fast writes: %lu lost, %lu out of order, %lu wrong data of %lu",
              (unsigned long)lost, (unsigned long)order, (unsigned long)wrong, (unsigned long)n);
-    line(buf);
-    return !lost && !order && !wrong;
+    if (line) line(buf);
+    return lost + order + wrong;
 }
 
 /* The trace's last 512 events against the last 512 selected cycles driven:
@@ -1313,7 +1317,7 @@ int fake6809_fast(int opts, void (*line)(const char *s)) {
         snprintf(buf, sizeof buf, "fast event rate 1.79MHz: counted %lu of %u, lag max %lu, drop %lu, lap %lu",
                  (unsigned long)counted, (unsigned)(5 * FAST_N), (unsigned long)bus_stats.event_lag_max, (unsigned long)drop, (unsigned long)lap);
         line(buf);
-        if (counted != 5 * FAST_N || drop || lap || bus_stats.event_lag_max >= BUS_EVENTS / 2) rc = -1;
+        if (counted != 5 * FAST_N || drop || lap || bus_stats.event_lag_max >= BUS_EV_LAG_CAP) rc = -1;
     }
     fast_mix();                                      /* reads with writes between them: writes must never be driven */
     fast_at(0, SREAL);
@@ -1335,7 +1339,7 @@ int fake6809_fast(int opts, void (*line)(const char *s)) {
         wdata_disarm();
         fast_line(line, "1.79MHz writes r/w/io/unsel", SREAL, &r);
         if (r.mism || r.lost) rc = -1;
-        if (!fast_check_writes(line, ov0)) rc = -1;
+        if (fast_check_writes(line, ov0)) rc = -1;
         if (!fast_check_events(line, c0)) rc = -1;
         fast_gaps();
         fast_at(0, SREAL);
@@ -1379,6 +1383,50 @@ int fake6809_fast(int opts, void (*line)(const char *s)) {
     fast_burst(&r);
     fast_line(line, "1.79MHz gaps after restarts", SREAL, &r);
     if (r.mism || r.lost) rc = -1;
+    {   /* lap: core1 held off the ring (it parks at its next 256-event check)
+         * through a gaps burst of 3072 events, so DMA C laps it; let go, it
+         * must resync, then serve a reads burst in order (the trace check),
+         * every event counted */
+        uint32_t l0 = bus_stats.event_lap;
+        bus_core1_hold = true;
+        fast_burst(&r);                              /* r.lost: the ring never drains while core1 is parked */
+        bus_core1_hold = false;
+        bool drained = events_drained();
+        uint32_t laps = bus_stats.event_lap - l0, e0 = bus_stats.cycles;
+        fast_pattern(D_CTS);
+        fast_at(0, SREAL);
+        fast_burst(&r);
+        uint32_t evs = bus_stats.cycles - e0;
+        bool inorder = fast_check_events(line, e0);
+        snprintf(buf, sizeof buf, "fast lap: resync %lu, next burst events %lu of %u", (unsigned long)laps, (unsigned long)evs, FAST_N);
+        line(buf);
+        if (!laps || !drained || !inorder || evs != FAST_N || r.mism || r.lost) rc = -1;
+    }
+    {   /* stall: DMA A paused for a reads burst, so the read SM waits at `pull`
+         * from the first cycle on; then left stalled (bus_engine_test_stall) for
+         * the guard, run here on made-up ms. The next burst runs with the guard
+         * ticking on every pass: a busy bus must never look stalled. */
+        uint32_t s0 = bus_stats.engine_stall;
+        fast_pattern(D_CTS);
+        fast_at(0, SREAL);
+        bus_engine_test_stall(true);
+        fast_burst(&r);
+        bus_engine_test_stall(false);
+        uint32_t driven = (FAST_N - r.zero) + r.rel_bad;   /* reads not 0x00, ends not released */
+        for (uint32_t t = 1; t <= 3; t++) bus_engine_tick(t);
+        fast_tick = 4;
+        fast_burst(&r);
+        fast_tick = 0;
+        uint32_t det = bus_stats.engine_stall - s0;
+        if (driven) snprintf(buf, sizeof buf, "fast stall: detected %lu, pins driven %lu times during the stall, next burst %lu mismatches",
+                             (unsigned long)det, (unsigned long)driven, (unsigned long)r.mism);
+        else snprintf(buf, sizeof buf, "fast stall: detected %lu, pins never driven during the stall, next burst %lu mismatches",
+                      (unsigned long)det, (unsigned long)r.mism);
+        line(buf);
+        if (det != 1 || driven || r.mism || r.lost) rc = -1;
+        fast_gaps();
+        fast_at(0, SREAL);
+    }
     fast_fill_banks();                               /* banks 0 and 1 differ for the switch bursts */
     bus_engine_set_bank(0);
     if (opts & FAST_OPT_SWITCHES) {                  /* 40 switch bursts, reads and gaps in turn */
@@ -1428,11 +1476,23 @@ int fake6809_fast(int opts, void (*line)(const char *s)) {
         line(buf);
         if (swr.bad || swr.wrong_bank || r.lost) rc = -1;
     }
-    bus_drive_set(false);                            /* capture-only: nothing may be driven */
-    fast_burst(&r);
-    fast_line(line, "1.79MHz drive off", SREAL, &r);
-    if (r.mism || r.lost) rc = -1;
-    bus_drive_set(true);
+    {   /* capture-only: the read SM stopped, the event SM and DMA C running:
+         * nothing driven, every cycle an event, every write captured */
+        fast_wpattern();
+        fast_at(0, SREAL);
+        uint32_t n = 0, c0 = bus_stats.cycles, ov0 = bus_stats.write_overrun;
+        for (int k = 0; k < FAST_N; k++) if (D_SEL(fast_desc[k])) n++;
+        bus_drive_set(false);
+        wdata_arm();
+        fast_burst(&r);
+        wdata_disarm();
+        bus_drive_set(true);
+        uint32_t evs = bus_stats.cycles - c0, wbad = fast_check_writes(NULL, ov0);
+        snprintf(buf, sizeof buf, "fast drive off: %lu driven, events %lu of %lu, writes %lu lost",
+                 (unsigned long)r.spur, (unsigned long)evs, (unsigned long)n, (unsigned long)wbad);
+        line(buf);
+        if (r.mism || r.lost || evs != n || wbad) rc = -1;
+    }
     {   /* banks: the bank number is part of the read SM's pointer */
         fast_fill_banks();
         int good = 0;
@@ -1479,7 +1539,7 @@ int fake6809_fast(int opts, void (*line)(const char *s)) {
             snprintf(buf, sizeof buf, "fast event rate with Becker 1.79MHz: counted %lu of %lu, lag max %lu, drop %lu, lap %lu",
                      (unsigned long)counted, (unsigned long)b.cycles, (unsigned long)bus_stats.event_lag_max, (unsigned long)drop, (unsigned long)lap);
             line(buf);
-            if (counted != b.cycles || drop || lap || bus_stats.event_lag_max >= BUS_EVENTS / 2) rc = -1;
+            if (counted != b.cycles || drop || lap || bus_stats.event_lag_max >= BUS_EV_LAG_CAP) rc = -1;
         }
         /* a byte published by an earlier poll, then the port empty (that data
          * read is an underrun, by design) */

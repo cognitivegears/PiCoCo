@@ -33,6 +33,7 @@ extern volatile uint32_t bus_events[BUS_EVENTS];   /* Pico: 8 KB aligned (DMA C'
  * 0x0000-0x3EFF and 0x3F40-0x3F5F). core1 writes it back into every slot it
  * has consumed. */
 #define BUS_EV_NONE 0xFFFFFFFFu
+#define BUS_EV_LAG_CAP 256   /* core1's lag scan stops here; at it, core1 checks for a lap (bus_core1.c) */
 void bus_event(uint32_t w);                    /* BUS_HOT: one cycle: a write runs its hooks, then trace, counters, write queue; a read trace, counters, hooks */
 
 typedef struct { uint32_t seq; uint16_t idx; uint8_t rw; uint8_t data; } bus_trace_entry;   /* seq: events since bus_init */
@@ -40,9 +41,9 @@ typedef struct {
     uint32_t cycles, reads, writes, write_overrun;
     uint32_t whooks_run;     /* write hooks executed on core1 */
     uint32_t engine_stall;   /* engine restarts by the stall guard (Task 4) */
-    uint32_t event_lag_max;  /* core1: most ring entries waiting, sampled every 256 events */
+    uint32_t event_lag_max;  /* core1: most ring entries waiting, sampled every 256 events, capped at BUS_EV_LAG_CAP */
     uint32_t event_drop;     /* core0: checks that found the event SM had dropped a push (RX FIFO full) */
-    uint32_t event_lap;      /* core1: lag checks that found the ring lapped (events overwritten unread) */
+    uint32_t event_lap;      /* core1: laps found (events overwritten unread) and resynced */
     uint32_t start_wait_cap; /* core0, Plus-W: engine starts whose wait for OE_BUS high hit its cap */
 } bus_stats_t;
 
@@ -72,6 +73,7 @@ extern volatile bool bus_drive;   /* false = never drive D0..D7 (capture-only, m
 void bus_drive_set(bool on);
 bool bus_drive_get(void);
 void bus_core1_main(void);                              /* BUS_HOT; never returns; core1 entry (launched from main.c) */
+extern volatile bool bus_core1_hold;                    /* bus selftest only: core1 parks at its next 256-event lag check while set */
 
 void bus_init(void);                                   /* table = 0xFF, rings empty, trace running */
 void bus_set_read(uint16_t idx, uint8_t v);

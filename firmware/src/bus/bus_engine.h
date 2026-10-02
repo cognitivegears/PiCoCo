@@ -6,7 +6,9 @@
  * stop; the bank calls are safe from either core. */
 void bus_engine_init(void);              /* core0, once, after net_init (cyw43 claims PIO2 first) and before core1: starts the event stream */
 void bus_engine_drive(bool on);          /* core0: start/stop the read path (bus_drive) */
-void bus_engine_tick(uint32_t now_ms);   /* core0 main loop: once a millisecond, the event-drop check */
+void bus_engine_tick(uint32_t now_ms);   /* core0 main loop: once a millisecond, the event-drop check and the stall guard */
+void bus_engine_test_stall(bool stall);  /* core0, bus selftest only: pause DMA A (true); resume it, read SM left stalled (false) */
+uint32_t bus_engine_event_pos(void);     /* BUS_HOT: the ring slot DMA C writes next */
 void bus_engine_check_drops(void);       /* core0: count a drop the event SM flagged since the last check (bus_stats.event_drop) */
 
 /* Bank for the next cycle; stores bus_bank under the engine's lock, so it and
