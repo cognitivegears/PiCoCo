@@ -380,6 +380,13 @@ TEST(break_reply_clears_the_screen) {
     expect_clear_then(UI_ACT_WARM);
 }
 
+TEST(coco3_break_reply_clears_the_screen) {
+    setup();
+    open_with(CAPS_COCO3);
+    poll(0, UI_KEY_BREAK, -1, 10);
+    expect_clear_then(UI_ACT_WARM3);
+}
+
 /* The CoCo 1/2 codes are unchanged. */
 TEST(coco2_codes_unchanged) {
     setup();
@@ -471,6 +478,7 @@ int main(void) {
     RUN(coco3_header_shows_ram_size);
     RUN(launch_reply_clears_the_screen);
     RUN(break_reply_clears_the_screen);
+    RUN(coco3_break_reply_clears_the_screen);
     RUN(second_poll_sends_only_changes);
     RUN(resend_repeats_last_reply);
     RUN(bad_poll_gets_no_reply);
