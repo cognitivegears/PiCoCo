@@ -402,6 +402,12 @@ cartridge that cannot run Tandy's own 32K paks is incomplete.
   against the fast-mode read path before it is believed.
 - An RP2350B on the carrier in place of a module.
 
+**Placement rule for the new pins.** A14 and A15 must land on the GPIOs
+directly above A13, so A0-A15 are one contiguous run (and R/W next to
+them). The PIO bus engine captures the address with one `IN PINS`; on the
+Plus-W pad grid A14/A15 are GP29/GP30 with /CTS, /SCS, E and Q in between,
+which a PIO capture cannot skip.
+
 **Firmware side, once the pin exists.** `rom_load_mem` needs a linear 32K
 mode (two 16K halves selected by A14, distinct from the `$FF40` banked
 mode), and the manager needs to tell the two kinds of 32K image apart or be
