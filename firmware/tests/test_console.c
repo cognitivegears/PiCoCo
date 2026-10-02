@@ -614,7 +614,7 @@ TEST(rom_boot_records_without_loading) {
     ASSERT(strstr(cfg, "rom load next.rom\n"));
 }
 
-TEST(version_is_1_3) {
+TEST(version_is_current) {
     setup();
     ASSERT_EQ(remote("version"), 0);
     ASSERT(strcmp(rbuf, "version 1.4\n") == 0);
@@ -851,7 +851,7 @@ int main(void) {
     RUN(fs_new_uses_full_raw_name);
     RUN(fs_new_refuses_long_name);
     RUN(rom_boot_records_without_loading);
-    RUN(version_is_1_3);
+    RUN(version_is_current);
     RUN(bus_selftest_is_pico_only_on_host);
     RUN(cart_command_and_save);
     RUN(net_join_keeps_spaces);

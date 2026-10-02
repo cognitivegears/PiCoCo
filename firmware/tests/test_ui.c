@@ -115,6 +115,17 @@ TEST(caps_shown) {
     ASSERT(strstr(row, "ECB") != NULL);
 }
 
+TEST(coco3_header_has_no_ram_figure) {
+    setup();
+    ui_ctl(0xA5);
+    poll(2, 0, UI_CAP_64K | UI_CAP_32K | UI_CAP_ECB | UI_CAP_COCO3, 0);
+    char row[UI_COLS + 1];
+    ui_row_text(0, row);
+    ASSERT(strstr(row, "COCO 3") != NULL);
+    ASSERT(strstr(row, "K ") == NULL);
+    ASSERT(strstr(row, "ECB") == NULL);
+}
+
 TEST(second_poll_sends_only_changes) {
     setup();
     ui_ctl(0xA5);
@@ -426,6 +437,7 @@ int main(void) {
     RUN(inactive_until_ctl);
     RUN(first_poll_clears_and_draws);
     RUN(caps_shown);
+    RUN(coco3_header_has_no_ram_figure);
     RUN(second_poll_sends_only_changes);
     RUN(resend_repeats_last_reply);
     RUN(bad_poll_gets_no_reply);

@@ -275,9 +275,9 @@ before `xrscreen.py` when `-type` has several keys.
    ```
    xroar -machine coco3 -becker -becker-port 65511 -cart-rom manager \
          -rompath ~/.xroar/roms -gdb -ao null -ui null &
-   python3 coco/tools/xrscreen.py --wait-for 'COCO3'
+   python3 coco/tools/xrscreen.py --wait-for 'COCO 3'
    ```
-   Row 0 reads `PICOCO  64K ECB COCO3` and the two files are listed. XRoar
+   Row 0 reads `PICOCO  COCO 3` and the two files are listed. XRoar
    cannot swap its cart ROM, so the `$16`/`$17`/`$18` leave paths are bench
    steps. `-type '\n\r'` (the `$17` restart) was tried but the stub's screen
    never changed (no BASIC prompt exists to take the keys), so that check is

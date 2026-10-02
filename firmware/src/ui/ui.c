@@ -82,10 +82,12 @@ static void load_list(void) {
 static void draw(void) {
     memset(scr, 0x60, sizeof scr);
     char line[UI_COLS + 1];
-    snprintf(line, sizeof line, "PICOCO  %s %s%s",
-             caps & UI_CAP_64K ? "64K" : caps & UI_CAP_32K ? "32K" : "16K",
-             caps & UI_CAP_ECB ? "ECB" : "NO ECB",
-             caps & UI_CAP_COCO3 ? " COCO3" : "");
+    if (caps & UI_CAP_COCO3)    /* the stub only knows "64K or more" there, and every CoCo 3 has ECB */
+        snprintf(line, sizeof line, "PICOCO  COCO 3");
+    else
+        snprintf(line, sizeof line, "PICOCO  %s %s",
+                 caps & UI_CAP_64K ? "64K" : caps & UI_CAP_32K ? "32K" : "16K",
+                 caps & UI_CAP_ECB ? "ECB" : "NO ECB");
     put(0, 0, line, false);
     put(1, 0, nroms ? "ROMS" : "NO .ROM FILES", false);
     for (int i = 0; i < LIST_ROWS && top + i < nroms; i++) put(2 + i, 1, roms[top + i], top + i == sel);

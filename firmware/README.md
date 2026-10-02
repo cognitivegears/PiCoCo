@@ -267,9 +267,15 @@ then `save` once. A config that has a `rom load ...` line is unaffected. On a
 CoCo 3 the manager cannot launch anything yet (it shows `COCO 3: NOT YET`); set
 a ROM from the USB console (`rom load <file>`, `save`).
 
-Press RESET twice within 3 seconds to load the manager for that boot only; the
-saved ROM is unchanged. On a machine without Extended BASIC then type
-`EXEC 49154`. The boot log shows `double reset: manager for this boot`.
+Press RESET twice within 2 seconds to load the manager for that boot only; the
+saved ROM is unchanged. On a CoCo 3 nothing needs typing (a hardware RESET
+makes the CoCo 3 recopy the cart); on a CoCo 1/2 without Extended BASIC then
+type `EXEC 49154`. The marker is a small byte log in one flash sector just
+below the filesystem: two single-byte writes per boot and one sector erase
+about every 2000 boots. A 150 ms debounce at boot ignores contact bounce. The
+boot log shows `boot, reset log N` (odd N means a double RESET was seen) and
+`double reset: manager for this boot`. Boot log timestamps are in
+microseconds.
 
 `time` now also prints `clock kept|lost`, showing whether the RP2350's
 always-on timer carried the clock across the last `/RESET` (see
@@ -378,7 +384,7 @@ format|rm|export|import`, `rom load|launch|pattern|off`, `trace`, `crash`,
 answers `FAIL 255 console only` — a new console command is USB-only
 until someone adds it to the allowlist.
 
-Firmware version is 1.2.
+Firmware version is 1.4.
 
 ## Bring-up
 

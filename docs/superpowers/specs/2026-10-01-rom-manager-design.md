@@ -74,6 +74,9 @@ core0, and reaches the CoCo through the existing Becker rings.
   `$C002` on a cold start when the manager is the loaded ROM.
 - No Extended BASIC: `EXEC 49154`.
 - From BASIC under a DOS: the loader (section 7.2) jumps to `$C002`.
+- On a CoCo 3, Super Extended BASIC patches the RAM copy of a `DK` cart at
+  `$C0D9` and `$C8B4` (or `$C0C6`), so only a jump lives at `$C002` and the
+  code starts at `$C100`.
 - The stub records which way it came in (a flag the loader sets in a
   register; cold start otherwise), because leaving differs (section 7.3).
 
@@ -100,6 +103,9 @@ On a CoCo 3 the stub forces the 32-column compatibility screen first.
 | `12` | Continue boot | After a ROM swap, power-on entry only: `JMP $C002` of the new `DK` ROM |
 | `13` | Return to BASIC | Loader entry only |
 | `14` | Return to BASIC and type a line: length (1), text | Loader entry only; RVEC4 hook from `coco/hook.asm`, copied to RAM |
+| `16` | CoCo 3 ROM-mode jump | Selects 0.89 MHz, `$CC` into `$FF90`, ROM mode (`$FFDE`), `JMP $C000`; as the CoCo 3 ROM's own pak start (`$8C28`) |
+| `17` | CoCo 3 cold restart | Selects 0.89 MHz, clears `$FEED` and the warm-start flag, jumps to `$8C1B`; the init recopies the cart |
+| `18` | CoCo 3 warm restart | Selects 0.89 MHz, jumps to `$8C1B` |
 | `15` | Load sectors and jump: drive (1), LSN (3), count (1), load address (2), jump address (2) | NitrOS-9 boot track; plain DriveWire OP_READ |
 | `00` | End of list | Stub goes back to reading the keyboard |
 
@@ -204,11 +210,14 @@ therefore returns to the saved default.
   firmware loads it.
 - **Previous ROM.** The firmware remembers what was loaded before the
   manager so BREAK can put it back.
-- **Double RESET.** A marker in `__uninitialized_ram` (as `crash.c`
-  already uses) set at the very start of `main`, cleared after
-  `PICOCO_DOUBLE_RESET_MS` (3000) of uptime. Found set at boot: load the
-  manager for this boot only, leave `picoco.cfg` alone, log it. The window
-  is a named constant to tune on the bench.
+- **Double RESET.** A byte log in one flash sector just below the
+  filesystem. Each boot programs the next byte to 0x00 (armed); once
+  `PICOCO_DOUBLE_RESET_MS` (2000) of uptime has passed, the byte after it
+  (disarmed). An odd count of 0x00 bytes at boot means the previous boot was
+  reset inside its window: load the manager for this boot only, leave
+  `picoco.cfg` alone, log it. Why flash: a CoCo RESET clears main SRAM and
+  the POWMAN scratch registers on this board (bench 2026-10-01), so no
+  volatile marker survives. The sector is erased about every 2000 boots.
 - **Control register.** `$FF43`, handled in the Becker device's core0
   write path. core1 is unchanged.
 - **`rom off` is a saved choice.** It is written to `picoco.cfg`; only a
@@ -250,8 +259,9 @@ Unsaved changes at BREAK: offer save-then-exit or stay, as today.
 
 ## 8. Checks to settle in the emulator before relying on them
 
-1. Cold restart on a CoCo 3 from the stub (ROM mode has to be restored
-   before the reset vector is used).
+1. Cold restart on a CoCo 3 from the stub. SETTLED: works via `$8C1B` at
+   slow speed with `$FEED` and `$71` cleared; a pak starts in ROM mode with
+   `$CC` in `$FF90`.
 2. Forcing the 32-column screen from a 40/80-column session.
 3. Whether a line typed through the RVEC4 hook survives the DOS start-up
    after action `12` (section 6.3).
@@ -259,10 +269,9 @@ Unsaved changes at BREAK: offer save-then-exit or stay, as today.
 
 And on the bench:
 
-5. The `__uninitialized_ram` marker survives a CoCo RESET (the firmware
-   reports that reset as power-on today). Fallback: a POWMAN scratch
-   register in the always-on domain the clock already uses.
-6. The double-RESET window by feel.
+5. The `__uninitialized_ram` marker survives a CoCo RESET. SETTLED: it did
+   not (nor did POWMAN scratch); the marker is a flash byte log.
+6. The double-RESET window by feel. SETTLED: 2 s.
 
 Settled by the first plan (2026-10-01): entry at `$C002` only, so check 4
 holds; `POLCAT` keeps Y and works with interrupts masked on a CoCo 2

@@ -481,7 +481,7 @@ a ROM read, and reads drive 0 LSN 0-629 with DriveWire OP_READ in a loop.
    while the volume is exported.
 3. `EXEC 49152`. One line per pass (~14 s): `PASS nnnn SUM ssss ERR eeee`.
    A bad sector prints `Ecc llll` and the test carries on after a 0.5 s
-   quiet wait. Any key stops it at the end of a pass.
+   quiet wait. Any key stops it within one sector (a warm restart, back to BASIC).
 4. `status` after: `underrun 0`, `oe_glitch 0`, `addr_resample 0`,
    `dw stats` clean. `trace dump` is frozen at the first underrun.
 5. Emulator check of the ROM itself:
@@ -545,7 +545,7 @@ Manager (no key has reached the stub on a CoCo 3 in any emulator, so keys
 come first, launches after):
 
 3. RESET twice within 3 s: the manager autostarts, header
-   `PICOCO  64K ECB COCO3`. Boot log: `double reset: manager for this boot`.
+   `PICOCO  COCO 3`. Boot log: `double reset: manager for this boot`.
 4. Arrows move the highlight.
 5. BREAK: record what happens (expected: the manager again, since a CoCo 3
    restart re-enters a `DK` cart; `rom now` still the manager).

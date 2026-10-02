@@ -7,7 +7,8 @@
 *   PASS nnnn SUM ssss ERR eeee
 * SUM is the 16-bit byte sum of the whole disk: same every pass, and equal
 * to the sum of the image file. A bad sector prints Ecc llll (cc = error,
-* F3 checksum, FF timeout; llll = LSN). Any key ends at the next pass.
+* F3 checksum, FF timeout; llll = LSN). Any key stops it within one sector;
+* the exit is a warm restart (back to BASIC), also when the manager started it.
 * Needs only Color BASIC: CHROUT [$A002], POLCAT [$A000].
 
 BSTAT   equ $FF41
@@ -49,7 +50,9 @@ SLOOP   jsr RDSEC
         lda #13
         jsr PCH
         jsr QUIET
-SOK     ldx LSN
+SOK     jsr [$A000]
+        bne STOP
+        ldx LSN
         leax 1,x
         stx LSN
         cmpx #NSEC
@@ -71,9 +74,8 @@ SOK     ldx LSN
         jsr PHEX4
         lda #13
         jsr PCH
-        jsr [$A000]
-        beq PLOOP
-        rts
+        bra PLOOP
+STOP    jmp [$FFFE]
 
 * print the zero-terminated string at X
 PSTR    lda ,x+

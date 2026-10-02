@@ -243,7 +243,8 @@ ALV1    lda ,x+
         puls a
         jmp ,y
 
-* position-independent; A = action code ($10 jump, $11 cold, $13 warm, $16 CoCo 3 ROM-mode
+* position-independent (no absolute references to its own labels; copied to the
+* reply buffer, copy count < 256); A = action code ($10 jump, $11 cold, $13 warm, $16 CoCo 3 ROM-mode
 * jump, $17 CoCo 3 cold, $18 CoCo 3 warm). Sends 'G', waits for $06.
 LEAVER  tfr a,b
         lda #'G
@@ -275,14 +276,20 @@ LV2     lda BDATA
 LVWARM  jmp [$FFFE]
 LVJMP   andcc #$AF
         jmp $C000
-* CoCo 3: start the pak as the CoCo 3 ROM's own cart start does ($8C28):
-* 16K internal + 16K cartridge ROM, ROM mode. Interrupts stay masked.
-LVJMP3  lda #$CC
+* CoCo 3 exits. All three first select 0.89 MHz ($FFD8): the board cannot
+* serve cartridge reads on consecutive cycles at 1.79 MHz, and the CoCo 3's
+* DK check and cart copy are exactly that (bench 2026-10-02).
+LVJMP3  sta $FFD8
+        lda #$CC                16K internal + 16K cartridge ROM, as $8C28 does
         sta $FF90
-        sta $FFDE
+        sta $FFDE               ROM mode
         jmp $C000
-LVCOLD3 clr RSTSW               reset recopies the cart (now the new ROM) to RAM
-LVWARM3 jmp $8C1B
+LVCOLD3 sta $FFD8
+        clr $FEED               INT.FLAG: not $55 forces the init's cold path, which recopies the cart
+        clr RSTSW
+        jmp $8C1B
+LVWARM3 sta $FFD8
+        jmp $8C1B
 LVFAIL  leas FRAME,y
         jmp START
 LEAVEND

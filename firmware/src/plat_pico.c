@@ -26,6 +26,7 @@ static bool s_watchdog_enable_caused_reboot;
 void plat_reset_latch(void) { s_watchdog_enable_caused_reboot = watchdog_enable_caused_reboot(); }
 
 void plat_reboot(bool bootsel) {
+    plat_double_reset_tick(PICOCO_DOUBLE_RESET_MS);   /* disarm: a console reboot inside the window is a plain boot */
     if (bootsel) reset_usb_boot(0, 0);
     watchdog_reboot(0, 0, 0);
     for (;;) tight_loop_contents();
