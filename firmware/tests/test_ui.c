@@ -295,12 +295,33 @@ TEST(dos_rom_with_ecb_cold_restarts) {
     ASSERT_EQ(tx[2 + len - 2], UI_ACT_COLD);
 }
 
-TEST(dos_rom_on_coco3_waits_for_next_plan) {
+static void coco3_refused(void) {
+    ASSERT(row_has(14, "COCO 3: NOT YET"));
+    int len = reply_ok();
+    ASSERT(len > 0);
+    ASSERT_EQ(tx[2 + len - 1], UI_ACT_END);
+    if (len >= 2) {
+        uint8_t a = tx[2 + len - 2];
+        ASSERT(a != UI_ACT_JUMP && a != UI_ACT_COLD && a != UI_ACT_WARM);
+    }
+}
+
+TEST(coco3_refuses_every_launch) {
     setup();
+    mkfile("game.rom", "\x7E\xC0\x10", 8192);
     mkfile("hdb.rom", "DK", 8192);
     open_with(UI_CAP_64K | UI_CAP_32K | UI_CAP_ECB | UI_CAP_COCO3);
     poll(0, UI_KEY_ENTER, -1, 10);
-    ASSERT(row_has(14, "DOS ROM ON COCO 3: NOT YET"));
+    coco3_refused();
+    txn = 0;
+    uint8_t g = 'G';
+    ui_feed(&g, 1, 20);
+    ASSERT_EQ(txn, 1);
+    ASSERT_EQ(tx[0], UI_GO_FAIL);
+    ASSERT(last_line[0] == '\0');
+    poll(0, UI_KEY_DOWN, -1, 30);
+    poll(0, UI_KEY_ENTER, -1, 40);
+    coco3_refused();
 }
 
 TEST(bad_size_refused_before_leaving) {
@@ -391,7 +412,7 @@ int main(void) {
     RUN(enter_on_pak_asks_for_jump_then_go_loads);
     RUN(dos_rom_needs_ecb);
     RUN(dos_rom_with_ecb_cold_restarts);
-    RUN(dos_rom_on_coco3_waits_for_next_plan);
+    RUN(coco3_refuses_every_launch);
     RUN(bad_size_refused_before_leaving);
     RUN(go_failure_keeps_session_and_shows_reason);
     RUN(go_without_a_pending_launch_fails);

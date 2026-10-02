@@ -426,6 +426,17 @@ TEST(remote_refuses_console_only) {
     ASSERT_EQ(mode_get(), MODE_DIAG);
 }
 
+TEST(remote_cannot_launch_or_load) {
+    setup();
+    ASSERT_EQ(console_exec("rom off"), 0);
+    ASSERT_EQ(remote("rom launch manager"), 255);
+    ASSERT(strcmp(rbuf, "console only") == 0);
+    ASSERT_EQ(remote("rom load manager"), 255);
+    ASSERT(strcmp(rbuf, "console only") == 0);
+    ASSERT_EQ(remote("rom boot manager"), 0);
+    ASSERT_EQ(bus_table[0], 0xFF);
+}
+
 TEST(remote_refuses_mounting_config) {
     setup();
     mk("picoco.cfg", 1);
@@ -606,7 +617,7 @@ TEST(rom_boot_records_without_loading) {
 TEST(version_is_1_3) {
     setup();
     ASSERT_EQ(remote("version"), 0);
-    ASSERT(strcmp(rbuf, "version 1.3\n") == 0);
+    ASSERT(strcmp(rbuf, "version 1.4\n") == 0);
 }
 
 TEST(bus_selftest_is_pico_only_on_host) {
@@ -800,6 +811,7 @@ int main(void) {
     RUN(time_reports_clock_lost_on_host);
     RUN(remote_allowed_commands_run);
     RUN(remote_refuses_console_only);
+    RUN(remote_cannot_launch_or_load);
     RUN(remote_refuses_mounting_config);
     RUN(remote_refuses_config_bypass_backslash);
     RUN(remote_error_codes);

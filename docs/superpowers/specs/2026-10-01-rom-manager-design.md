@@ -62,8 +62,9 @@ core0, and reaches the CoCo through the existing Becker rings.
   other BASIC routine is used.
 - Interrupts masked (`ORCC #$50`) for the whole session. Timeouts are
   counted loops (as in `coco/carttest.asm`), not the Extended BASIC timer.
-- Working storage: a few bytes in the cassette buffer (`$01DA`) plus the
-  stack it was entered with. Nothing depends on RAM size.
+- Working storage: the stub takes a 610-byte frame on the stack it was entered
+  with (the 600-byte reply buffer plus variables), so an `EXEC 49154` needs about
+  650 bytes of free stack. Nothing depends on RAM size.
 - Any step that swaps the ROM runs from a routine copied to RAM.
 - Never `CLR` the Becker data port (a `CLR` reads first and eats a byte).
 
@@ -273,7 +274,13 @@ Added by the first plan: `rom launch <file>` (section 6.4's one-shot load;
 `rom load` also sets the next-boot ROM, so the manager must not use it).
 Carried to the second plan: clear the screen before jumping to a launched
 ROM; a sequence byte in the poll so a reply later than the stub's ~1.3 s
-timeout cannot leave it one reply behind.
+timeout cannot leave it one reply behind; the ROMs screen `D` key (set as saved
+default); the 64K and entered-at-power-on capability bits; restoring the previous
+ROM on BREAK; `status` should show that `rom next none` means the manager; a failed
+banked launch must reload the manager before answering `$15`; every launch on a
+CoCo 3 is refused until the CoCo 3 path lands; launching HDB-DOS from the manager
+on a machine with Extended BASIC (the cold restart) has host tests only and must
+be proven in the emulator or on the bench.
 
 ## 9. Testing
 

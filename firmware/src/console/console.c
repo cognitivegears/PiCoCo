@@ -38,7 +38,7 @@ static void *g_out_ctx;
 static dw_server *g_dw;
 static dw_store *g_store;
 
-/* Remembered for "save" (rom_cmd empty = off, the default, so omitted). */
+/* Remembered for "save" (rom_cmd empty = no choice saved, so the built-in manager loads at boot; "off" is stored explicitly). */
 static char rom_cmd[64];
 static char rom_now[64];   /* what is in bus_table now */
 

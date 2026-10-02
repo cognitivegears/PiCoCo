@@ -191,6 +191,9 @@ static int peek2(const char *name, uint8_t two[2]) {
 
 static uint8_t launch(void) {
     if (!nroms) return 0;
+    /* ponytail: a CoCo 3 runs the cart from a RAM copy, so neither JMP $C000 nor the
+     * cold restart reaches a swapped ROM yet; the next plan adds the CoCo 3 path. */
+    if (caps & UI_CAP_COCO3) { set_msg("COCO 3: NOT YET"); return 0; }
     const char *name = roms[sel];
     int rc = rom_check_file(g_store, name);
     uint8_t two[2];
@@ -198,8 +201,6 @@ static uint8_t launch(void) {
     if (rc != 0 || peek2(name, two) != 0) { set_msg("CANNOT READ FILE"); return 0; }
     bool dos = two[0] == 'D' && two[1] == 'K';
     if (dos && !(caps & UI_CAP_ECB)) { set_msg("NEEDS EXTENDED BASIC"); return 0; }
-    /* ponytail: a CoCo 3 cold restart has to restore ROM mode first; the next plan adds it. */
-    if (dos && (caps & UI_CAP_COCO3)) { set_msg("DOS ROM ON COCO 3: NOT YET"); return 0; }
     snprintf(pending, sizeof pending, "%s", name);
     pending_act = dos ? UI_ACT_COLD : UI_ACT_JUMP;
     return pending_act;

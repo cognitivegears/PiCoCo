@@ -250,6 +250,23 @@ live swap under a running DOS); checks the file exists and is 8192 or
 `/CTS`) and `rom next` (what `rom boot` + `save` will load at the next
 reset).
 
+`rom load manager` loads the manager stub that is built into the firmware
+(no file needed). `rom launch <file>` loads a ROM for this session only and
+leaves the next-boot choice alone (console only, not available over the
+DriveWire command channel); `rom load` also sets the next-boot ROM. `rom off`
+is now a saved choice.
+
+A write of `$A5` to `$FF43` hands the Becker port to the manager UI in every
+Becker mode, `$5A` returns it; see
+`docs/superpowers/specs/2026-10-01-rom-manager-design.md`.
+
+**Upgrading from 1.3.** A `picoco.cfg` with no `rom` line, including one saved
+after `rom off` by 1.3 or earlier, now boots the manager. On a machine with
+Extended BASIC the manager autostarts. To keep the old behaviour run `rom off`
+then `save` once. A config that has a `rom load ...` line is unaffected. On a
+CoCo 3 the manager cannot launch anything yet (it shows `COCO 3: NOT YET`); set
+a ROM from the USB console (`rom load <file>`, `save`).
+
 `time` now also prints `clock kept|lost`, showing whether the RP2350's
 always-on timer carried the clock across the last `/RESET` (see
 `docs/superpowers/specs/2026-09-23-coco-manager-design.md` §4.5).
@@ -352,7 +369,7 @@ run over DriveWire:
     dw disk rom boot time save
 
 Everything else (`smoke`, `halt`, `bus`, `becker`, `fs
-format|rm|export|import`, `rom load|pattern|off`, `trace`, `crash`,
+format|rm|export|import`, `rom load|launch|pattern|off`, `trace`, `crash`,
 `log`, `stats`, `dw capture|selftest|stats`, `reboot`, `bootsel`, ...)
 answers `FAIL 255 console only` — a new console command is USB-only
 until someone adds it to the allowlist.
