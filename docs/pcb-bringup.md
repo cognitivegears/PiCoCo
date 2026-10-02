@@ -71,7 +71,8 @@ Do not run `bus selftest` on the PCB: U11-U13 outputs would fight PIO1.
 5. Cold boot from the edge, no USB: power-cycle the bench 5 V with USB
    unplugged, watch finger 3 on a scope or DMM. It must be low from t=0 and
    go high once (firmware release, ~1.2 s). Never high before that.
-6. Plus-W only: `net join` + `bus selftest net` while scoping module pad 39.
+6. Plus-W only: `net join` + `net scan` while scoping module pad 39
+   (`bus selftest net` is not supported by the PIO engine).
    Log the VSYS droop during the WiFi burst; that decides whether C12 gets
    fitted (TEST_PLAN G.2 "VSYS scope trace", done on the bench first).
 
@@ -82,7 +83,7 @@ console, then power the CoCo on. Boot the saved config from the breadboard
 (native, HDB-DOS).
 
 1. HDB-DOS banner on the CoCo screen; `status` shows read cycles and
-   `addr_resample`. Any garbage or no banner: `status` counters first,
+   `engine_stall 0`, `event_drop 0`. Any garbage or no banner: `status` counters first,
    then TP1/TP5 on a scope (OE_BUS low only inside E high).
 2. Breadboard gates on the PCB: DIR, LOADM+EXEC DINORUN, SAVE,
    `DRIVE 3:RUN"PICOCO"` manager.
@@ -95,7 +96,23 @@ console, then power the CoCo on. Boot the saved config from the breadboard
    fallback, manager WiFi screen).
 6. Case: fit check against case/ once the board works electrically. (passed 2026-10-01)
 
-## 1.79 MHz fault found on the PCB (2026-09-30)
+## Read-path timing: PIO engine (2026-10-02)
+
+Reads are now served by PIO and DMA with no CPU in the path, on both
+boards. Measured on bare modules: OE_BUS falls to the byte on D0-D7 in
+22 clk (146 ns) on a Pico 2, 14 clk inside the 36 clk realistic sample
+point at 1.79 MHz; on a Plus-W 24 clk (corrected for the self-test's fake
+decode), 12 clk of margin. The full table is in
+`docs/firmware-architecture.md` §8 and the expected self-test lines in
+`firmware/TEST_PLAN.md` section K; PCB figures are not measured yet.
+
+The "1.79 MHz fault" section below and items 1 and 4 of "NitrOS-9
+bring-up" (with the bare-module follow-ups after them) describe the core1
+CPU loop of firmware 1.3 and 1.4 (tag `fw-1.4-cpu-loop`). They are kept
+as history; the counters they name (`addr_resample`, `late_precompute`,
+`oe_glitch`) and the `pad_hold` line no longer exist.
+
+## 1.79 MHz fault found on the PCB (2026-09-30, CPU loop, history)
 
 Symptom: with hdbdw3bc3.rom (CoCo 3, 1.79 MHz during transfers) a DIR or
 SAVE intermittently returned ?IO ERROR and every DriveWire op after it
@@ -173,7 +190,7 @@ section H. Four faults, in the order they showed up.
 4. **Bytes read as 0x00 at 1.79 MHz (0.7-4 % of sectors re-read).** Every
    failed checksum was low by the value of one or more bytes. The rate moved
    with unrelated code changes, and a three-sample filter on OE_BUS with a
-   counter (`oe_glitch`, still in `status`) read 0, which ruled out a spike
+   counter (`oe_glitch`, since removed) read 0, which ruled out a spike
    on OE_BUS. Cause: the 2026-09-30 loop recomputed on every idle pass
    (~20 clk_sys cycles) and then did three stores, so the drive landed an
    estimated 125-260 ns after OE_BUS fell; E is high for 279 ns. Fix: the
@@ -186,8 +203,7 @@ First cut of 4 had `addr_resample` at ~5 % of reads: A7 arrives a few ns
 after the other address lines, a sample landed in that gap, the recompute
 pass (~33 cycles) ran on it and the next sample was already OE-low. The loop
 now looks at the pins a second time before committing a recompute;
-`addr_resample` read 0 in 280k reads afterwards. `status` prints the last
-mismatching pair (`resample_key` / `in`) if it ever returns.
+`addr_resample` read 0 in 280k reads afterwards.
 
 Review findings applied: the idle loop loads the latch only for a read it
 will drive (`bus selftest` keeps its write data there), and the capture-only

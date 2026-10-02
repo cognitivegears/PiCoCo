@@ -55,7 +55,8 @@ firmware/
 │   ├── log.h / log.c       # ring-buffered leveled logging
 │   ├── bus/
 │   │   ├── bus.h / bus.c   # response table, write ring, read hooks, trace ring, stats
-│   │   └── bus_core1.c     # Plan B: the core1 loop; the only file that touches SIO GPIO
+│   │   ├── bus_engine.pio / bus_engine.c   # PIO + DMA bus engine (section 3.3)
+│   │   └── bus_core1.c     # core1 event loop (section 3.4)
 │   ├── dev/
 │   │   ├── device.h / device.c   # device registry, write-event dispatch
 │   │   ├── rom.h / rom.c         # ROM device
@@ -95,14 +96,14 @@ Reversed from the original proposal above: the bus service is the
 time-critical job, so it gets its own core with nothing else running
 on it.
 
-- **core1** — the bus loop only (`src/bus/bus_core1.c`, Plan B).
+- **core1** — the bus event loop only (`src/bus/bus_core1.c`).
   Flash-free: never executes from or reads flash, runs with interrupts
   disabled from SRAM (`BUS_HOT` section attribute), so the build sets
   `PICO_FLASH_ASSUME_CORE1_SAFE` (`firmware/CMakeLists.txt`; not
   `PICOCO_FLASH_ASSUME_CORE1_SAFE` — that name never existed in the
-  build). It serves `bus_table[]` on reads,
-  pushes write events into the write ring, and runs read hooks
-  in-place (see section 5).
+  build). Reads are served by PIO and DMA with no CPU in the path
+  (section 3.3); core1 walks the event ring after each cycle, runs the
+  hooks and pushes write events into the write ring (section 3.4).
 - **core0** — everything else: USB (2x CDC + MSC), the console, the
   DriveWire server, storage (flash/FatFS or the host POSIX
   equivalent), and device write dispatch (`device_dispatch_writes()`
@@ -140,11 +141,11 @@ The v2.3 board (`docs/superpowers/specs/2026-09-17-main-board-v2.3-design.md`
 §3.2) adds 15 hidden underside pads to the `PiCoCo:Pico-Carrier`
 footprint, wired only when a Waveshare RP2350B-Plus-W is soldered flat
 instead of a Pico 2 — NC on a Pico 2 build. `firmware/boards/plusw.h`
-(select with `-DPICOCO_BOARD=plusw`) implements this table; `bus_core1.c`
-reads OE_BUS from `sio_hw->gpio_hi_in` on this board (GP40 is bit 8 of the
-high GPIO bank, not part of `gpio_in`) via a board-header-supplied
-register/mask pair, and `main.c`'s `gpio_setup()` inits exactly the pins
-below plus D0-7/A0-13//R/W/OE_BUS, from a board-header pin mask.
+(select with `-DPICOCO_BOARD=plusw`) implements this table. OE_BUS is
+GP40 on this board, outside PIO0's GPIO window, so the bus engine watches
+it from a helper state machine in PIO2 (section 3.2.2), and `main.c`'s
+`gpio_setup()` inits exactly the pins below plus D0-7/A0-13//R/W/OE_BUS,
+from a board-header pin mask. The engine reads none of GP24-GP30.
 
 Header pins 31/32/34 carry the same nets on both modules, but the
 GPIO number differs: on a Pico 2 those pins are `GP26`/`GP27`/`GP28`;
@@ -162,15 +163,17 @@ on a Plus-W the same physical header pins are `GP40`/`GP41`/`GP42`.
 | GP28 | SLENB_BUF | capture |
 | GP29 | A14_BUF | capture |
 | GP30 | A15_BUF | capture |
-| GP31 | OE_FW | Firmware-driven U10 `/OE` (bus-engine spec, §3.2.2): `bus_core1.c` pulls it low for every selected cycle regardless of JP2 position; JP2 2-3 is required only to let `$FF60-$FF7F` (outside `/CTS`/`/SCS`) respond at all |
+| GP31 | OE_FW | Firmware U10 `/OE`, reached only with JP2 at 2-3. The PIO engine holds it high, so **JP2 must stay at 1-2** (hardware `/OE`) until the respin (`docs/ADDITIONAL_ROADMAP.md` §9) |
 | GP32 | NMI_DRV | Q3 gate (DNP stage — R15/R17 also DNP); also reachable from a Pico 2 via JP5 2-3 (shares header pin 34, see below); no firmware drives this pin yet |
 | GP33 | CART_DRV | Firmware-driven `/CART` pulse (bus-engine spec, §4.5-equivalent in `main.c`): toggled ~500 Hz for 500 ms after `/HALT` release when `rom_cart_wanted()` is true; also reachable from a Pico 2 via JP5 1-2, but no Pico 2 board header defines `PIN_CART_DRV` today, so the pulse is Plus-W only |
 | GP34 | AUDIO_PWM | sound output stage |
 | GP35 | EXP_GP35 → J1 pin 1 | Plus-W only; on a Pico 2 this is where the module's own SWDIO pad lands instead (see the debug-pad note in `hardware-design.md` §7) |
 | GP43, GP44, GP45 | EXP_GP43/44/45 → J1 pins 2-4 | Plus-W only |
 
-GP24..GP30 are contiguous so one `gpio_in` read on a Plus-W captures
-all seven at once, same trick as the header's A0..A13+/R/W word.
+GP24..GP30 are contiguous, but A14/A15 (GP29/GP30) are not next to
+A13 (GP21), so one PIO `in pins` cannot take A0-A15. The engine uses
+A0-A13 on both boards: no 32K paks and no `$8000` window until the
+respin.
 
 **JP5** (`docs/hardware-design.md` §4.4a) is the header-pin-34 solder
 jumper for the Q3/Q4 drive stages above: pad 1 = `CART_DRV`, pad 2 =
@@ -190,63 +193,36 @@ uses GP36-GP39 (REG_ON, DATA/IRQ, CS, CLK), clear of the pad grid. Sources:
 Zephyr `boards/waveshare/rp2350b_plus_w` (PR #119523) and arduino-pico
 issue #3297 (quotes the Waveshare schematic); not yet checked on a module.
 
-### 3.2.2 Plus-W bus loop
+### 3.2.2 Plus-W differences
 
-`bus_core1.c`'s Plus-W loop (compiled under `PICOCO_BOARD_PLUSW`, replacing
-the OE_BUS-triggered Pico 2 loop entirely) samples address and control
-lines twice per cycle instead of once, trading a little latency for a
-head start on decode:
+The read and event state machines are the same programs as on a Pico 2,
+in PIO0 (GPIO base 0), with their waits patched at load (section 4.1).
+OE_BUS (GP40) is outside PIO0's window, so a helper, `bus_sel_pw`
+(section 4.3), runs in PIO2 with GPIO base 16. The cyw43 driver puts its
+own state machine in PIO2 sm0 and sets that base; `bus_engine_init()`
+runs after `net_init()` and sets the base itself only if the driver has
+not. On OE_BUS low the helper raises PIO0 flag 0 (read SM: cycle start)
+and flag 1 (event SM) with `irq next set`; on OE_BUS high, flag 2 (read
+SM: cycle end). PIO2's "next" block is PIO0, which is why the helper must
+stay in PIO2. It adds about 3 clk to the read path.
 
-1. Wait for `E` low, then wait for `Q` high — the address is valid once Q
-   rises, before E does.
-2. Sample A0-13, `/R/W`, `CTS_BUF`, `SCS_BUF`, A14, A15 and run
-   `plusw_selected()` on that sample immediately. This is the head start:
-   decode work happens during the dead time before E rises, not after.
-3. Wait for `E` high, then resample the same bits (`DECODE_MASK`). If
-   anything changed, redo the decode on the new sample (counted in
-   `bus_stats.addr_resample`, same diagnostic the Pico 2 loop already
-   used for its own late resample) — `/CTS` and `/SCS` are decoded
-   downstream in the SAM/GIME and only need to meet setup before E rises,
-   so a late-settling sample here is expected, not a bug.
-4. If the cycle is not selected, loop back to waiting for E low — the end
-   of this cycle — without touching the data pins at all.
-5. If selected: reads drive D0-7 from `bus_peek(idx)` only when
-   `bus_drive` is on, and pull `PIN_OE_FW` (GP31) low only for the
-   duration E is high; writes always pull `OE_FW` low to enable U10
-   inward regardless of `bus_drive`, because U10's direction is fixed by
-   the hardware `RW_BUF` signal, not by firmware — so capture-only mode
-   (`bus drive off`) still records write data even though it never drives
-   a read.
+The helper runs from `bus_engine_init()` on and is never stopped, by
+`bus drive off` or by a restart, so the event SM never misses a cycle.
+While the read SM is stopped, flags 0 and 2 pile up unread. `engine_start`
+clears them only between cycles: it waits for OE_BUS (read through SIO)
+to be high for 16 clk, clears flags 0 and 2, reads the IRQ register back
+so the clear has landed, and checks OE_BUS is still high, else it goes
+round again. A start flag cleared while its end flag is still to come
+would leave that end flag pending and release every later read at once.
+The wait is capped at 64 passes (about 3 µs); at the cap it clears,
+enables anyway and counts `start_wait_cap`.
 
-**Selection** (`plusw_selected()`) is true when `/CTS` or `/SCS` is
-asserted (hardware-selected, same as the Pico 2 loop), or when the full
-16-bit address is set in `bus_fw_mask` (firmware-decoded). `bus_fw_mask`
-is a `uint32_t` bitmap over `$FF60-$FF7F` (one bit per address in that
-32-byte page — no other page is ever firmware-decoded), written only by
-core0 through `bus_fw_enable(addr)`/`bus_fw_disable(addr)` (`bus.c`;
-`bus_fw_enable` returns -1 outside `$FF60-$FF7F`). A 32-bit store is
-atomic, so a device registered from the console after core1 is already
-running takes effect on the very next cycle with no handshake.
-
-`bus_stats` gained three counters for this loop: `hw_selected` (cycles
-selected by `/CTS` or `/SCS`), `fw_selected` (cycles selected only by
-`bus_fw_mask`), and `whooks_run` (write hooks executed, §3.2.3). All
-three print on `bus status`/`status`'s `bus whooks N hw_sel N fw_sel N`
-line.
-
-`PIN_OE_FW` (GP31) mirrors what hardware (U15) does for the Pico 2 loop,
-plus the firmware-only address set: it is driven low only while a
-selected cycle's E is high. With JP2 left at its default (1-2), U15 also
-enables U10 for hardware-selected cycles in parallel with `OE_FW` — the
-two enables agree, so this is harmless. With JP2 cut to 2-3, `OE_FW` is
-the *only* enable path, which is what lets `$FF60-$FF7F` respond at all
-(those addresses assert neither `/CTS` nor `/SCS`, so U15 never enables
-U10 for them). See `docs/hardware-design.md` §4.1 for the JP2 jumper
-itself.
-
-The Pico 2 loop is untouched except that its read path now goes through
-`bus_peek()` (§3.2.4) and its write path calls the write-hook table
-(§3.2.3) from inside `bus_on_write`.
+The radio holds DMA channels 0-1; the engine claims its channels and state
+machines through the SDK allocators, never by number (`bus engine` prints
+who holds what). Until the respin (`docs/ADDITIONAL_ROADMAP.md` §9) a
+Plus-W has the Pico 2's limits: `OE_FW` (GP31) is held high and JP2 must
+be at 1-2, A14/A15 are not used, and there are no firmware-decoded
+addresses (`$FF60-$FF7F` went with the CPU loop, tag `fw-1.4-cpu-loop`).
 
 ### 3.2.3 Write hooks
 
@@ -256,56 +232,77 @@ int bus_add_write_hook(uint16_t idx, void (*fn)(uint8_t data));  /* 0 ok, -1 ful
 
 Same shape as the existing read-hook table (`bus_add_read_hook`):
 `BUS_MAX_HOOKS` (4) fixed entries, matched by `idx` with a linear scan —
-cheap at four entries, no map needed. Core1 calls the matching hook from
-inside `bus_on_write()`, right after the data byte is captured and
-*before* the event is pushed onto the core0-facing write ring, so core0
-still sees every write exactly as before; the hook is purely an
-early-look, not a replacement for the queued event. `whooks_run` (above)
-counts hook invocations. Hooks are `BUS_HOT` — SRAM-resident, no libc,
-no flash — the same rule core1's own loop follows.
+cheap at four entries, no map needed. core1 calls the matching hook from
+`bus_event()` when the write's event arrives, after the cycle, as the
+first thing it does with it: before the trace store, the counters and
+the core0-facing write ring. The `$FF40` bank hook races the next
+cycle's `in x, 3` (section 3.2.4), so nothing goes in front of it, and
+core0 sees a hook's effect no later than the write itself. core0 still
+sees every write; the hook is an early look, not a replacement for the
+queued event. `bus whooks` in `status` counts hook invocations. Hooks
+are `BUS_HOT` — SRAM-resident, no libc, no flash — the same rule core1's
+own loop follows.
 `firmware/tools/check_core1_flash_free.py` discovers hook functions by
 grepping for `bus_add_(read|write)_hook(...)` call sites (one regex
 covers both), so a write hook that branches into flash fails the Pico
 build the same way a read hook or the core1 loop itself would.
 
-### 3.2.4 Banked ROM
+### 3.2.4 Table and banked ROM
 
-`bus_rom_base` (`bus.h`) is a `const uint8_t *volatile` defaulting to
-`bus_table`; `bus_peek(idx)` (used by both loops and by `bus_on_read_done`
-for the trace/hook path) returns `bus_rom_base[idx]` for `idx < 0x3F00`
-and `bus_table[idx]` above that — so the I/O page (Becker, future
-devices) is never affected by which ROM bank is selected.
+The engine serves `bus_mem[8][16384]` (`bus.h`): eight 16 KB banks in one
+128 KB-aligned block, in its own linker region at `0x20060000`
+(`firmware/ld/`, section 5.1). Bank 0 is `bus_table`. The read SM builds
+the address of the byte as `Y << 17 | X << 14 | A13..A0`, `Y` being
+`&bus_mem >> 17` and `X` the bank (section 3.3), so a bank switch is one
+register update. The I/O page (`$FF00-$FFFF`, idx `0x3F00-0x3FFF`) comes
+from the current bank too. The entries devices own, `0x3F40-0x3F5F`, are
+written only through `bus_io_set()`, which stores into all eight banks, so
+a device read never changes with the bank; ROM loaders leave them alone.
+`bus_peek(idx)` returns `bus_mem[bus_bank][idx]`.
 
 `rom.c` loads three shapes:
 
-- **8192 or 16384 bytes**: unbanked, copied straight into `bus_table` as
-  before (the 16 KB case skips `0x3F41`/`0x3F42`, the Becker table
-  entries, per the single-writer rule in §6.3).
-- **32768, 65536 or 131072 bytes** (2/4/8 x 16 KB): banked. Banks land in
-  a static `rom_banks[8][16384]` SRAM array (128 KB `.bss`, the largest
-  Games Master Cartridge size MAME's `coco_gmc` supports). Load order
-  matters for core1, which may be running concurrently: `rom_nbanks` is
-  cleared to 0 first (so the `$FF40` hook is inert while banks fill),
-  then every bank is copied, then `bus_rom_base` points at bank 0, then
-  `rom_nbanks` is set last — a bank switch racing the loader can only see
-  "unbanked" or "fully loaded", never a half-filled table.
+- **8192 or 16384 bytes**: unbanked, into bank 0 (the 16 KB case skips
+  `0x3F40-0x3F5F`, per the single-writer rule in §6.3).
+- **32768, 65536 or 131072 bytes** (2/4/8 x 16 KB, the largest Games
+  Master Cartridge size MAME's `coco_gmc` supports): banked, straight into
+  banks 0..n-1 of `bus_mem`. `unbank()` (count 0, bank 0) runs first, so
+  the `$FF40` hook is inert while banks fill; `rom_publish_banks()` then
+  sets bank 0, the mask and the count in one step. Both take the engine
+  lock that the hook takes, so a switch racing the loader sees "unbanked"
+  or "fully loaded", never a half-filled table.
 - Any other size is refused with `-2` and the previous ROM stays loaded;
   the console prints `rom load: size must be 8K, 16K, or banked 32K/64K/128K`.
 
 `rom_init()` registers a `$FF40` write hook (`rom_bank_hook`) once, for
-the life of the firmware; it is a no-op while `rom_nbanks` is 0, so it
-never needs to be removed by an unbanked load or `rom off`. On a write it
-does `bus_rom_base = rom_banks[data & rom_bank_mask]` — one compare, one
-table load, no per-cycle bank copy. `rom_is_dos()` (loaded and the first
-two bytes are `DK`) feeds both `rom_cart_wanted()`'s AUTO mode (§3.2.5's
-sibling, the `/CART` pulse in `main.c`) and is otherwise unchanged.
+the life of the firmware; it is a no-op while no banks are loaded. On a
+write it takes the engine lock and calls `bus_engine_set_bank_locked(data
+& mask)`, which stores `bus_bank` and execs `set x, n` into the read SM.
+No pause, no PC read, no jump: an exec'd instruction runs at an
+instruction boundary, a state machine stalled in a `wait` or `pull` runs
+it and stays stalled, a running one loses 1 clk. The read program takes
+the bank (`in x, 3`) right after its start trigger, so a switch takes
+effect for every cycle whose `in x, 3` has not yet run.
+
+The hook lands 82-93 clk after the write's OE_BUS rises, which is after
+the next cycle's `in x, 3` at both speeds. So the first cart fetch after
+a `STA $FF40` comes from the old bank and every later one from the new:
+`+1` on 512 of 512 switches at both speeds in the self-test. On a Plus-W
+at 0.89 MHz the hook sits on the boundary and 1-95 of 512 switches land
+at `+0`. No read is ever served from a wrong address. The later fix, if a
+real pak needs it, is a PIO decode of `$FF40`
+(`docs/ADDITIONAL_ROADMAP.md` §6 item 14).
+
+`rom_is_dos()` (loaded and the first two bytes are `DK`) feeds
+`rom_cart_wanted()`'s AUTO mode (the `/CART` pulse in `main.c`).
 
 ### 3.2.5 Self-test: fake 6809
 
 `bus selftest` (`firmware/src/bus/fake6809.c`, PIO program in
-`fake6809.pio`) runs the real, unmodified core1 loop against synthetic
-6809 bus cycles generated by a PIO1 state machine, so the loop can be
-exercised with no CoCo attached.
+`fake6809.pio`) runs the real engine, event loop and hooks against
+synthetic 6809 bus cycles generated by a PIO1 state machine, clk-exact
+(84 clk per cycle at 1.79 MHz, 168 at 0.89 MHz), so the bus path can be
+exercised with no CoCo attached. It is the engine's regression gate.
 
 **Unplug the board from the CoCo before running this — the guard below is
 a backstop, not a licence to leave it plugged in.** Before touching a
@@ -319,44 +316,33 @@ address and `R/W` pins (plus `OE_BUS` on a Pico 2, or `E`/`Q` on a
 Plus-W) must not move at all — those pins come through always-enabled
 buffers and toggle with the CPU clock whenever anything is running them,
 where an unplugged board just sits on its pull-ups. Only after both
-checks pass does it switch the address/control pins core1 watches from
-SIO to PIO function (and back to SIO when it's done); D0-7 stay SIO
-throughout, driven or read by core0 with plain GPIO calls between PIO
-pushes. `firmware/tools/bench.py` (below) is registered as the `bench`
-ctest target only when configured with `-DPICOCO_BENCH=ON` — it is
-opt-in, not part of the default `ctest --test-dir build-host` run,
-because it drives real bus pins.
+checks pass does it hand the address/control pins to PIO1 (and back to
+SIO when it is done). Write data comes from a test-only state machine in
+PIO0, since D0-D7 belong to the engine. `firmware/tools/bench.py`
+(below) is registered as the `bench` ctest target only when configured
+with `-DPICOCO_BENCH=ON` — it is opt-in, not part of the default `ctest
+--test-dir build-host` run, because it drives real bus pins.
 
-Two PIO programs, one per board, chosen at compile time by
-`PICOCO_BOARD_PLUSW`: `fake6809_p2` drives the Pico 2's 15 address/`R/W`
-bits with `OE_BUS` as a side-set, two TX words and one RX word per cycle;
-`fake6809_pw` drives the Plus-W's 23 bits (A0-15, `R/W`, `CTS`, `SCS`,
-`E`, `Q`, `SLENB`) with six TX words per cycle (address/select phases at
-Q-low, Q-high, E-high, a programmable sample-delay count, E-falling, then
-idle) and one RX word. Both emit a full 6809-style cycle: address valid,
-Q rise, E rise, (write: data must already be valid), E fall.
+On a Pico 2 the fake drives A0-A13 and R/W with `OE_BUS` as a side-set.
+A bare Plus-W has no decode chip, so the fake drives E and the selects
+and a fake decode generates `OE_BUS`; its own delay (5 clk, against about
+1.5 for the real 74LVC00) is measured and taken out (`corrected`).
 
-The test loads a synthetic 32 KB banked image (bank 0 marked with a
-sentinel byte, each bank otherwise filled with its own bank number), then
-runs a fixed check list against the real loop: reads across the ROM
-window including the bank-0 marker, a bank switch via `$FF40` and back,
-a Becker status read, ten `$FF42` writes (checked against
-`bus_stats.writes` and `write_overrun`), an unselected cycle that must
-not move `bus_stats.cycles` at all, and — Plus-W only — a firmware-decode
-round trip on `$FF7E`: ignored before `bus_fw_enable`, read and written
-correctly once enabled, ignored again after `bus_fw_disable`, and never
-mistaken for the same low bits at `$BF7E` (different `/CTS`/`/SCS`
-state). Each check prints a `selftest <name> ok|FAIL` line live over the
-console; the whole run passes only if none failed.
-
-After the check list, it sweeps the read-side sample delay from 0 up to
-60 PIO cycles (clock divider 1.1) looking for the smallest delay at which
-core1's driven read data is already correct, and reports it as
-`selftest response first_ok_delay <n> (~<ns> ns after OE_BUS fell)` — the
-measured response time is whatever that line shows on the run in
-question, not a number fixed in this document (Task 3's design budget
-was the ~280 ns CoCo 3 window from §8; the self-test is how that margin
-gets checked going forward instead of read off a logic analyzer capture).
+What it checks, in one run of about 2 s: 4,096-cycle back-to-back bursts
+at the realistic sample point (36 clk after OE_BUS falls at 1.79 MHz,
+72 at 0.89 MHz), mixed reads and writes, unselected gaps, write capture
+with data, event content and rate, engine restarts under a burst, a lap
+of the event ring, a forced stall, bank switches at random phases,
+capture-only (`bus drive off`), all eight banks, the I/O page across
+banks, a Becker byte stream at both speeds, Becker status and data on
+consecutive cycles, where a `$FF40` switch first shows, sample-point
+sweeps (`response_clk`), the release (`release_clk`), and on a Plus-W
+late `/CTS` and `/SCS`. Options: `stress` (core0 memcpy load), `radio`
+(Plus-W: scans and cyw43 polling), `restarts` (40 restart bursts, then
+stop), `switches` (40 switch bursts with a phase histogram, then stop).
+It prints `selftest fast pass` only if every gated line passed; the
+expected lines per board are in `firmware/README.md` and
+`firmware/TEST_PLAN.md` section K.
 
 It is safe to run on an unplugged PCB: with no cart +5 V present, the
 board's own +3.3 V rail (derived from +5 V through the LDO) is off, so
@@ -366,168 +352,218 @@ matter what it does. On success (or failure) it calls `rom_off()` and
 prints `selftest rom cleared; reload with rom load` — the synthetic image
 does not survive a run either way, which is why `firmware/tools/bench.py`
 sends `reboot` at the end of its own run, to replay a saved `rom load`
-from `picoco.cfg`.
+from `picoco.cfg`. With +5 V on the board (a bench supply or a CoCo),
+U11-U13 are powered and their outputs would fight PIO1; the measured
+figures in section 8 all come from bare modules.
 
-As of this writing the self-test has not been run on real hardware in
-this development session (no Pico attached); §3.2.2's Plus-W loop and
-the `$FF60-$FF7F` decode path are otherwise covered only by the host
-`ctest` suites and this on-chip test, not yet by a bench CoCo. One
-caveat worth watching once it is on a bench: a write hook that runs past
-the next E rise makes the Plus-W loop skip a cycle outright (it is still
-waiting for `E` low when the next cycle's `Q` rises), where the Pico 2
-loop instead just samples its address late. `bus status`'s
-`addr_resample` and `fw_sel`/`hw_sel` counters are where that would show
-up.
+### 3.3 Bus engine: the read path
 
-### 3.3 PIO block usage (v2 bus engine)
+Reads are served by PIO and DMA alone (`bus_engine.pio`, `bus_engine.c`):
+no CPU sits between OE_BUS falling and the byte on D0-D7, on either
+board. The CPU loop of firmware 1.4 is tagged `fw-1.4-cpu-loop`; there is
+no build switch back to it. Design spec:
+`docs/superpowers/specs/2026-10-02-pio-bus-engine-design.md`.
 
-The bus engine actually being built (Plan B) is a plain C loop on
-core1 polling GPIO in a tight `for(;;)` (spec section 4.3), not PIO+DMA.
-It is simpler to debug. `bus_core1.c` inserts ten `nop`s (67 ns at the
-default 150 MHz — nothing in `firmware/src` calls
-`set_sys_clock_khz`) between detecting `OE_BUS` low and reading the
-address, then drives data; measured on the breadboard loop, total
-OE-to-data is roughly **180-200 ns**, not the "about 70 ns" this
-section used to claim, once the poll granularity, index computation
-and GPIO writes are counted (see `docs/ADDITIONAL_ROADMAP.md` §6 items
-5-6 for the follow-up: read `bus addr_resample` on the first real PCB
-and drop the nops if it's zero, then raise the clock). Margin against
-a 280 ns CoCo 3 window is real but thinner than the number below
-suggests. The PIO/DMA design below is kept as the v2 engine, to be adopted only
-if the hardware logic analyzer shows jitter in the C loop once it's
-running on real hardware. Everything in 3.3, 3.4 and section 4 (PIO
-programs) describes that fallback, not the current implementation. It
-also assumes E reaches header pin 34 (GP28), which as of v2.3.1 requires
-cutting JP3 to 2-3 — the default (1-2) routes `AUDIO_PWM` there instead
-(§3.2).
+| Resource | Pico 2 | Plus-W | Role |
+|---|---|---|---|
+| PIO0 sm0 | read | read | serves the byte (section 4.1) |
+| PIO0 sm1 | event | event | one word per selected cycle (section 4.2) |
+| PIO2 sm1 | — | helper | watches OE_BUS on GP40 (section 4.3) |
+| DMA A | ch 0 | ch 2 | read SM RX (the pointer) → DMA B `READ_ADDR_TRIG`; 32-bit, endless |
+| DMA B | ch 1 | ch 3 | that one byte → read SM TX; 8-bit, count 1, re-armed by every A write |
+| DMA C | ch 2 | ch 4 | event SM RX → `bus_events`; 32-bit, endless, 8 KB write ring |
 
-PIO0 hosts three state machines:
+The numbers are what `bus engine` printed on the bench modules; every
+state machine and channel comes from the SDK allocators. All three DMA
+channels are high priority and DMA has bus priority (reads and writes).
+Input synchronisers are bypassed on A0-A13 and R/W only; OE_BUS (an
+asynchronous strobe) and D0-D7 keep theirs.
 
-| SM | Name | Role |
-|----|------|------|
-| SM0 | `bus_watcher` | Snapshots A0–A13 + /R/W once per E‑rising edge; used for bus trace and DMA dispatch. |
-| SM1 | `data_driver` | Drives D0–D7 on cart‑selected read cycles (ROM or Becker). |
-| SM2 | `write_capture` | Captures D0–D7 on cart‑selected write cycles (Becker writes to $FF42). |
+**Per read.** On the start trigger the read SM tests R/W (`jmp pin`); a
+write is never driven. For a read it shifts the bank (`in x, 3`) and
+A0-A13 (`in pins, 14`) into an ISR that already holds `Y`, so the ISR is
+the address of the byte, `Y << 17 | X << 14 | A13..A0` (section 3.2.4).
+`push noblock` hands it to DMA A, which writes it into DMA B's trigger
+register; B copies the byte into the TX FIFO. An 8-bit DMA write reaches
+the FIFO replicated across the word (measured), so `out pins, 8` takes the
+right byte. The SM sets the output latch and only then enables the
+outputs (`mov pindirs, ~null`): a stalled DMA leaves the pins released,
+never driving. At the end of the cycle it drives D0-D7 low for 2 clk and
+then releases them (RP2350-E9: a pad left high on the pull-down alone
+stays high).
 
-SM3 is reserved. PIO1 and PIO2 are entirely free.
+Every instruction between the start wait and `push`, or between `pull`
+and `mov pindirs`, costs 1 clk of read latency; `in x, 3` is the one
+added beyond the minimum (it costs every read 1 clk and saves a bank
+switch from touching the program counter). Change either stretch only
+with a self-test run on both boards.
 
-### 3.4 DMA channels
+**Start and stop.** `engine_stop` and `engine_start` run from SRAM with
+interrupts off, under the engine's spin lock: from flash, a cache miss
+once left the pins driven for two cycles. Stop disables the read SM and
+execs `mov pins, null` then `mov pindirs, null`. Start waits until the
+read SM's RX FIFO is empty and DMA B is idle (a pointer still in flight
+would land after the FIFO clear and serve every later read one cycle
+late), clears the FIFOs, restarts the SM, loads `Y`, jumps to `top`, sets
+`X` to `bus_bank` under the lock, runs the Plus-W flag sequence (section
+3.2.2) and enables.
 
-| Channel | Source → Dest | Purpose |
-|---------|---------------|---------|
-| DMA0 | PIO0 RX FIFO (SM0) → `bus_snapshot_ring[]` | Diagnostic trace (write‑only, no reconfigure). |
-| DMA1 | `rom_byte` → PIO0 TX FIFO (SM1) | Push one ROM byte per cycle. Reloaded by DMA2. |
-| DMA2 | `dma1_cfg_template[]` → DMA1 read_addr register (alias) | Reconfigure channel: rewrites DMA1's source pointer. Chains DMA2 back to DMA1 so the pair forms a self‑reloading pump. |
-| DMA3 | PIO0 RX FIFO (SM2) → `becker_rx_ring[]` | Capture Becker write bytes. |
+**Capture-only (`bus drive off`).** Only the read SM stops, its pins
+discharged and released. The event SM, DMA C and the Plus-W helper keep
+running, so writes, the trace and every event still arrive. `bus drive
+on` stops and restarts the read path.
 
-**ROM‑serve chain (DMA1 ↔ DMA2)**: ARM pre‑computes a 16 K‑entry
-table `rom_ptrs[i] = &rom_image[i]` (actually a single 16 KB buffer;
-the table entries are just `rom_image + i` for `i = 0..16383`). When
-SM0 captures an address with `A13=0` and `/R/W=1`, it also triggers
-DMA2, which copies `rom_ptrs[address_low13]` into DMA1.READ_ADDR,
-then DMA1 fires once, pulling that byte through to SM1's TX FIFO.
-Both DMA channels have `chain_to` set to keep the loop alive.
+**Stall guard.** `bus_engine_tick` runs in core0's main loop once a
+millisecond and checks five things: the read SM is enabled, its PC is at
+`pull`, DMA B is idle, OE_BUS is high, and the read SM's RX FIFO is
+empty. Seen on two ticks in a row, it runs `engine_stop` and
+`engine_start` and counts `engine_stall`. A served read also waits at
+`pull` with B idle (12-20 % of samples under a reads burst), so without
+the OE_BUS term a busy bus restarted the engine on a few per cent of tick
+pairs. Detection takes 1-2 ms on an idle bus and about 6 ticks with
+OE_BUS cycling, bounded in practice but not hard-bounded. Because the
+outputs are enabled only after the pull, a stall means "not answering",
+never "driving". The guard covers a lost pointer; a dead DMA A is not
+covered.
 
-End‑to‑end latency from E rising to D0–D7 valid, measured in PIO
-cycles at 150 MHz (≈ 6.67 ns/cycle):
+### 3.4 Event stream and the core1 loop
 
-| Stage | Cycles | ns |
-|-------|-------:|---:|
-| PIO SM0 capture (`IN PINS, 15 [3]` with settling) | 4 | 27 |
-| DMA0 + DMA2 reconfigure (RP2350 DMA is IRQ‑free chain) | 6 | 40 |
-| DMA1 fetch from SRAM → TX FIFO | 4 | 27 |
-| SM1 `MOV PINS, OSR` | 1 | 7 |
-| **Total** | **15** | **~100** |
+The event SM samples D0-D7, A0-A13 and R/W (23 pins from GP0) from the
+same trigger as the read path (Pico 2: OE_BUS low; Plus-W: flag 1) until
+the cycle ends, keeps the last sample taken while the cycle was still on,
+and pushes that one word: `[7:0]` data (on a read, what the engine
+drove), `[21:8]` index, `[22]` R/W (1 = read), `[31:23]` always 0. Its RX
+FIFO is joined (8 deep) and the push is `noblock`: a push into a full
+FIFO drops the event and sets `FDEBUG.RXSTALL`, which core0 counts as
+`event_drop` on each 1 ms tick. DMA C drains it into `bus_events[2048]`,
+whose write address wraps. The event SM and DMA C start once in
+`engine_init` and never stop, so DMA C's position and core1's index stay
+in step.
 
-Within the 300 ns CoCo 3 1.79 MHz data window — 3× margin. On CoCo
-1/2 at 0.89 MHz the window is ~600 ns, so 6× margin.
+core1 (`bus_core1_main`, SRAM, interrupts off) walks the ring by a
+sentinel: every empty slot holds `BUS_EV_NONE` (`0xFFFFFFFF`), which no
+selected cycle can produce (bits 23-31 read 0, and it would be index
+`0x3FFF`, never selected). It reads its next slot until it is not the
+sentinel, writes the sentinel back and calls `bus_event(w)`. It never
+reads a DMA register per event: a core reading DMA registers back to back
+delays DMA A by 1 clk now and then.
 
-If DMA latency proves unacceptable, fall back to **core0 IRQ** on
-`pio_sm_get_blocking(SM0)` and dispatch from C. Cortex‑M33 IRQ
-latency is ~60 ns; add table lookup and PIO push: ~200 ns total,
-still inside the window.
+`bus_event()` is also what the host simulator calls, so the host tests run
+the same hook and queue code. A write runs its hooks first, then the
+trace store, the counters and the write ring; a read runs the trace
+store, the counters, then its read hook (Becker status and data). The
+read path is kept separate and short on purpose: at 1.79 MHz with every
+cycle from the cart there are 84 clk per event, and estimates from the
+disassembly put a ROM fetch event at about 45-50 clk and a `$FF41`/`$FF42`
+read at about 110-120 clk, so the self-test's six-cycle Becker client
+pattern costs about 72 of 84 clk. That leaves about 10-15 clk per event;
+a shared write/read path once cost enough to lap the ring. Any change to
+the read event path or the hooks must re-run the self-test's Becker
+event-rate line.
+
+**Lag and laps.** Every 256 events core1 counts the unread slots ahead,
+up to 256 (`event_lag_max`, which saturates there). At the cap it checks
+for a lap: DMA C's next slot, read twice, still holds an unread event. On
+a lap it empties every slot forward from the writer, then the ones DMA C
+wrote meanwhile, jumps to DMA C's position and counts `event_lap`. A real
+lap costs about 12k clk, about 146 events dropped with no hooks run for
+them. Before a check finds the lap, up to 255 stale slots (256 more for
+each check that leaves a moving writer to the next) are served out of
+order. The resync relies on DMA C's `WRITE_ADDR` advancing on write
+completion (datasheet wording), so the slot it clears last has landed.
+
+**Hook deadline.** A hook must finish before the CoCo next touches that
+device. Two accesses to one device on consecutive cycles see the table as
+it was before the first one's hook ran. Measured on both boards: status
+then data on consecutive cycles gives `02,5c` with a byte ready and
+`00,ff` when empty, stable; a `$FF41` poll on the cycle straight after the
+`$FF42` that took the last byte still sees `02` (a phantom `0xFF` read
+would follow). HDB-DOS and DW4 leave at least five cycles between the two
+reads (inferred from instruction timings, not yet seen on a CoCo).
+
+**Trace.** core1 also stores every event in a separate 512-word trace
+ring. `trace dump [n]` prints `seq idx R|W data`, `seq` being the event
+count since boot (no timestamp). A Becker underrun freezes it from the
+data hook, with that read as the last entry; a DriveWire CRC error
+freezes it from core0. `trace run` thaws it.
+
+**Launch order** (`main.c`). `bus_engine_init()` runs after `net_init()`
+(the cyw43 driver claims PIO2 first) with the read SM stopped, since
+`bus drive` is off until the config replays `bus drive on`. core1 is
+launched straight after, before the config replay and the `becker net`
+hold, so no event waits unread (more than 2048 would lap the ring). Every
+hook is registered before the launch.
 
 ## 4. PIO programs
 
-The three SM programs live in `src/bus.pio`. Pseudocode / sketches:
+All in `firmware/src/bus/bus_engine.pio`, clock divider 1 (150 MHz).
+The listings below drop the source comments; the file has them.
 
-### 4.1 `bus_watcher` (SM0) — gated on OE_BUS + read cycle
+### 4.1 `bus_read` (PIO0)
+
+`in_base` GP8 (A0), `out_base` GP0 (D0, 8 pins), `jmp_pin` GP22 (R/W), ISR
+shifting left with no autopush. `Y` and `X` are loaded by `engine_start`
+while the SM is stopped; `X` again by every bank switch.
 
 ```
-.program bus_watcher
-
-    wait 0 pin 20            ; alignment: ensure we start with E low
-                             ; (GP28 = pin index 20 from in_base 8)
 .wrap_target
-    wait 0 pin 18            ; WAIT for OE_BUS low (GP26 = index 18)
-    wait 1 pin 20 [3]         ; E rising + 3 cycles settling (~20 ns)
-    in pins, 15              ; base 8: A0..A13 + /R/W → ISR
-                             ; autopush at 15 bits → RX FIFO
-    wait 1 pin 18            ; wait for OE_BUS to release
+top:   mov isr, y              ; y = &bus_mem >> 17
+trig:  wait 0 gpio 26          ; OE_BUS low.   Plus-W: wait 1 irq 0
+       jmp pin rd              ; R/W high = CoCo read
+wend:  wait 1 gpio 26          ; a write: never driven.   Plus-W: wait 1 irq 2
+       jmp top
+rd:    in x, 3                 ; bank, as it is now
+       in pins, 14             ; isr = &bus_mem[x][A13..A0]
+       push noblock            ; -> DMA A -> DMA B
+wbyte: pull block              ; the byte from DMA B (stall guard: stuck here)
+       out pins, 8
+       mov pindirs, ~null      ; drive only once the byte is in the latch
+rend:  wait 1 gpio 26          ; end of cycle.   Plus-W: wait 1 irq 2
+       mov pins, null [1]      ; RP2350-E9: drive low two clk...
+       mov pindirs, null       ; ...then release
 .wrap
 ```
 
-- `in_base` = 8, so `pin 20` refers to GP28 (E) and `pin 18` to GP26
-  (OE_BUS).
-- Output: 15‑bit word `(rw << 14) | (A13 << 13) | A12..A0` in RX FIFO
-  exactly once per cart‑selected cycle. A13 is the ROM/Becker selector;
-  bits A12..A0 index into the 16 KB ROM buffer when A13=0.
-- The leading `wait 0 pin 20` outside `.wrap_target` runs once and
-  guarantees that we align on a known E‑low phase before entering the
-  loop. Without it, an SM started mid‑cycle could capture a garbled
-  address before E has even risen.
+On a Plus-W `engine_init` rewrites the three waits at `trig`, `wend` and
+`rend` in instruction memory to the helper's flags (section 4.3).
 
-### 4.2 `data_driver` (SM1) — tri‑state BEFORE E falls
+### 4.2 `bus_event_p2` / `bus_event_pw` (PIO0)
+
+`in_base` GP0 with an input count of 23, so `mov isr, pins` is D0-D7,
+A0-A13 and R/W and bits 23-31 read 0. `jmp_pin` is OE_BUS (GP26) on a
+Pico 2 and E (GP26) on a Plus-W.
 
 ```
-.program data_driver
+.program bus_event_p2               .program bus_event_pw
+.wrap_target                        .wrap_target
+      wait 1 gpio 26                      wait 1 irq 1     ; helper: cycle start
+      wait 0 gpio 26                smp:  mov isr, pins
+smp:  mov isr, pins                       jmp pin keep     ; E still high
+      jmp pin done  ; OE_BUS high         jmp done
+      mov x, isr                    keep: mov x, isr
+      jmp smp                             jmp smp
+done: mov isr, x                    done: mov isr, x
+      push noblock                        push noblock
+.wrap                               .wrap
+```
 
+A sample that finds the cycle over may be from after its end, so it is
+dropped and the one before it (`x`) is pushed.
+
+### 4.3 `bus_sel_pw` (PIO2, Plus-W only)
+
+GPIO base 16, so `gpio 40` is reachable; `irq next` lands in PIO0.
+
+```
 .wrap_target
-    pull block               ; wait for byte from DMA1 (or core0 IRQ)
-    out pindirs, 8           ; set D0..D7 as outputs
-    mov pins, osr            ; drive D0..D7 with the low 8 bits
-    wait 1 pin 18            ; wait for OE_BUS to release (cycle ends)
-    mov osr, null
-    out pindirs, 8           ; tri-state D0..D7 before next cycle
+    wait 1 gpio 40          ; a start while OE_BUS is low skips that cycle
+    wait 0 gpio 40          ; OE_BUS low: selected and E high
+    irq next set 0          ; read SM: cycle start
+    irq next set 1          ; event SM
+    wait 1 gpio 40          ; OE_BUS high: cycle over
+    irq next set 2          ; read SM: release
 .wrap
 ```
-
-- `out_base` = 0, `out_count` = 8; `in_base` = 8 (so `pin 18` = GP26).
-- **Critical change from v1**: wait on `OE_BUS` deassertion rather
-  than E falling. OE_BUS is already gated by E (hardware AND), so
-  OE‑deassert is never earlier than E‑fall, and always earlier than
-  the next cycle's address presentation. This closes a write‑cycle
-  race where the old code (waiting on E falling) could leave D0–D7
-  driven into an immediately‑following CoCo write.
-- U10's `/OE` is managed by the hardware 3‑input AND (U15). The PIO
-  drive window is only open when the CoCo selected us; otherwise the
-  transceiver is tri‑state regardless of what the PIO does.
-
-### 4.3 `write_capture` (SM2) — Becker writes only
-
-```
-.program write_capture
-
-.wrap_target
-    wait 0 pin 18            ; OE_BUS low = cart cycle starts
-    jmp pin 13 enter         ; GP21 = A13; jmp if A13=1 (Becker range)
-    wait 1 pin 18            ; else (ROM range): skip this cycle
-    jmp .wrap_target
-enter:
-    wait 1 pin 20            ; E rising (address valid)
-    in pins, 8               ; capture D0..D7 + A0..A4 into ISR
-    wait 1 pin 18            ; wait for OE_BUS release
-.wrap
-```
-
-- `in_base` = 0 for D0–D7 capture.
-- The JMP PIN check on A13 skips ROM cycles (where writes shouldn't
-  happen anyway; if they do, we ignore them). A full address filter
-  for $FF41/$FF42 vs other /SCS aliases is done in core0 after pop.
-- **Per‑cycle load protection**: core0 must drain the FIFO fast enough
-  during heavy disk I/O at $FF48–$FF4F in MPI configs. At 1.79 MHz
-  worst case we see one /SCS cycle every ~3 µs; core0 has no trouble
-  popping at that rate.
 
 ## 5. Memory map
 
@@ -535,15 +571,15 @@ enter:
 
 | Address range | Size | Use |
 |---------------|------|-----|
-| `0x20000000 +  0x0000` | 16 KB | `rom_image[]` — current ROM content (DMA1 reads from here) |
-| `0x20000000 +  0x4000` | 4 KB  | `becker_rx_ring[]` — from SM2 via DMA2 |
-| `0x20000000 +  0x5000` | 4 KB  | `becker_tx_ring[]` — ARM → SM1 staging |
-| `0x20000000 +  0x6000` | 4 KB  | `bus_snapshot_ring[]` — SM0 capture, diag only |
-| rest | — | heap + stacks |
+| `0x20000000-0x2005DFFF` | 376 KB | code in SRAM (`BUS_HOT`, engine start/stop), `.data`, `.bss`, heap, stacks |
+| `0x2005E000-0x2005FFFF` | 8 KB | `bus_events[2048]` — DMA C's write ring (section 3.4) |
+| `0x20060000-0x2007FFFF` | 128 KB | `bus_mem[8][16384]` — the table the engine serves (section 3.2.4) |
 
-RP2350 has 512 KB of on‑chip SRAM; the above uses ≤ 32 KB. The flash
-image holds multiple ROMs selectable at build time (e.g., HDB‑DOS,
-NitrOS‑9 boot, Cloud9 ROMs).
+The last two are a linker region of their own (`firmware/ld/`,
+NOLOAD), so the 128 KB alignment does not pad `.bss`; the linker script
+asserts both addresses. SRAM left free below them: 212.6 KB on a Pico 2
+and 164.4 KB on a Plus-W (from the ELF when the event stream went in,
+2026-10-02).
 
 ### 5.2 Flash layout
 
@@ -585,12 +621,12 @@ is `BUS_IDX_BECKER_DATA` (0x3F42); the becker device claims the whole
 There is no per-device state struct or bus snapshot callback. Instead
 (spec section 5, `firmware/src/bus/bus.h` and `bus/bus.c`):
 
-- `bus_table[16384]` holds the byte core1 drives for any cart-selected
-  read, indexed by A0..A13. Devices call `bus_set_read(idx, byte)` to
-  publish a value; core1 never computes anything, it just serves the
-  table.
-- `read_hooks[]` run on core1 immediately after a read cycle at a
-  registered index completes. The becker device registers hooks on
+- `bus_mem` (section 3.2.4) holds the byte the engine drives for any
+  cart-selected read, indexed by bank and A0..A13. Devices call
+  `bus_set_read(idx, byte)` (or `bus_io_set` for their I/O entries) to
+  publish a value; nothing computes a response inside the cycle.
+- `read_hooks[]` run on core1 when the event of a read at a registered
+  index arrives, after the cycle (section 3.4). The becker device registers hooks on
   **both** 0x3F41 and 0x3F42 (not just 0x3F42) — see the single-writer
   rule below.
 - A single-producer/single-consumer write-event ring carries
@@ -598,8 +634,8 @@ There is no per-device state struct or bus snapshot callback. Instead
   loop (`device_dispatch_writes()`) and calls the owning device's
   `on_write`.
 
-This lets the bus engine become the PIO+DMA design in section 3.3
-later without any device code changing.
+The move from the CPU loop to the PIO + DMA engine changed no device
+code beyond the all-banks writer.
 
 ### 6.2 Becker device (`firmware/src/dev/becker.c`)
 
@@ -621,13 +657,13 @@ full).
 ### 6.3 Single writer rule
 
 Ruled during implementation (spec section 5, Task 7 of the plan): only
-core1 writes the two Becker table entries, from the two read hooks.
-Core0 (`becker_write` and the loopback pump) only pushes into
-`to_coco` and never touches `bus_table[0x3F41]`/`[0x3F42]` directly.
-A 16 KB `rom_load_mem` overwrites those two entries with ROM bytes; the
-next `$FF41` poll restores them, so a ROM load while the CoCo is
-running is briefly visible, which is acceptable since the ROM contents
-change under it anyway. A byte core0 pushes becomes visible to the CoCo on its next
+core1 writes the two Becker table entries, from the two read hooks,
+through `bus_io_set` (all eight banks). Core0 (`becker_write` and the
+loopback pump) only pushes into `to_coco` and never touches the
+`0x3F41`/`0x3F42` entries; ROM loads skip `0x3F40-0x3F5F`. When
+publishing, the hooks store data before status; when emptying, status
+before data, so a status read never says "ready" over a stale data
+byte. A byte core0 pushes becomes visible to the CoCo on its next
 `$FF41` poll, about one extra poll of latency (roughly 10 µs). Two
 writers touching those entries independently had a race where the
 status byte could read "data ready" while the data byte still held
@@ -792,11 +828,35 @@ CoCo 1/2 at 0.89 MHz (1120 ns cycle): all numbers double. The setup
 window from E‑rising to E‑falling is 560 ns instead of 280 ns, so
 ROM‑serve timing is actually easier on the older machines.
 
-See §3.4 for a per‑stage cycle accounting of the DMA chain. With
-total latency ≈ 100 ns and a 300 ns CoCo 3 data window, there is
-3× slack. Q clock is **not** routed to the Pico — doing so would
-require another GPIO we don't have. Instead, E rising plus 3 PIO
-settling cycles gives us a solid address sample.
+The byte has to be on D0-D7 before the 6809E latches it. The self-test's
+realistic sample point is 36 clk (240 ns) after OE_BUS falls at
+1.79 MHz and 72 clk (480 ns) at 0.89 MHz. The engine's latency in clk is
+the same at both speeds, so 0.89 MHz has twice the margin. Q is not
+routed to the Pico; OE_BUS (U15, qualified by E) is the trigger.
+
+Measured on bare modules, 2026-10-02, `bus selftest` at 150 MHz (the
+expected lines are in `firmware/TEST_PLAN.md` section K):
+
+| | Pico 2 | Plus-W |
+|---|---|---|
+| OE_BUS falls → byte on D0-D7 (`response_clk`), both speeds | 22 clk (146 ns) | 29 clk (193 ns) after E rose; 24 after the fake OE_BUS fell |
+| Margin to 36 clk at 1.79 MHz | 14 clk | 12 clk |
+| Late `/CTS` or `/SCS` (select 4 clk after E rose) | — | 33 clk (220 ns) after E rose; 24 after the fake OE_BUS fell |
+| D0-D7 back low after the cycle (`release_clk`) | 6 clk after OE_BUS rose | 11 clk after E fell |
+| 4,096 back-to-back reads at 1.79 and 0.89 MHz | 0 mismatches | 0 mismatches |
+| `$FF40` hook: write's OE_BUS rise → `bus_bank` stored | 82-93 clk | 82-92 clk |
+| First fetch from the new bank, 0.89 MHz | +1 (512 of 512) | +1; +0 on 1-95 of 512 (on the boundary) |
+| First fetch from the new bank, 1.79 MHz | +1 | +1 |
+| Events, every cycle selected, 1.79 MHz | 20480 of 20480, lag max 0, drop 0, lap 0 | same |
+| Events with the Becker stream, 1.79 MHz | 12293 of 12293, lag max 1-2, drop 0 | same |
+| Becker stream, 2 KB at 1.79 and 0.89 MHz | 0 lost, duplicated or phantom; underrun 0, overrun 0 | same |
+| Engine restarts at random phases (`restarts`) | 1840, events missing 0 | 1800, events missing 0 |
+| Bank switches at random phases (`switches`) | 1820, bad 0, wrong bank 0 | 1800, bad 0, wrong bank 0 |
+| On a PCB in a CoCo | not measured | not measured |
+
+The Plus-W raw figures include the fake decode's 5 clk; the real 74LVC00
+is about 1.5. The CPU loop's timing work (2026-09-30 and 2026-10-01) is
+kept as history in `docs/pcb-bringup.md`.
 
 ## 8.1 /HALT hold‑until‑booted sequence
 
@@ -833,8 +893,8 @@ void halt_assert(void) {
 ```
 
 Call `halt_init()` in the earliest reachable C code (before SDK
-runtime init if practical), then `halt_release()` once `bus_watcher`
-is running and DMA chains are set up. After that, firmware can use
+runtime init if practical), then `halt_release()` once the bus engine
+and core1 are running. After that, firmware can use
 `halt_assert()` / `halt_release()` as a DriveWire flow‑control tool —
 e.g., to pause the CoCo during a long SD‑card sector fetch in
 Phase 3.

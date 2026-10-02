@@ -83,14 +83,16 @@ drive 0.
 
 ### `tools/tracedump.py`
 
-Decodes `trace dump [n]` console output (lines of `t_us idx R|W data`) into
-a readable log with CoCo addresses and a running DriveWire opcode decoder:
+Decodes `trace dump [n]` console output (lines of `seq idx R|W data`, e.g.
+`1973593 2dc2 R 09`; `seq` counts bus events since boot, there is no
+timestamp) into a readable log with CoCo addresses and a running DriveWire
+opcode decoder:
 
 ```
 python3 firmware/tools/tracedump.py trace.txt      # or pipe via stdin
 ```
 
-Each line becomes `t_us  $ADDR  R/W  data  note`, where `$ADDR = 0xC000 +
+Each line becomes `seq  $ADDR  R/W  data  note`, where `$ADDR = 0xC000 +
 idx`. Notes: `ROM` for ROM-space reads, `BECKER_STATUS`/`BECKER_DATA` for
 Becker-port accesses (status reads add `data avail`/`no data`), and for a
 DriveWire request written to `$FF42`, the opcode name plus, once its 4
@@ -123,8 +125,8 @@ ninja -C build-pico-plusw
 ```
 
 Both builds run `firmware/tools/check_core1_flash_free.py` as a POST_BUILD
-step, failing the build if any code core1's bus loop can reach (directly, or
-through a Becker read hook) lands outside SRAM.
+step, failing the build if any code core1's event loop can reach (directly,
+or through a read or write hook) lands outside SRAM.
 
 Flash a Pico 2 that's in BOOTSEL mode (hold BOOTSEL while plugging it in):
 
@@ -149,7 +151,11 @@ python3 firmware/tools/pconsole.py /dev/cu.usbmodemXXXX2 \
 ```
 
 Bus-engine-specific commands: `bus selftest` runs the on-chip fake 6809
-self-test (see "Self-test without a CoCo" below); `cart on|off|auto`
+self-test (see "Self-test without a CoCo" below); `bus drive on|off`
+starts or stops the read path (off = capture-only: nothing is driven, but
+writes, the trace and the counters keep working); `bus engine` prints which
+PIO state machines and DMA channels the engine and everything else hold;
+`cart on|off|auto`
 sets the firmware `/CART` pulse policy (`auto`, the default, pulses for
 500 ms after `/HALT` release when a loaded ROM is not DK-signature DOS;
 Plus-W only today — a Pico 2 build has no `PIN_CART_DRV`, so `cart on`
@@ -162,18 +168,69 @@ or 128 KB, switched by writes to `$FF40`), refusing any other size with
 
 #### Self-test without a CoCo
 
-`bus selftest` drives the real core1 bus loop from an on-chip PIO1 state
-machine at 6809 timing — no CoCo needed, and safe to run on an unplugged
-board (see `docs/firmware-architecture.md` §3.2.5 for why). **Unplug the
-Pico from the CoCo cart edge first; the guard below is a backstop, not
-a licence to leave it plugged in.** Before touching any pins the command
-refuses (`-2`, "bus is live") if either: `bus_stats.cycles` moves during
-a 100 ms sleep (a running CoCo driving cart cycles), or the address/`R/W`
-pins (plus `OE_BUS` on a Pico 2, or `E`/`Q` on a Plus-W) aren't perfectly
-still for a 10 ms, 50 µs-interval sample — an idle CoCo running from RAM
-produces no cart cycles at all, but those pins still toggle with the CPU
-clock through always-enabled buffers, where an unplugged board just sits
-on its pull-ups.
+`bus selftest [stress] [radio] [restarts] [switches]` drives the real PIO
+bus engine, core1's event loop and the device hooks from an on-chip PIO1
+state machine at 6809 timing — no CoCo needed. Run it on a bare module
+only (see `docs/firmware-architecture.md` §3.2.5). **Unplug the Pico from
+the CoCo cart edge first; the guard below is a backstop, not a licence to
+leave it plugged in.** Before touching any pins the command refuses with
+`err bus selftest: bus is live (CoCo attached), refused` if either:
+`bus_stats.cycles` moves during a 100 ms sleep (a running CoCo driving
+cart cycles), or the address/`R/W` pins (plus `OE_BUS` on a Pico 2, or
+`E`/`Q` on a Plus-W) aren't perfectly still for a 10 ms, 50 µs-interval
+sample — an idle CoCo running from RAM produces no cart cycles at all, but
+those pins still toggle with the CPU clock through always-enabled buffers,
+where an unplugged board just sits on its pull-ups.
+
+With no argument it runs every check once (about 2 s) and ends with
+`selftest rom cleared; reload with rom load`, then `selftest fast pass`
+or `err selftest fast FAIL`. Options:
+
+| Option | Effect |
+|---|---|
+| `stress` | core0 runs a memcpy load during the bursts |
+| `radio` | Plus-W: radio scans and cyw43 polling during the bursts |
+| `restarts` | after the first checks, 40 bursts with engine restarts every 50 µs, one summary line, then stop: `fast restarts: 40 bursts, <n> restarts, spurious 0 wrong 0 zero <n>, events missing 0` |
+| `switches` | after the first checks, 40 bursts of bank switches at random phases, then stop: `fast switches: <n> in 40 bursts (S=<s>), 0 bursts bad; bad 0, wrong bank 0; next cycle old 0` and a phase histogram |
+
+The gated lines and what a pass shows (`<n>` varies run to run; the
+Plus-W differences are in brackets; full verbatim runs per board are in
+`TEST_PLAN.md` section K):
+
+| Line starts | Pass |
+|---|---|
+| `fast drop flag:` | `... RXSTALL yes (set before the drop: no)` |
+| `fast 1.79MHz S=36 (240 ns):` x5 [`S=40 (266 ns)`] | `mismatches 0/4096 (zero 0 stale 0 spurious 0 wrong 0) rel_nonzero 4096 lost 0` |
+| `fast event rate 1.79MHz:` | `counted 20480 of 20480, lag max 0, drop 0, lap 0` |
+| `fast 1.79MHz mixed r/w`, `gaps r/w/unsel`, `writes r/w/io/unsel` | `mismatches 0/4096 ...`, `lost 0` (rel_nonzero 2731, 2048, 3414) |
+| `fast writes:` | `0 lost, 0 out of order, 0 wrong data of 1366` |
+| `fast events:` (twice) | `0 mismatches of 512 ...; counted 3414 of 3414`, then `... counted 4096 of 4096` |
+| `fast 1.79MHz restarts <n> under a gaps burst:` | `spurious 0 wrong 0 (zero <n> = cycles lost to a restart); events 3072 of 3072` |
+| `fast 1.79MHz gaps after restarts` | `mismatches 0/4096 ... lost 0` |
+| `fast lap:` | `resync 1, next burst events 4096 of 4096` |
+| `fast stall:` | `detected 1, pins never driven during the stall, next burst 0 mismatches` |
+| `fast 1.79MHz bank switches <n> under a reads burst` / `gaps burst` | `bad 0, wrong bank 0, lost 0; old-bank reads <n>, next cycle old 0` |
+| `fast drive off:` | `0 driven, events 3414 of 3414, writes 0 lost` |
+| `fast banks:` / `fast io page:` | `8/8 banks read their own pattern, 0 mismatches` / `same in 8 banks` |
+| `fast becker 1.79MHz:` and `0.89MHz:` | `2048 bytes, 0 lost, 0 duplicated, 0 phantom; underrun 0, overrun 0, 2049 polls in 12293 cycles, fetches bad 0, stalls 0` |
+| `fast event rate with Becker 1.79MHz:` | `counted 12293 of 12293, lag max <n>, drop 0, lap 0` (lag max 1-2) |
+| `fast becker back-to-back:` | `ready -> 02,5c; empty -> 00,ff (stable)` |
+| `fast bank switch 0.89MHz:` | `new bank at +1 cycles (hook <n>..<n> clk); 512 switches: +0 0, +1 512, ...; bad 0, lost 0` [`+0` on 1-95 of 512, `+1` on the rest]; `+2` or later fails |
+| `fast bank switch 1.79MHz:` | as 0.89 MHz, `+1 512`; only `bad`/`lost` are gated |
+| `fast 1.79MHz response_clk` | `22 (146 ns after OE_BUS fell)` [`29 after E rose (raw; 193 ns)`, then `corrected 24..24 ...; margin to 36: 12..12`] |
+| [`fast 1.79MHz late /CTS`, `late /SCS`, each `+ writes`] | [`mismatches 0/4096 ... lost 0`; `response_clk 33 after E rose (raw; 220 ns)`] |
+| `fast 0.89MHz S=72 (480 ns):` [`S=77 (513 ns)`] | `mismatches 0/4096 ... lost 0` |
+
+Information only: the `fast dma`, `fast engine`, `fast test`, `fast
+timing`, resource, sweep, `release_clk` (6 clk on a Pico 2, 11 on a
+Plus-W), `fast becker data then status` (`02` at both speeds, see
+`docs/firmware-architecture.md` §3.4) and, on a Plus-W, `fast fake decode
+delay` and `fast realistic point` lines.
+
+**`status` after a self-test** shows `engine_stall 1`, `event_lap 1` and
+Becker `underrun` up by 5. The test causes all three on purpose (a forced
+stall, a forced lap, and the empty-port back-to-back reads); `stats reset`
+clears them.
 
 ```
 python3 firmware/tools/bench.py [--port /dev/cu.usbmodemXXXX2] [--skip-if-absent]
@@ -191,6 +248,49 @@ board by accident. With `PICOCO_BENCH` off (the default), `ctest
 clears whatever ROM was loaded (`rom off`) as part of running, so
 `bench.py` sends `reboot` at the end to replay a saved `rom load` from
 `picoco.cfg`.
+
+#### `status`: bus counters
+
+```
+bus cycles <n> reads <n> writes <n> write_overrun <n>
+bus engine_stall <n> event_lag_max <n> event_drop <n> event_lap <n> start_wait_cap <n>
+bus whooks <n>
+bus drive on|off
+becker reads <n> writes <n> underrun <n> overrun <n>
+```
+
+- `cycles`, `reads`, `writes`: selected cycles, counted by core1 as their
+  events arrive. Unselected cycles never reach the engine.
+- `write_overrun`: writes dropped because core0's write ring was full.
+- `engine_stall`: read-path restarts by the stall guard
+  (`docs/firmware-architecture.md` §3.3).
+- `event_lag_max`: most events waiting for core1, sampled every 256
+  events; saturates at 256.
+- `event_drop`: 1 ms checks that found the event state machine had
+  dropped a cycle (its FIFO was full).
+- `event_lap`: times core1 fell a whole ring (2048 events) behind and
+  resynced; the events in between are lost.
+- `start_wait_cap`: Plus-W only, engine starts whose wait for OE_BUS high
+  hit its cap.
+- `whooks`: write hooks run on core1 (today the `$FF40` bank hook).
+
+After a CoCo session all of `engine_stall`, `event_drop` and `event_lap`
+should read 0. `stats reset` clears these, the Becker counters and
+`dw stats`.
+
+#### Plus-W limits (until the respin)
+
+The PIO engine gives the Plus-W the same bus as a Pico 2 until the next
+board revision (`docs/ADDITIONAL_ROADMAP.md` §9):
+
+- JP2 must be at 1-2 (hardware `/OE`, the default). Firmware holds `OE_FW`
+  high.
+- A14 and A15 are not used: no 32K Program Paks, no Extended BASIC at
+  `$8000`.
+- No firmware-decoded addresses (`$FF60-$FF7F`): they went with the CPU
+  loop (tag `fw-1.4-cpu-loop`).
+- `bus selftest net` answers `err bus selftest net: not supported by this
+  engine` (a Pico 2 answers `err net: needs Plus-W`).
 
 ### Filesystem
 
@@ -351,13 +451,11 @@ Servers abandon a half-finished op after 250 ms (`picoco-host`) or 200 ms
 (DW4 `ReadByteWait`). A link drop mid-transfer leaves the CoCo waiting
 until reset (accepted limitation; reset reboots the Pico, which reconnects).
 
-**`bus selftest net`** (Plus-W, needs `becker net` up, no CoCo attached):
-pushes DWINIT (2 bytes, `5A FF`) and 20 OP_TIME requests through the fake
-6809, core1, the Becker ring, the socket and back. Prints
-`selftest net dwinit -> <byte> in <n> ms`,
-`selftest net time (yr-1900) Y-M-D h:m:s in <n> ms` and
-`selftest net time worst <n> ms over 20`; fails if the worst case exceeds
-200 ms.
+**`bus selftest net`** is not supported by the PIO engine: it answers
+`err bus selftest net: not supported by this engine`. It returns once it
+is rebuilt on the new self-test; the firmware 1.4 version (DWINIT and 20
+OP_TIME round trips through the fake 6809 and the socket) is at tag
+`fw-1.4-cpu-loop`.
 
 ### DriveWire virtual-serial command channel
 
@@ -403,7 +501,7 @@ images and disk images on and off the board.
 | Step | Console | Expected console output | Expected CoCo-side result | Tag |
 |---|---|---|---|---|
 | 3 | `status` | `bus drive off`, `last reset power-on` | Pico powered from the CoCo rail: LED blinks 1 Hz. USB power and CoCo 5 V share only GND on the breadboard (`VBUS` is NC on the final board): don't back-power the CoCo from USB, use a cable with VBUS cut, or accept USB power during console sessions. | fw-0.1-blink |
-| 4 | `bus drive off`, `trace run`, on the CoCo `PEEK(&HC123)`, then `trace dump 8` | dump includes a line `<t_us> 0123 R ff` (idx = $C123 - $C000); `status` bus reads count goes up by the number of PEEKs | `PEEK(&HFF41)` triggers a trace line ending `3f41 R`; the Pico still drives nothing back at the CoCo | fw-0.4-bus-capture |
+| 4 | `bus drive off`, `trace run`, on the CoCo `PEEK(&HC123)`, then `trace dump 8` | dump includes a line `<seq> 0123 R ff` (idx = $C123 - $C000); `status` bus reads count goes up by the number of PEEKs | `PEEK(&HFF41)` triggers a trace line ending `3f41 R`; the Pico still drives nothing back at the CoCo | fw-0.4-bus-capture |
 | 5 | (hardware only, no console) | - | LA: OE_BUS low only during the E-high half of cart cycles, never otherwise | - |
 | 6 | `rom pattern`, `bus drive on`, `save` | `ok` for each | `PEEK(&HC000)` = 0, `PEEK(&HC001)` = 1, `FOR I=0 TO 255: PRINT PEEK(&HC000+I);: NEXT` counts up. Slowest CoCo first; on CoCo 3 repeat after `POKE 65497,0`. | fw-0.5-rom-static |
 | 7 | `fs export`, drag `hdbdos_dw.rom` (8 KB) onto `PICOCO`, `fs import`, `rom load hdbdos_dw.rom`, `save` | `usb drive exported...`, then `ok` for import/load/save | Power-cycle: CoCo autostarts HDB-DOS (or `DOS` enters it); `DIR` fails cleanly (no server yet) | fw-0.6-rom-hdbdos |
@@ -415,10 +513,8 @@ images and disk images on and off the board.
 Three tools to reach for when a step doesn't pass:
 
 - `trace dump [n]` piped through `tools/tracedump.py` (see above): the ring
-  freezes by itself at the first Becker underrun or DriveWire CRC error, with
-  that cycle as its last entry (on a Pico 2 build the faulting read is the
-  second-to-last entry: the read hooks run after the cycle is recorded);
-  `trace run` thaws it. Reach for
+  freezes by itself at the first Becker underrun (that read is its last
+  entry) or DriveWire CRC error; `trace run` thaws it. Reach for
   this when a CoCo-side PEEK/POKE doesn't show the address or data you
   expect, mainly steps 4-7.
 - `dw capture on <file>` (see "dw capture" in the console commands) plus

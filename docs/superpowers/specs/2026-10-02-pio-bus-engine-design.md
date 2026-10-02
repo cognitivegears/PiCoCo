@@ -271,6 +271,34 @@ On the PCB (Pico 2 build), then on a Plus-W PCB when one is built:
 - Devices whose read value must change within the same cycle as a write.
 - JP2 2-3 on a Plus-W.
 
+**As built (2026-10-02).** Where the code differs from the text above
+(`docs/firmware-architecture.md` §3.3-3.4 and §8 describe what is built):
+
+- Read program: `in x, 3` runs after the trigger (`rd:`), not before the
+  start wait; `mov pindirs, ~null` drives; the end is `mov pins, null [1]`
+  then `mov pindirs, null`; the Plus-W end waits are `wait 1 irq 2`.
+- Bank switch (§5): one exec'd `set x, n` under the engine lock, no
+  `jmp top`. It lands one fetch late at both speeds, not only in fast
+  mode (hook 82-93 clk after the write); the 0.89 MHz gate is +0 or +1.
+- Latency (§4.3): Pico 2 22 clk (146 ns), margin 14; Plus-W 29 clk raw,
+  24 corrected, margin 12.
+- Plus-W helper (§8): a third flag (2, cycle end); it never stops;
+  `engine_start` waits for OE_BUS high and clears flags 0 and 2, capped at
+  64 passes (`start_wait_cap`).
+- Event ring (§6.2): core1 finds events by a sentinel (`0xFFFFFFFF`), not
+  by DMA C's write address; the lag scan is capped at 256 and a lap
+  resyncs (`event_lap`).
+- `bus_event` (§6.3): a write runs its hooks first, then trace, counters
+  and queue; a read runs trace, counters, then hooks.
+- Trace (§7): a separate 512-word ring; a freeze stops it instead of
+  copying 512 events.
+- Stall guard (§7): also requires OE_BUS high and the read SM's RX FIFO
+  empty.
+- Self-test (§9): `bus selftest [stress] [radio] [restarts] [switches]`;
+  there is no `fast` keyword. `bus selftest net` is not rebuilt.
+- core1 is launched right after `bus_engine_init()`, before the config
+  replay and the `becker net` hold.
+
 ## 12. Non-goals
 
 - New devices (sound, SDC registers, the cart RAM port). The engine is

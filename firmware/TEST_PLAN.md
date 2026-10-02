@@ -131,8 +131,8 @@ through a Multi-Pak Interface (MPI).
    - Plus-W: same with `-DPICOCO_BOARD=plusw` into `build-pico-plusw`.
 2. Power up with the cart seated; /HALT should hold (CoCo dead) until
    `log dump` shows `core1 up, halt released`.
-3. `status`: check cycle counts are moving and `bus addr_resample` is 0 (or
-   small and not growing) once past the CoCo's own boot-time ROM copy.
+3. `status`: check cycle counts are moving and `bus engine_stall 0`,
+   `event_drop 0`, `event_lap 0`.
 4. Becker loop, no ROM needed: `becker loop`, `bus drive on`, then on the
    CoCo `POKE &HFF42,65: PRINT PEEK(&HFF41), PEEK(&HFF41), PEEK(&HFF42)` →
    `0 2 65`.
@@ -150,7 +150,8 @@ through a Multi-Pak Interface (MPI).
 - On CoCo 1/2, BASIC `PEEK(&HC000)` reaches the cart directly (unlike a
   CoCo 3, which runs BASIC from RAM) — they execute the DOS ROM as code from
   the cart, so an address-decode error crashes immediately instead of
-  showing up as a stray PEEK. Watch `bus addr_resample` closely on these two.
+  showing up as a stray PEEK. Watch `engine_stall` and `event_drop` closely
+  on these two.
 - Confirm the test disk image is readable from CoCo 1/2 DOS before blaming
   the hardware for a failed `DIR`.
 
@@ -186,7 +187,9 @@ Firmware 1.3, Plus-W build. Server: `picoco-host` on the Mac unless noted.
 
 1. `net scan` lists networks.
 2. `net join <ssid>`, `net psk <psk>`, `net server <mac-ip> 65504`, `becker net`: `net status` reaches `net state up`.
-3. `bus selftest net` passes (worst round trip under 200 ms).
+3. `bus selftest net`: not supported by the PIO engine; returns with a
+   rebuilt self-test. Until then it answers `err bus selftest net: not
+   supported by this engine`.
 4. Error reasons: wrong SSID, closed port, bad DNS name.
 5. Server down at boot with `becker net` saved: fallback after 10 s; `becker net` re-arms once the server is back.
 6. Cold-boot SNTP seeding (power cycle, then `time` shows the clock set).
@@ -206,13 +209,13 @@ Firmware 1.3, Plus-W build. Server: `picoco-host` on the Mac unless noted.
 |---|---|---|
 | G.1 join + DHCP + connect at boot | 5.3 s (`net up in 5327 ms`) | 2026-09-30 |
 | G.1 OP_TIME round trip | 8-13 ms typical, worst 23-30 ms over 20 | 2026-09-30 |
-| G.1 `bus selftest net` | pass | 2026-09-30 |
+| G.1 `bus selftest net` | pass (CPU loop, firmware 1.3). Not supported by the PIO engine; returns with a rebuilt self-test | 2026-09-30 |
 | G.1 bad SSID / closed port / bad DNS name | `no such network` / `refused` / `dns failed`, ~10 retries in 22 s each | 2026-09-30 |
 | G.1 server down at boot | `net failed (refused), native fallback` after 10 s; `becker net` re-arms | 2026-09-30 |
 | G.1 `net scan` | 21 networks | 2026-09-30 |
 | G.1 cold-boot SNTP seeding | pass 2026-09-30: after a USB power cycle the boot log shows `net: sntp seeded 1790778946`, `time` reports it with `clock kept`, `net up in 8329 ms` | |
 | G.1 `net tz` (firmware 1.3, 25517de) | pass 2026-09-30: `net tz -240` + `save` + reboot logs `net: sntp set 1790765675 (utc 1790780075 tz -240)`, exactly Mac UTC minus 14400; `net tz 0` then `net tz -240` move `time` at once, no hourly wait | |
-| G.1 reconnect after a Pico reboot with picoco-host (af12f4d) | pass 2026-09-30: the server replaces the stale client on the new accept; `bus selftest net` passes right after the reboot (dwinit 5 ms, worst 19 ms) without restarting the server | |
+| G.1 reconnect after a Pico reboot with picoco-host (af12f4d) | pass 2026-09-30: the server replaces the stale client on the new accept; `bus selftest net` passes right after the reboot (dwinit 5 ms, worst 19 ms) without restarting the server. `bus selftest net` is not supported by the PIO engine; returns with a rebuilt self-test | |
 | G.2 boot hold with CoCo | | |
 | G.2 DIR/LOADM from DW4 | | |
 | G.2 DIR/LOADM from FujiNet-PC | | |
@@ -409,16 +412,15 @@ CoCo off, board in, USB to the Mac, CoCo on.
 
 1. Banner `HDB-DOS 1.5 BECKER COCO 2` over `EXTENDED COLOR BASIC`.
    `log dump` has `core1 up, halt released`. No banner: `status` first
-   (cycles moving? `oe_glitch`, `addr_resample`), then TP1/TP5 on the scope.
+   (cycles moving? `engine_stall`, `event_drop`), then TP1/TP5 on the scope.
 2. `PRINT PEEK(&HC000);PEEK(&HC001)` → `68 75` ("DK"). On a CoCo 2 this
    reads the cart itself.
 3. ROM checksum from BASIC, twice, same number both times:
    `S=0:FOR A=&HC000 TO &HDFFF:S=S+PEEK(A):NEXT:PRINT S`
    Expected `903857` (byte sum of `firmware/roms/hdbdw3bck.rom`). Takes
    about a minute.
-4. `status`: `addr_resample 0`, `oe_glitch 0`. Record `late_precompute`
-   (4097 per boot on the CoCo 3 came from its ROM copy; expect a different
-   number here).
+4. `status`: `engine_stall 0`, `event_drop 0`, `event_lap 0`. (The
+   2026-10-01 row below used the CPU loop's counters.)
 
 ### I.2 Becker and DriveWire
 
@@ -428,7 +430,7 @@ CoCo off, board in, USB to the Mac, CoCo on.
 3. `DRIVE 3:RUN"PICOCO"`: manager draws in uppercase (no inverse-video
    garbage), E/N/V/S/B keys work, BREAK exits. First real-hardware run of
    the CoCo 2 path; only XRoar so far.
-4. `status` / `dw stats`: `crc_err 0`, `underrun 0`, `addr_resample 0`.
+4. `status` / `dw stats`: `crc_err 0`, `underrun 0`, `event_drop 0`.
 5. Soak: `10 DIR:GOTO 10` for 10 minutes, counters unchanged.
 
 ### I.3 Reset and power
@@ -482,7 +484,7 @@ a ROM read, and reads drive 0 LSN 0-629 with DriveWire OP_READ in a loop.
 3. `EXEC 49152`. One line per pass (~14 s): `PASS nnnn SUM ssss ERR eeee`.
    A bad sector prints `Ecc llll` and the test carries on after a 0.5 s
    quiet wait. Any key stops it within one sector (a warm restart, back to BASIC).
-4. `status` after: `underrun 0`, `oe_glitch 0`, `addr_resample 0`,
+4. `status` after: `underrun 0`, `engine_stall 0`, `event_drop 0`,
    `dw stats` clean. `trace dump` is frozen at the first underrun.
 5. Emulator check of the ROM itself:
    `xroar -machine coco2bus -no-extbas -becker -cart-rom carttest
@@ -527,7 +529,7 @@ the Pico. Never swap the ROM from the USB console while the stub is running.
 5. Power-cycle: `EXEC 49154` is the manager again (launch is one-shot).
 6. BREAK in the manager: back to `OK`. `EXEC 49154` enters it again.
 7. Pull USB, power-cycle, `EXEC 49154`: works on cart power alone.
-8. `status` after all of it: `underrun 0`, `oe_glitch 0`, `addr_resample 0`.
+8. `status` after all of it: `underrun 0`, `engine_stall 0`, `event_drop 0`.
 9. With the manager on screen, unplug and replug nothing, just wait 5
    minutes, then press down: the highlight still moves (idle session).
 
@@ -536,8 +538,8 @@ the Pico. Never swap the ROM from the USB console while the stub is running.
 Read-path regression first (the 2026-10-01 core1 change, I.5):
 
 1. `hdbdw3bck.rom` saved: power on, HDB-DOS banner, `DIR`,
-   `LOADM"DINORUN":EXEC`. `status`: `late_precompute` near the old 4097
-   per boot, `addr_resample 0`, `oe_glitch 0`, `crc_err 0`, `underrun 0`.
+   `LOADM"DINORUN":EXEC`. `status`: `engine_stall 0`, `event_drop 0`,
+   `crc_err 0`, `underrun 0`.
 2. `rom load hdbdw3bc3.rom`, `save`, power-cycle: same checks at 1.79 MHz,
    four `LOADM`s and a `SAVE`.
 
@@ -587,6 +589,181 @@ On the 16K CoCo 2 (no Extended BASIC):
 | ROM trials from the manager, CoCo 3 | work: Daggorath, Microbes, Temple of ROM, Thexder. Corrupt graphics: Tetris (16K: selects 1.79 MHz with `$FFD9` and runs from the cart, i.e. back-to-back cart cycles in fast mode), Silpheed and Super Pitfall (32K: need A14, and fast mode too) | 2026-10-02 |
 | J.3 re-run on the head build (7ea34e6) | pass: double RESET, header `PICOCO  COCO 3`; ENTER on `HDBDW3BC3.ROM` gives HDB-DOS and `DIR`; double RESET, ENTER on `CARTTEST.ROM` prints PASS lines. These are the exits that select slow speed and clear `$FEED` | 2026-10-02 |
 | J.3.10 CoCo 2 double RESET | pass once with the first flash-marker build (3 s window): manager loaded, `EXEC 49154`, launch carttest, single RESET back to the saved ROM. Not re-run with the final 2 s window + debounce build | 2026-10-01 |
+
+## K. PIO bus engine
+
+Spec `docs/superpowers/specs/2026-10-02-pio-bus-engine-design.md`; the
+engine is described in `docs/firmware-architecture.md` §3.3-3.4 and §8.
+Reads are served by PIO and DMA on both boards; the CPU loop is at tag
+`fw-1.4-cpu-loop`.
+
+### K.1 Self-test on a bare module (no PCB, no CoCo)
+
+1. `bus selftest` five times: every run ends `selftest fast pass`.
+2. `bus selftest restarts` and `bus selftest switches`; Plus-W also
+   `bus selftest radio`.
+3. `status`: `engine_stall 1`, `event_lap 1` and Becker `underrun 5` are
+   the test's own (a forced stall, a forced lap, the empty-port reads).
+   `stats reset`, then `reboot` to get the saved ROM back.
+4. `python3 firmware/tools/bench.py --port <console>` exits 0.
+
+What varies run to run: the restart `zero` counts, the bank-switch counts
+and old-bank reads, the hook clk range, the Becker lag max (1-2) and, on a
+Plus-W, the 0.89 MHz `+0`/`+1` split. Everything else is the same in every
+run.
+
+Pico 2, final build 4a55c93, 2026-10-02. The five identical realistic
+bursts are shown once, marked `(x5)`; the sweep rows are elided (they
+read `4096` for S=1-21 and `0` from S=22 on at both speeds):
+
+```
+fast dma 8-bit write of a7 reaches the TX FIFO as a7a7a7a7
+fast engine: PIO0 + DMA, pio0 input_sync_bypass 007fff00: A0-A13 bypassed, R/W bypassed, GP26 synchronised, D0-D7 synchronised; DMA bus priority on (DMA R+W)
+fast test: fake 6809 pio1 sm0, dma tx 3 rx 4
+bus engine read pio0 sm0, event sm1, dma A 0 B 1 C 2
+pio0 gpio_base 0 claimed sm 0 1
+pio1 gpio_base 0 claimed sm 0
+pio2 gpio_base 0 claimed sm
+dma claimed 0 1 2 3 4
+fast timing: cycle 84 clk (high 42, low 42), address setup 25 clk, 4096 cycles back to back
+fast drop flag: push noblock into a full RX FIFO sets FDEBUG.RXSTALL yes (set before the drop: no)
+fast 1.79MHz S=36 (240 ns): mismatches 0/4096 (zero 0 stale 0 spurious 0 wrong 0) rel_nonzero 4096 lost 0   (x5)
+fast event rate 1.79MHz: counted 20480 of 20480, lag max 0, drop 0, lap 0
+fast 1.79MHz mixed r/w S=36 (240 ns): mismatches 0/4096 (zero 0 stale 0 spurious 0 wrong 0) rel_nonzero 2731 lost 0
+fast 1.79MHz gaps r/w/unsel S=36 (240 ns): mismatches 0/4096 (zero 0 stale 0 spurious 0 wrong 0) rel_nonzero 2048 lost 0
+fast 1.79MHz writes r/w/io/unsel S=36 (240 ns): mismatches 0/4096 (zero 0 stale 0 spurious 0 wrong 0) rel_nonzero 3414 lost 0
+fast writes: 0 lost, 0 out of order, 0 wrong data of 1366
+fast events: 0 mismatches of 512 (the last 512 of 3414 selected cycles); counted 3414 of 3414
+fast 1.79MHz restarts 46 under a gaps burst: spurious 0 wrong 0 (zero 58 = cycles lost to a restart); events 3072 of 3072
+fast 1.79MHz gaps after restarts S=36 (240 ns): mismatches 0/4096 (zero 0 stale 0 spurious 0 wrong 0) rel_nonzero 2048 lost 0
+fast events: 0 mismatches of 512 (the last 512 of 4096 selected cycles); counted 4096 of 4096
+fast lap: resync 1, next burst events 4096 of 4096
+fast stall: detected 1, pins never driven during the stall, next burst 0 mismatches
+fast 1.79MHz bank switches 45 under a reads burst S=36: bad 0, wrong bank 0, lost 0; old-bank reads 26, next cycle old 0
+fast 1.79MHz bank switches 46 under a gaps burst S=36: bad 0, wrong bank 0, lost 0; old-bank reads 13, next cycle old 0
+fast drive off: 0 driven, events 3414 of 3414, writes 0 lost
+fast banks: 8/8 banks read their own pattern, 0 mismatches
+fast io page: same in 8 banks
+fast becker 1.79MHz: 2048 bytes, 0 lost, 0 duplicated, 0 phantom; underrun 0, overrun 0, 2049 polls in 12293 cycles, fetches bad 0, stalls 0
+fast event rate with Becker 1.79MHz: counted 12293 of 12293, lag max 1, drop 0, lap 0
+fast becker 0.89MHz: 2048 bytes, 0 lost, 0 duplicated, 0 phantom; underrun 0, overrun 0, 2049 polls in 12293 cycles, fetches bad 0, stalls 0
+fast becker back-to-back: ready -> 02,5c; empty -> 00,ff (stable)
+fast becker data then status: the poll right after the last byte's read sees 02 at 1.79MHz, 02 at 0.89MHz (00 = not ready)
+fast bank switch 0.89MHz: new bank at +1 cycles (hook 90..90 clk); 512 switches: +0 0, +1 512, +2 0, later 0; bad 0, lost 0
+fast bank switch 1.79MHz: new bank at +1 cycles (hook 82..90 clk); 512 switches: +0 0, +1 512, +2 0, later 0; bad 0, lost 0
+fast 1.79MHz response_clk 22 (146 ns after OE_BUS fell)
+fast 1.79MHz release_clk 6 (D0-D7 low on every cycle 6 clk after OE_BUS rose; -1 = not by 14)
+fast 0.89MHz S=72 (480 ns): mismatches 0/4096 (zero 0 stale 0 spurious 0 wrong 0) rel_nonzero 4096 lost 0
+fast 0.89MHz response_clk 22 (146 ns after OE_BUS fell)
+selftest rom cleared; reload with rom load
+selftest fast pass
+```
+
+Pico 2 `bus selftest restarts` (4a55c93), last line before the pass:
+`fast restarts: 40 bursts, 1840 restarts, spurious 0 wrong 0 zero 2341, events missing 0`.
+`bus selftest switches` (5672ff5, the bank-switch rework), summary line:
+`fast switches: 1820 in 40 bursts (S=36), 0 bursts bad; bad 0, wrong bank 0; next cycle old 0`.
+
+Plus-W, build 7ca0ad1 (the same engine and test code as 4a55c93 before
+the CPU-loop deletions), 2026-10-02, shown the same way. Builds before
+4a55c93 spelled the command `bus selftest fast`; the lines are the same:
+
+```
+fast dma 8-bit write of a7 reaches the TX FIFO as a7a7a7a7
+fast engine: PIO0 + DMA, pio0 input_sync_bypass 007fff00: A0-A13 bypassed, R/W bypassed, GP26 synchronised, D0-D7 synchronised; DMA bus priority on (DMA R+W)
+fast engine: helper OE_BUS GP40 in pio2 (gpio base 16) synchronised
+fast test: fake 6809 pio1 sm0, dma tx 5 rx 6
+bus engine read pio0 sm0, event sm1, helper pio2 sm1, dma A 2 B 3 C 4
+pio0 gpio_base 0 claimed sm 0 1
+pio1 gpio_base 0 claimed sm 0
+pio2 gpio_base 16 claimed sm 0 1 2
+dma claimed 0 1 2 3 4 5 6
+fast timing: cycle 84 clk (E low 42, E high 42), address+selects setup 25 clk to E rise, 4096 cycles back to back
+fast drop flag: push noblock into a full RX FIFO sets FDEBUG.RXSTALL yes (set before the drop: no)
+fast fake decode delay: E rise -> OE_BUS low 5..5 clk (6 cycles); late /SCS fall -> OE_BUS low 4..4 clk (7 cycles)
+fast realistic point: S=40 after E rose = 35 after the fake OE_BUS fell
+fast 1.79MHz S=40 (266 ns): mismatches 0/4096 (zero 0 stale 0 spurious 0 wrong 0) rel_nonzero 4096 lost 0   (x5)
+fast event rate 1.79MHz: counted 20480 of 20480, lag max 0, drop 0, lap 0
+fast 1.79MHz mixed r/w S=40 (266 ns): mismatches 0/4096 (zero 0 stale 0 spurious 0 wrong 0) rel_nonzero 2731 lost 0
+fast 1.79MHz gaps r/w/unsel S=40 (266 ns): mismatches 0/4096 (zero 0 stale 0 spurious 0 wrong 0) rel_nonzero 2048 lost 0
+fast 1.79MHz writes r/w/io/unsel S=40 (266 ns): mismatches 0/4096 (zero 0 stale 0 spurious 0 wrong 0) rel_nonzero 3414 lost 0
+fast writes: 0 lost, 0 out of order, 0 wrong data of 1366
+fast events: 0 mismatches of 512 (the last 512 of 3414 selected cycles); counted 3414 of 3414
+fast 1.79MHz restarts 45 under a gaps burst: spurious 0 wrong 0 (zero 53 = cycles lost to a restart); events 3072 of 3072
+fast 1.79MHz gaps after restarts S=40 (266 ns): mismatches 0/4096 (zero 0 stale 0 spurious 0 wrong 0) rel_nonzero 2048 lost 0
+fast events: 0 mismatches of 512 (the last 512 of 4096 selected cycles); counted 4096 of 4096
+fast lap: resync 1, next burst events 4096 of 4096
+fast stall: detected 1, pins never driven during the stall, next burst 0 mismatches
+fast 1.79MHz bank switches 45 under a reads burst S=40: bad 0, wrong bank 0, lost 0; old-bank reads 13, next cycle old 0
+fast 1.79MHz bank switches 45 under a gaps burst S=40: bad 0, wrong bank 0, lost 0; old-bank reads 5, next cycle old 0
+fast drive off: 0 driven, events 3414 of 3414, writes 0 lost
+fast banks: 8/8 banks read their own pattern, 0 mismatches
+fast io page: same in 8 banks
+fast becker 1.79MHz: 2048 bytes, 0 lost, 0 duplicated, 0 phantom; underrun 0, overrun 0, 2049 polls in 12293 cycles, fetches bad 0, stalls 0
+fast event rate with Becker 1.79MHz: counted 12293 of 12293, lag max 2, drop 0, lap 0
+fast becker 0.89MHz: 2048 bytes, 0 lost, 0 duplicated, 0 phantom; underrun 0, overrun 0, 2049 polls in 12293 cycles, fetches bad 0, stalls 0
+fast becker back-to-back: ready -> 02,5c; empty -> 00,ff (stable)
+fast becker data then status: the poll right after the last byte's read sees 02 at 1.79MHz, 02 at 0.89MHz (00 = not ready)
+fast bank switch 0.89MHz: new bank at +1 cycles (hook 90..91 clk); 512 switches: +0 1, +1 511, +2 0, later 0; bad 0, lost 0
+fast bank switch 1.79MHz: new bank at +1 cycles (hook 82..89 clk); 512 switches: +0 0, +1 512, +2 0, later 0; bad 0, lost 0
+fast 1.79MHz late /CTS S=40 (266 ns): mismatches 0/4096 (zero 0 stale 0 spurious 0 wrong 0) rel_nonzero 4096 lost 0
+fast 1.79MHz late /CTS + writes S=40 (266 ns): mismatches 0/4096 (zero 0 stale 0 spurious 0 wrong 0) rel_nonzero 2731 lost 0
+fast 1.79MHz late /CTS response_clk 33 after E rose (raw; 220 ns)
+fast 1.79MHz late /CTS: select fell at 5; response 28 clk after the select fell, 24 after the fake OE_BUS fell (fake delay 4)
+fast 1.79MHz late /SCS S=40 (266 ns): mismatches 0/4096 (zero 0 stale 0 spurious 0 wrong 0) rel_nonzero 4096 lost 0
+fast 1.79MHz late /SCS + writes S=40 (266 ns): mismatches 0/4096 (zero 0 stale 0 spurious 0 wrong 0) rel_nonzero 2731 lost 0
+fast 1.79MHz late /SCS response_clk 33 after E rose (raw; 220 ns)
+fast 1.79MHz late /SCS: select fell at 5; response 28 clk after the select fell, 24 after the fake OE_BUS fell (fake delay 4)
+fast 1.79MHz response_clk 29 after E rose (raw; 193 ns)
+fast 1.79MHz response_clk corrected 24..24 after the fake OE_BUS fell (raw 29 minus the fake delay 5..5); margin to 36: 12..12
+fast 1.79MHz release_clk 11 (D0-D7 low on every cycle 11 clk after E fell; -1 = not by 14)
+fast 0.89MHz S=77 (513 ns): mismatches 0/4096 (zero 0 stale 0 spurious 0 wrong 0) rel_nonzero 4096 lost 0
+fast 0.89MHz response_clk 29 after E rose (raw; 193 ns)
+selftest rom cleared; reload with rom load
+selftest fast pass
+```
+
+Plus-W `restarts` (13cb1bf):
+`fast restarts: 40 bursts, 1800 restarts, spurious 0 wrong 0 zero 2103, events missing 0`.
+`switches` (5672ff5): 1800 switches, bad 0, wrong bank 0, next cycle old 0.
+
+### K.2 Bench on the PCB (Pico 2 build)
+
+Never run `bus selftest` with the board in a CoCo. Start each session with
+`stats reset`; read `status` and `dw stats` after each row.
+
+CoCo 3:
+
+1. `hdbdw3bck.rom` saved, power on: banner, `DIR`,
+   `LOADM"DINORUN":EXEC`, a `SAVE` and `DIR` again (0.89 MHz).
+2. `rom load hdbdw3bc3.rom`, `save`, power-cycle: the same at 1.79 MHz with
+   four `LOADM`s and a `SAVE`.
+3. RESET twice within 2 s: the manager. Launch the saved HDB-DOS ROM
+   (`DIR` works), then a 16K pak, then `CARTTEST.ROM` (PASS lines, `ERR
+   0000`).
+4. Double RESET from inside a running pak: the manager again.
+5. Tetris from the manager: the graphics display correctly. This is the
+   bug that started the engine work (fast mode, back-to-back cart reads).
+6. After each row: `bus engine_stall 0`, `event_drop 0`, `event_lap 0`;
+   `dw stats` `crc_err 0`; `becker underrun 0 overrun 0`.
+
+CoCo 2 (16K, no Extended BASIC):
+
+7. Power on, `EXEC 49154`: the manager; launch `CARTTEST.ROM`.
+8. 30 minutes of PASS lines with `ERR 0000`; then the counters as in 6.
+
+### K.3 Results
+
+| Check | Result | Date |
+|---|---|---|
+| K.2.1 CoCo 3 HDB-DOS 0.89 MHz, loads + SAVE | | |
+| K.2.2 CoCo 3 HDB-DOS 1.79 MHz, 4 LOADMs + SAVE | | |
+| K.2.3 manager, HDB-DOS / pak / carttest launches | | |
+| K.2.4 double RESET from a pak | | |
+| K.2.5 Tetris displays correctly | | |
+| K.2.6 CoCo 3 counters | | |
+| K.2.7 CoCo 2 manager, carttest launch | | |
+| K.2.8 CoCo 2 carttest 30 min + counters | | |
 
 ## How to resume with Claude
 

@@ -215,7 +215,7 @@ wider antenna keepout) or deferred to v2.4 (see hardware-design §9).
 5. **DONE (2026-09-22).** Write-cycle sampling: `bus_core1.c`'s write path now keeps the
    last `gpio_in` sample taken while OE_BUS was still low (`prev`) and uses its data bits,
    instead of the first sample with OE_BUS high.
-6. **DONE (2026-09-30, first PCB).** `addr_resample` read 0 on the PCB, so the nops went; the Pico 2 loop now precomputes the response while OE_BUS is high and drives ~100 ns after it falls, and D0-D7 idle pulled down (a late $FF41 poll used to read 0xFF = Becker ready). hdbdw3bc3 at 1.79 MHz passes 4 LOADMs + SAVE clean; see docs/pcb-bringup.md. Original text kept for the lever order: Ten nops (67 ns at 150 MHz) before the address read; real
+6. **CLOSED (2026-10-02) by the PIO bus engine.** Reads are served by PIO + DMA with no CPU in the path: 22 clk (146 ns) from OE_BUS on a bare Pico 2, 14 clk of margin to the 36 clk sample point at 1.79 MHz; 24 clk on a bare Plus-W, margin 12; 4,096 back-to-back reads clean at both speeds (firmware-architecture §8; PCB not yet measured). Lever (b) below was taken; (c) stays last. Earlier step (2026-09-30, first PCB, CPU loop): `addr_resample` read 0 on the PCB, so the nops went; the Pico 2 loop precomputed the response while OE_BUS was high and drove ~100 ns after it fell, and D0-D7 idle pulled down (a late $FF41 poll used to read 0xFF = Becker ready); see docs/pcb-bringup.md. Original text kept for the lever order: Ten nops (67 ns at 150 MHz) before the address read; real
    OE-to-data ~180-200 ns, not the documented 70 ns. Levers in order (decided
    2026-09-28, see §7): (a) on the first PCB read `bus addr_resample`; if zero, drop
    the nops (~130 ns serve path); (b) if CoCo 3 at 1.79 MHz behind an MPI still fails,
@@ -255,6 +255,13 @@ wider antenna keepout) or deferred to v2.4 (see hardware-design §9).
     together and finds the bridge port by itself. Before announcing either: build and boot
     the 6809 EOU image (only the 6309 one has run), and ship `eou_becker.py`, not a
     remastered image, unless the EOU project's terms allow redistributing one.
+14. **PIO decode of `$FF40`** (from the PIO bus engine, 2026-10-02). A bank switch is
+    core1's `$FF40` write hook, which lands 82-93 clk after the write ends, after the next
+    cycle has taken its bank: the first cart fetch after a `STA $FF40` comes from the old
+    bank at both speeds (firmware-architecture §3.2.4). Harmless unless a banked pak
+    switches from code in the switched window. If one needs it, decode `$FF40` writes in
+    PIO and set the bank register there, with no core1 in the path (and a sequence bit,
+    §7, so two identical writes are two switches).
 
 ### Docs
 - README: on a CoCo 3 a BASIC `PEEK(&HC000)` never reaches the cart, use $FF41/$FF42; the
@@ -283,7 +290,7 @@ wider antenna keepout) or deferred to v2.4 (see hardware-design §9).
   are 5 V tolerant, so A0-A13, R/W, CTS, SCS, E and RESET could go straight to the
   Pico and U15. Before deciding, check: (a) what a powered CoCo does to an unpowered
   Pico (VSYS is diode-fed from cart 5 V, so IOVDD rises with the bus; the window is
-  the regulator ramp only); (b) edge quality and the `addr_resample` count on the
+  the regulator ramp only); (b) edge quality and address settling on a scope (the PIO engine has no resample counter) on the
   buffered PCB vs a bufferless breadboard; (c) the Plus-W, where RESET_BUF drives
   RUN and Q/SLENB reach the pad grid; (d) whether the freed board area pays for the
   8 x 33 R data-bus termination above. U10 and U15 are not candidates.
@@ -411,5 +418,12 @@ which a PIO capture cannot skip.
 **Firmware side, once the pin exists.** `rom_load_mem` needs a linear 32K
 mode (two 16K halves selected by A14, distinct from the `$FF40` banked
 mode), and the manager needs to tell the two kinds of 32K image apart or be
-told. The Plus-W build can do this before any new board.
+told. The Plus-W cannot do this on today's board either: the PIO bus engine
+(2026-10-02) takes A0-A13 with one `in pins`, and the pad-grid A14/A15 are
+not next to A13 (rule above).
+
+**Plus-W firmware-decoded addresses.** The CPU loop on a Plus-W also
+answered `$FF60-$FF7F`, outside `/CTS` and `/SCS`, with JP2 at 2-3. That path was removed with the CPU loop (tag
+`fw-1.4-cpu-loop`); the PIO engine holds `OE_FW` high and needs JP2 at 1-2.
+It returns with the respin, alongside A14/A15.
 
