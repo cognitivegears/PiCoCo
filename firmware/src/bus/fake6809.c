@@ -460,6 +460,11 @@ static void fast_pattern(void) {
     }
 }
 
+/* every third cycle a CoCo write (R/W low) when on */
+static void fast_mix(bool on) {
+    for (int k = 0; k < FAST_N; k++) fast_tx[k] = (on && k % 3 == 2) ? (fast_tx[k] & ~0x4000u) : (fast_tx[k] | 0x4000u);
+}
+
 static void fast_timing(int e, int pre, int post) {
     for (int k = 0; k < FAST_N; k++)
         fast_tx[k] = (fast_tx[k] & 0x7FFFu) | ((uint32_t)e << 15) | ((uint32_t)pre << 18) | ((uint32_t)post << 25);
@@ -501,7 +506,8 @@ static void fast_burst(fast_res_t *r) {
     uint8_t prev = 0;
     for (int k = 0; k < FAST_N; k++) {
         uint16_t idx = fast_tx[k] & 0x3FFF;
-        uint8_t exp = bus_peek(idx), got = (uint8_t)(fast_rx[k] >> 8), rel = (uint8_t)fast_rx[k];
+        bool drv = bus_drive && (fast_tx[k] & 0x4000u);   /* a write or bus drive off: the pads must stay undriven (0x00) */
+        uint8_t exp = drv ? bus_peek(idx) : 0, got = (uint8_t)(fast_rx[k] >> 8), rel = (uint8_t)fast_rx[k];
         if (rel) r->rel_bad++;
         if (got != exp) {
             r->mism++;
@@ -620,6 +626,17 @@ int fake6809_fast(bool stress, void (*line)(const char *s)) {
         fast_line(line, "1.79MHz", 36, &r);
         if (r.mism || r.lost) rc = -1;
     }
+    fast_mix(true);                                  /* reads with writes between them: writes must never be driven */
+    fast_timing(0, 35, 4);
+    fast_burst(&r);
+    fast_line(line, "1.79MHz mixed r/w", 36, &r);
+    if (r.mism || r.lost) rc = -1;
+    fast_mix(false);
+    bus_drive_set(false);                            /* capture-only: nothing may be driven */
+    fast_burst(&r);
+    fast_line(line, "1.79MHz drive off", 36, &r);
+    if (r.mism || r.lost) rc = -1;
+    bus_drive_set(true);
     int resp = fast_sweep(line, "1.79MHz", 0, 39);   /* (b) */
     if (resp < 0 || resp > 36) rc = -1;
     {   /* release: earliest point after the rise where D0-D7 read 0 for the whole burst */
