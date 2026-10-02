@@ -3,52 +3,30 @@
 #include "bus_engine.h"
 #include "rom.h"
 #include "becker.h"
+#include "net.h"
 #include "hardware/pio.h"
-#include "hardware/clocks.h"
+#include "hardware/dma.h"
+#include "hardware/watchdog.h"
+#include "hardware/structs/busctrl.h"
+#include "hardware/structs/m33.h"
 #include "hardware/structs/sio.h"
 #include "hardware/sync.h"
 #include "pico/stdlib.h"
 #include "fake6809.pio.h"
 #include PICOCO_BOARD_H
+#ifdef PICOCO_BOARD_PLUSW
+#include "pico/cyw43_arch.h"
+#endif
 #include <stdio.h>
 #include <string.h>
 
-#define CLKDIV 1.1f
 #define D_MASK 0xFFu
 
 static PIO pio = pio1;
 static int sm = -1;
 static uint offset;
 
-/* core1 reloads the D0-D7 output latch while idle (bus_core1.c), and this
- * test parks its write data in that same latch: let core1 finish the reload
- * that follows the previous cycle before putting data there. */
-static inline void settle(void) { busy_wait_us(2); }
-/* Pico 2: a write is normally followed by a settle too, so the functional
- * checks do not depend on how long core1's post-write work (hooks, write
- * ring, trace) takes; the response_after_write sweep turns that off. The old
- * loop passed "write $FF40 = 1, read back 1" without it only because the
- * written byte was still on the pads when the PIO sampled. */
-static bool raw_writes __attribute__((unused));
-
 #ifdef PICOCO_BOARD_PLUSW
-#define PW_BIT(gp) (1u << ((gp) - PIN_A0))
-static uint32_t phase(uint16_t addr, bool rd, bool sel, bool e, bool q) {
-    uint32_t w = (addr & 0x3FFF) | (rd ? PW_BIT(PIN_RW) : 0) | PW_BIT(PIN_SLENB)
-               | ((addr & 0x4000) ? PW_BIT(PIN_A14) : 0) | ((addr & 0x8000) ? PW_BIT(PIN_A15) : 0)
-               | (e ? PW_BIT(PIN_E) : 0) | (q ? PW_BIT(PIN_Q) : 0);
-    /* hardware select: /CTS for the ROM window, /SCS for $FF40-$FF5F; firmware-decoded addresses assert neither */
-    bool cts = sel && addr < 0xFF00, scs = sel && (addr & 0xFFE0) == 0xFF40;
-    if (!cts) w |= PW_BIT(PIN_CTS);
-    if (!scs) w |= PW_BIT(PIN_SCS);
-    return w;
-}
-static void pins_to_pio(void) {
-    uint32_t idle = phase(0, true, false, false, false);
-    pio_sm_set_pins_with_mask(pio, sm, idle << PIN_A0, 0x7FFFFFu << PIN_A0);
-    for (int g = PIN_A0; g <= PIN_A15; g++) pio_gpio_init(pio, g);
-    pio_sm_set_consecutive_pindirs(pio, sm, PIN_A0, 23, true);
-}
 static void pins_to_sio(void) {
     for (int g = PIN_A0; g <= PIN_A15; g++) { gpio_set_function(g, GPIO_FUNC_SIO); gpio_set_dir(g, GPIO_IN); gpio_pull_up(g); }
 #ifdef PIN_LED
@@ -90,56 +68,9 @@ static void decode_stop(void) {
     pio_sm_unclaim(dpio, (uint)dsm);
     dsm = -1;
 }
-/* One bus cycle: six TX words (P0, P1, P2, sample-delay control, P3, P4—
- * see fake6809.pio's fake6809_pw header). For writes, D0..D7 are driven from
- * core0's SIO for the duration (core1 only samples them on a write). E high
- * lasts P2..P4, about 32 + delay + 34 PIO cycles at clkdiv 1.1. Returns the
- * byte the PIO sampled during E high (a read's data), or 0 if unselected. */
-/* push_cycle/pop_cycle split the six-word cycle so a burst can keep two PIO
- * cycles in flight (push cycle k+2 while popping cycle k) with no gap for a
- * real back-to-back bus cycle to be skipped in. D0-7 SIO handling for
- * writes stays in cycle() only; bursts (burst_reads, below) are reads, so
- * push_cycle never needs to touch D0-7. */
-static void push_cycle(uint16_t addr, bool rd, bool sel, uint8_t data, uint8_t delay) {
-    (void)data;
-    uint32_t s = save_and_disable_interrupts();   /* a core0 IRQ between TX words must not stretch a phase */
-    pio_sm_put_blocking(pio, sm, phase(addr, rd, sel, false, false));   /* P0 */
-    pio_sm_put_blocking(pio, sm, phase(addr, rd, sel, false, true));    /* P1 */
-    pio_sm_put_blocking(pio, sm, phase(addr, rd, sel, true, true));     /* P2 */
-    pio_sm_put_blocking(pio, sm, delay);
-    pio_sm_put_blocking(pio, sm, phase(addr, rd, sel, true, false));    /* P3 */
-    pio_sm_put_blocking(pio, sm, phase(addr, rd, sel, false, false));   /* P4: E=0 Q=0, cycle over */
-    restore_interrupts(s);
-}
-static uint8_t pop_cycle(void) {
-    return (uint8_t)(pio_sm_get_blocking(pio, sm) & 0xFF);
-}
-static uint8_t cycle(uint16_t addr, bool rd, bool sel, uint8_t data, uint8_t delay) {
-    if (!rd) { settle(); sio_hw->gpio_clr = D_MASK; sio_hw->gpio_set = data; sio_hw->gpio_oe_set = D_MASK; }
-    push_cycle(addr, rd, sel, data, delay);
-    uint8_t got = pop_cycle();
-    if (!rd) sio_hw->gpio_oe_clr = D_MASK;
-    return got;
-}
-/* Keeps two cycles queued the whole way through so no real E/Q edge between
- * them could be missed; returns the mismatch count against expect[]. */
-static uint32_t burst_reads(const uint16_t *addrs, const uint8_t *expect, int n, uint8_t delay) {
-    uint32_t mismatches = 0;
-    if (n <= 0) return 0;
-    push_cycle(addrs[0], true, true, 0, delay);
-    if (n > 1) push_cycle(addrs[1], true, true, 0, delay);
-    for (int k = 0; k < n; k++) {
-        if (pop_cycle() != expect[k]) mismatches++;
-        if (k + 2 < n) push_cycle(addrs[k + 2], true, true, 0, delay);
-    }
-    return mismatches;
-}
-#define PROGRAM fake6809_pw_program
-#define CONFIG  fake6809_pw_program_get_default_config
-#define OUT_COUNT 23
 #else
 static void pins_to_pio(void) {
-    /* OE_BUS must read high before the SM takes the pin, or core1 sees a fake cycle. */
+    /* OE_BUS must read high before the SM takes the pin, or the engine sees a fake cycle. */
     pio_sm_set_pins_with_mask(pio, sm, 1u << PIN_OE_BUS, 1u << PIN_OE_BUS);
     for (int g = PIN_A0; g <= PIN_RW; g++) pio_gpio_init(pio, g);
     pio_gpio_init(pio, PIN_OE_BUS);
@@ -151,63 +82,11 @@ static void pins_to_sio(void) {
     for (int g = PIN_A0; g <= PIN_RW; g++) { gpio_set_function(g, GPIO_FUNC_SIO); gpio_set_dir(g, GPIO_IN); gpio_pull_up(g); }
     gpio_set_function(PIN_OE_BUS, GPIO_FUNC_SIO); gpio_set_dir(PIN_OE_BUS, GPIO_IN); gpio_pull_up(PIN_OE_BUS);
 }
-
-/* One bus cycle. For writes, D0..D7 are driven from core0's SIO for the
- * duration (core1 only samples them on a write). Returns the byte the PIO
- * sampled during OE low (a read's data), or 0 for an unselected cycle. */
-static uint8_t cycle(uint16_t addr, bool rd, bool sel, uint8_t data, uint8_t delay) {
-    if (!rd) { settle(); sio_hw->gpio_clr = D_MASK; sio_hw->gpio_set = data; sio_hw->gpio_oe_set = D_MASK; }
-    uint32_t w0 = (addr & 0x3FFF) | (rd ? 0x4000u : 0);
-    uint32_t w1 = (sel ? 1u : 0) | ((uint32_t)delay << 1);
-    pio_sm_put_blocking(pio, sm, w0);
-    pio_sm_put_blocking(pio, sm, w1);
-    uint32_t got = pio_sm_get_blocking(pio, sm);
-    if (!rd) { sio_hw->gpio_oe_clr = D_MASK; if (!raw_writes) settle(); }
-    return (uint8_t)(got & 0xFF);
-}
-#define PROGRAM fake6809_p2_program
-#define CONFIG  fake6809_p2_program_get_default_config
-#define OUT_COUNT 15
 #endif
 
-static int start(void) {
-    sm = pio_claim_unused_sm(pio, false);
-    if (sm < 0) return -1;
-    offset = pio_add_program(pio, &PROGRAM);
-    pio_sm_config c = CONFIG(offset);
-    sm_config_set_out_pins(&c, PIN_A0, OUT_COUNT);
-    sm_config_set_in_pins(&c, PIN_D0);
-#ifndef PICOCO_BOARD_PLUSW
-    sm_config_set_sideset_pins(&c, PIN_OE_BUS);
-#endif
-    sm_config_set_out_shift(&c, true, false, 32);    /* shift right: bit 0 first */
-    sm_config_set_in_shift(&c, false, false, 32);    /* shift left: one in pins,8 leaves the byte in bits 0-7 */
-    sm_config_set_clkdiv(&c, CLKDIV);
-    pins_to_pio();
-    pio_sm_init(pio, sm, offset, &c);
-    pio_sm_set_enabled(pio, sm, true);
-#ifdef PICOCO_BOARD_PLUSW
-    decode_start();
-#endif
-    return 0;
-}
-
-static void stop(void) {
-#ifdef PICOCO_BOARD_PLUSW
-    decode_stop();
-#endif
-    pio_sm_set_enabled(pio, sm, false);
-    pins_to_sio();
-    pio_remove_program(pio, &PROGRAM, offset);
-    pio_sm_unclaim(pio, sm);
-    sm = -1;
-}
-
-#define SAMPLE_LATE 40   /* delay used for functional checks: well after core1 has driven data */
-
-/* Raw pin-activity guard for fake6809_selftest: an idle CoCo runs from RAM
+/* Raw pin-activity guard for the self-test: an idle CoCo runs from RAM
  * and produces no cart cycles, so bus_stats.cycles never moves and the
- * cycle-counter check below passes even with the board plugged in. A0-A13
+ * cycle-counter check in fake6809_fast passes even with the board plugged in. A0-A13
  * come through always-enabled buffers and toggle whenever the CPU runs
  * though; unplugged, the pins sit on their pull-ups and don't move. This is
  * a backstop, not a licence — unplug the board before running this. */
@@ -226,198 +105,11 @@ static bool pins_idle_10ms(void) {
     return true;
 }
 
-static bool s_drive_was;
-int fake6809_begin(void) {
-    uint32_t c0 = bus_stats.cycles;
-    sleep_ms(100);
-    if (bus_stats.cycles != c0) return -2;
-    if (!pins_idle_10ms()) return -2;
-    if (start() < 0) return -1;
-    s_drive_was = bus_drive_get();
-    bus_drive_set(true);
-    { uint16_t di; uint8_t dd; while (bus_pop_write(&di, &dd)) { } }   /* pin-takeover blip, see fake6809_selftest */
-    return 0;
-}
-uint8_t fake6809_cycle(uint16_t addr, bool rd, uint8_t data) { return cycle(addr, rd, true, data, SAMPLE_LATE); }
-void fake6809_end(void) { bus_drive_set(s_drive_was); stop(); }
-
-int fake6809_selftest(fake_result_t *r, void (*line)(const char *s)) {
-    char buf[96];
-    memset(r, 0, sizeof *r);
-    r->first_ok_delay = -1;
-    r->burst_first_ok_delay = -1;
-
-    uint32_t c0 = bus_stats.cycles;
-    sleep_ms(100);
-    if (bus_stats.cycles != c0) return -2;                 /* a CoCo is driving the bus: refuse */
-    if (!pins_idle_10ms()) return -2;                       /* idle CoCo: no cart cycles, but pins still move */
-    if (start() < 0) return -1;
-
-    bool drive_was = bus_drive_get();
-    bus_drive_set(true);
-    /* Synthetic 32 KB banked image, built straight in rom_banks (no 32 KB
-     * local staging copy): bank 0 filled with 0x00 and byte 0 marked, bank
-     * 1 filled with 0x01. */
-    rom_banks_begin();
-    memset(rom_bank_buf(0), 0x00, BUS_IO_LO);         /* the I/O entries are the devices' */
-    rom_bank_buf(0)[0] = 0xA5;
-    memset(rom_bank_buf(1), 0x01, BUS_IO_LO);
-    rom_publish_banks(2);
-
-    /* Taking the pins over can blip OE_BUS once (seen on a bare Pico 2: one
-     * stray idx-0 cycle ~130 us before the first real one, R/W random). It
-     * lands before the baselines below, but a stray write would sit at the
-     * head of the write ring and fail write_data_captured, so drain it. */
-    { uint16_t di; uint8_t dd; while (bus_pop_write(&di, &dd)) { } }
-    uint32_t cyc0 = bus_stats.cycles, wr0 = bus_stats.writes, ov0 = bus_stats.write_overrun;
-    int fails = 0;
-    #define CHECK(name, cond) do { bool ok_ = (cond); r->cycles++; if (!ok_) { fails++; r->mismatches++; } \
-        snprintf(buf, sizeof buf, "selftest %s %s", name, ok_ ? "ok" : "FAIL"); line(buf); } while (0)
-
-    CHECK("read_bank0_marker", cycle(0xC000, true, true, 0, SAMPLE_LATE) == 0xA5);
-    CHECK("read_bank0_fill",   cycle(0xC001, true, true, 0, SAMPLE_LATE) == 0x00);
-    CHECK("read_top_of_window", cycle(0xFEFF, true, true, 0, SAMPLE_LATE) == 0x00);
-    (void)cyc0; (void)wr0;
-    /* PIO engine spike: no write path, no hooks, no counters. */
-    #define SKIP(name) line("selftest " name " skipped (spike)")
-    SKIP("bank_switch_next_read"); SKIP("bank_switch_back");
-    SKIP("becker_status_read");    /* banked: the engine serves the I/O page from the bank buffer */
-    SKIP("writes_counted"); SKIP("unselected_ignored"); SKIP("write_data_captured");
-    SKIP("no_ring_overrun"); SKIP("cycles_counted");
-    #undef SKIP
-    float ns_per = 1e9f * CLKDIV / (float)clock_get_hz(clk_sys);
-#ifdef PICOCO_BOARD_PLUSW
-    {
-        /* Eight back-to-back reads, no gap: bank 0 is still selected (the
-         * last switch above was back to bank 0), so C000/C001 alternate
-         * the bank-0 marker/fill bytes 0xA5/0x00. Sweep the sample delay:
-         * the smallest one with zero mismatches over the whole burst is how
-         * late core1's post-cycle work (hook scan, trace record, stats) can
-         * run before back-to-back reads start missing data. */
-        static const uint16_t baddrs[8]  = { 0xC000, 0xC001, 0xC000, 0xC001, 0xC000, 0xC001, 0xC000, 0xC001 };
-        static const uint8_t  bexpect[8] = { 0xA5, 0x00, 0xA5, 0x00, 0xA5, 0x00, 0xA5, 0x00 };
-        uint32_t cburst = 0;
-        for (int d = 0; d <= 120; d += 2) {
-            busy_wait_us(2);   /* let core1 finish bus_on_read_done for the previous burst's last cycle before sampling the baseline */
-            cburst = bus_stats.cycles;
-            if (burst_reads(baddrs, bexpect, 8, (uint8_t)d) == 0) { r->burst_first_ok_delay = d; break; }
-        }
-        r->burst_delay_ns = r->burst_first_ok_delay < 0 ? 0 : (uint32_t)((r->burst_first_ok_delay + 4) * ns_per);
-        snprintf(buf, sizeof buf, "selftest burst first_ok_delay %d (~%u ns after E rose)", r->burst_first_ok_delay, (unsigned)r->burst_delay_ns);
-        line(buf);
-        CHECK("burst_back_to_back", r->burst_first_ok_delay >= 0);
-        /* A CoCo 3 gives about 560 ns of E high and the 6809 wants data ~80 ns
-         * before E falls; 480 ns is the initial budget, to be revisited
-         * against a scope. */
-        CHECK("burst_within_480ns", r->burst_first_ok_delay >= 0 && r->burst_delay_ns <= 480);
-        (void)cburst;
-        line("selftest burst_cycles_counted skipped (spike)");
-    }
-#endif
-
-    /* Timing sweep: smallest sample delay at which core1's read data is already valid. */
-    for (int d = 0; d <= 60; d++) {
-        if (cycle(0xC001, true, true, 0, (uint8_t)d) == 0x00 && cycle(0xC000, true, true, 0, (uint8_t)d) == 0xA5) {
-            r->first_ok_delay = d;
-            break;
-        }
-    }
-#ifdef PICOCO_BOARD_PLUSW
-    r->delay_ns = r->first_ok_delay < 0 ? 0 : (uint32_t)((r->first_ok_delay + 4) * ns_per);   /* +4: out pins(P2) + pull + out y + first jmp before the sample, measured from E rising */
-    snprintf(buf, sizeof buf, "selftest response first_ok_delay %d (~%u ns after E rose)", r->first_ok_delay, (unsigned)r->delay_ns);
-#else
-    r->delay_ns = r->first_ok_delay < 0 ? 0 : (uint32_t)((r->first_ok_delay + 2) * ns_per);   /* +2: nop + first jmp before the sample */
-    snprintf(buf, sizeof buf, "selftest response first_ok_delay %d (~%u ns after OE_BUS fell)", r->first_ok_delay, (unsigned)r->delay_ns);
-#endif
-    line(buf);
-    CHECK("response_measured", r->first_ok_delay >= 0);
-    /* The sweep above runs its cycles back to back, so core1 is still in its
-     * post-cycle work when OE_BUS falls: this is the no-idle-sample path
-     * (late_precompute), the one a CPU executing from the cart ROM takes. Its
-     * budget is the 0.89 MHz one (E high ~560 ns), same 480 ns as the Plus-W
-     * burst check; bench 2026-10-01 measured 256-322 ns. */
-    CHECK("response_within_480ns", r->first_ok_delay >= 0 && r->delay_ns <= 480);
-#ifndef PICOCO_BOARD_PLUSW
-    /* Same sweep with core1 idle before each cycle: the path a Becker poll
-     * takes (precomputed latch, one output-enable store). 32 tries per delay
-     * so the PIO/core1 phase wanders across the idle pass. Budget at 1.79 MHz:
-     * 279 ns of E high less ~40 ns setup and U10. Best case for that path:
-     * the PIO gives ~265 ns of address setup, longer than a recompute pass, so
-     * the latch is always loaded; a real 1.79 MHz CPU gives less and a poll
-     * can land mid-recompute, a few tens of ns later than this figure. */
-    int idle_ok = -1;
-    for (int d = 0; d <= 60 && idle_ok < 0; d++) {
-        int bad = 0;
-        for (int i = 0; i < 32; i++) {
-            cycle(0xC001, true, true, 0, 60);      /* a 0x00 read first: pads start low whatever the loop does after a cycle */
-            busy_wait_us(3);
-            if (cycle(0xC000, true, true, 0, (uint8_t)d) != 0xA5) bad++;
-        }
-        if (!bad) idle_ok = d;
-    }
-    /* A read straight after a write (CPU executing from the cart ROM stores
-     * to $FF4x, then fetches): core1 is still in bus_on_write. 0.89 MHz budget. */
-    int aw_ok = -1;
-    raw_writes = true;
-    for (int d = 0; d <= 120 && aw_ok < 0; d += 2) {
-        int bad = 0;
-        for (int i = 0; i < 8; i++) {
-            busy_wait_us(3);
-            cycle(0xFF40, false, true, 0, SAMPLE_LATE);
-            if (cycle(0xC000, true, true, 0, (uint8_t)d) != 0xA5) bad++;
-        }
-        { uint16_t di; uint8_t dd; while (bus_pop_write(&di, &dd)) { } }   /* keep the write ring from filling */
-        if (!bad) aw_ok = d;
-    }
-    raw_writes = false;
-    unsigned aw_ns = aw_ok < 0 ? 0 : (unsigned)((aw_ok + 2) * ns_per);
-    snprintf(buf, sizeof buf, "selftest response_after_write first_ok_delay %d (~%u ns after OE_BUS fell)", aw_ok, aw_ns);
-    line(buf);
-    CHECK("response_after_write_within_480ns", aw_ok >= 0 && aw_ns <= 480);
-    unsigned idle_ns = idle_ok < 0 ? 0 : (unsigned)((idle_ok + 2) * ns_per);
-    snprintf(buf, sizeof buf, "selftest response_idle first_ok_delay %d (~%u ns after OE_BUS fell)", idle_ok, idle_ns);
-    line(buf);
-    CHECK("response_idle_within_230ns", idle_ok >= 0 && idle_ns <= 230);
-#endif
-#ifndef PICOCO_PIO_ENGINE   /* D0-D7 belong to PIO0 there: SIO cannot drive them */
-    {   /* RP2350-E9 probe, information only: drive D0-D7 high, release onto the
-         * internal pull-downs and see how long they still read high. A working
-         * pull-down (~50-80 k into a few pF) is gone in microseconds. */
-        sio_hw->gpio_set = D_MASK; sio_hw->gpio_oe_set = D_MASK; busy_wait_us(2); sio_hw->gpio_oe_clr = D_MASK;
-        busy_wait_us(10);  unsigned h10 = sio_hw->gpio_in & D_MASK;
-        busy_wait_us(990); unsigned h1m = sio_hw->gpio_in & D_MASK;
-        sleep_ms(50);      unsigned h50 = sio_hw->gpio_in & D_MASK;
-        sio_hw->gpio_clr = D_MASK; sio_hw->gpio_oe_set = D_MASK; busy_wait_us(2); sio_hw->gpio_oe_clr = D_MASK;
-        busy_wait_us(10);  unsigned l10 = sio_hw->gpio_in & D_MASK;
-        snprintf(buf, sizeof buf, "selftest pad_hold high then released: 10us %02x 1ms %02x 51ms %02x; low then released: %02x", h10, h1m, h50, l10);
-        line(buf);
-    }
-#endif
-    r->ring_overrun = bus_stats.write_overrun - ov0;
-    #undef CHECK
-
-    rom_off();
-    bus_drive_set(drive_was);
-    stop();
-    line("selftest rom cleared; reload with rom load");
-    return fails ? -1 : 0;
-}
-
-#ifdef PICOCO_PIO_ENGINE
-/* `bus selftest fast`: real back-to-back 1.79 MHz cycles, DMA-fed, so nothing
+/* `bus selftest`: real back-to-back 1.79 MHz cycles, DMA-fed, so nothing
  * on core0 can stretch a cycle. Pico 2: fake6809_fast (PIO1) drives OE_BUS
  * directly. Plus-W: fake6809_fast_pw (PIO1) drives E, /CTS, /SCS and
  * fake_decode_pw (PIO2) makes OE_BUS on GP40 from them, as U15 would. Timing
  * is in fake6809.pio. */
-#include "hardware/dma.h"
-#include "hardware/watchdog.h"
-#include "hardware/structs/busctrl.h"
-#include "hardware/structs/m33.h"
-#include "net.h"
-#ifdef PICOCO_BOARD_PLUSW
-#include "pico/cyw43_arch.h"
-#endif
-
 #define FAST_N 4096
 #define FAST_WIN 0x3F00                  /* ROM window: table indices 0x0000-0x3EFF */
 #define FAST_IO  0x3F40                  /* /SCS window: table indices 0x3F40-0x3F5F */
@@ -1686,4 +1378,3 @@ done:
     line("selftest rom cleared; reload with rom load");
     return rc;
 }
-#endif

@@ -199,7 +199,7 @@ Bare Pico 2 follow-up, same day (`bus selftest`, chip revision A2):
 
 - E9 is confirmed, not just a working explanation: D0-D7 driven high and
   released onto the internal pull-downs still read `ff` after 51 ms; driven
-  low and released they read `00`. The self-test prints this as `pad_hold`.
+  low and released they read `00`. The CPU-loop self-test printed this as `pad_hold`.
 - The self-test now measures three read latencies after OE_BUS falls. Idle
   bus (a Becker poll): 139-146 ns; the 2026-09-30 loop measured 264-286 ns in
   the same sweep, against a 230 ns budget at 1.79 MHz. Back-to-back reads:
@@ -224,5 +224,5 @@ much there (burst 425-454 ns) and was left out. The A4 chip does not show
 E9: `pad_hold` reads `00` 10 us after release. Not covered by a bare
 module: anything that depends on JP2 or on a real OE_BUS.
 
-A second `bus selftest` in one boot fails `read_bank0_marker` on the
+A second `bus selftest` in one boot failed `read_bank0_marker` on the
 Plus-W, with the old loop too; `bench.py` reboots after each run.

@@ -48,7 +48,7 @@ BUS_HOT void bus_core1_main(void) {
         bus_event(w);
         r = (r + 1) & (BUS_EVENTS - 1);
         if ((r & 255) == 0) {
-            while (bus_core1_hold) { }               /* bus selftest fast lap */
+            while (bus_core1_hold) { }               /* bus selftest lap */
             uint32_t lag = 0;
             while (lag < BUS_EV_LAG_CAP && bus_events[(r + lag) & (BUS_EVENTS - 1)] != BUS_EV_NONE) lag++;
             if (lag > bus_stats.event_lag_max) bus_stats.event_lag_max = lag;

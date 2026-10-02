@@ -217,7 +217,7 @@ void bus_engine_init(void) {
 void bus_engine_check_drops(void) {
     if (evsm < 0) return;
     /* RXSTALL is also set by a `push noblock` that found the RX FIFO full,
-     * i.e. a dropped event (RP2350 datasheet, FDEBUG; `bus selftest fast`
+     * i.e. a dropped event (RP2350 datasheet, FDEBUG; `bus selftest`
      * confirms it on the chip). One count per check that finds it set. */
     uint32_t bit = 1u << (PIO_FDEBUG_RXSTALL_LSB + evsm);
     if (epio->fdebug & bit) { epio->fdebug = bit; bus_stats.event_drop++; }
@@ -228,7 +228,7 @@ void bus_engine_check_drops(void) {
  * in a row, restart it, the same stop and start as `bus drive`. OE_BUS high:
  * a served read sits at `pull` with B idle too (12-20 % of samples under a
  * reads burst, measured), so without it a busy bus restarted the engine on a
- * few % of tick pairs (25 restarts in one `bus selftest fast` stall burst); a
+ * few % of tick pairs (25 restarts in one `bus selftest` stall burst); a
  * served read is past `pull` long before OE_BUS rises.
  * Registers only (PIO, DMA, SIO), never the ring. */
 void bus_engine_tick(uint32_t now_ms) {
@@ -245,7 +245,7 @@ void bus_engine_tick(uint32_t now_ms) {
     stalled = s;
 }
 
-/* `bus selftest fast` stall: DMA A paused (true) leaves a read's pointer in
+/* `bus selftest` stall: DMA A paused (true) leaves a read's pointer in
  * the RX FIFO and the read SM at `pull`, D0-D7 released. Resumed (false) with
  * that pointer dropped, so the SM is left stalled for the guard. Call it
  * between cycles. */
@@ -276,7 +276,7 @@ BUS_HOT void bus_engine_unlock(uint32_t saved) {
  * the bus_bank store, so the record and the register never disagree. No
  * pause, no PC read, no jump: an exec'd instruction runs at an instruction
  * boundary; an SM stalled in a `wait` or `pull` runs it and stays stalled, a
- * running one is delayed by 1 clk (`bus selftest fast` switches at every
+ * running one is delayed by 1 clk (`bus selftest` switches at every
  * phase of the cycle). The read program takes the bank (`in x, 3`) right
  * after the start wait, so a bank write takes effect for every cycle whose
  * `in x, 3` has not yet run; a write that lands after it leaves that one read

@@ -46,13 +46,11 @@ if(NOT PICOCO_HOST)
     src/plat_pico.c src/usb/usb_descriptors.c src/main.c
     src/crash.c src/bus/bus_core1.c src/bus/bus_engine.c)
   if(PICOCO_BOARD STREQUAL "plusw")
-    target_sources(picoco PRIVATE src/net/net.c src/net/net_selftest.c)
+    target_sources(picoco PRIVATE src/net/net.c)
     target_link_libraries(picoco pico_cyw43_arch_lwip_poll pico_lwip_sntp)
   else()
     target_sources(picoco PRIVATE ${NET_STUB_SRC})
   endif()
-  # PIO + DMA bus engine (bus_engine.c) on both boards; the CPU loops are at tag fw-1.4-cpu-loop.
-  target_compile_definitions(picoco PRIVATE PICOCO_PIO_ENGINE=1)
   pico_generate_pio_header(picoco ${CMAKE_CURRENT_LIST_DIR}/src/bus/bus_engine.pio)
   if(PICOCO_BOARD STREQUAL "plusw")
     set(PICOCO_PIN_HEADER plusw)
@@ -60,9 +58,8 @@ if(NOT PICOCO_HOST)
     set(PICOCO_PIN_HEADER pico2_breadboard)
   endif()
   # fake6809 (on-chip PIO selftest): pio1 drives A0-A13/R/W plus OE_BUS on a
-  # Pico 2, or A0-A15/R/W plus CTS/SCS/E/Q/SLENB on a Plus-W (fake6809.pio
-  # has one program per board; fake6809.c picks the right one on
-  # PICOCO_BOARD_PLUSW).
+  # Pico 2, or A0-A13/R/W plus /CTS, /SCS, E on a Plus-W (fake6809.pio has one
+  # program per board; fake6809.c picks the right one on PICOCO_BOARD_PLUSW).
   target_sources(picoco PRIVATE src/bus/fake6809.c)
   target_compile_definitions(picoco PRIVATE PICOCO_HAVE_FAKE6809=1)
   pico_generate_pio_header(picoco ${CMAKE_CURRENT_LIST_DIR}/src/bus/fake6809.pio)

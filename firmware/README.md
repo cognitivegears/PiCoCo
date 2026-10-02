@@ -181,7 +181,7 @@ python3 firmware/tools/bench.py [--port /dev/cu.usbmodemXXXX2] [--skip-if-absent
 
 `bench.py` runs `version` then `bus selftest` over the console (auto-
 detecting the second `/dev/cu.usbmodem*`/`/dev/ttyACM*` node if
-`--port` is omitted), prints every line, and exits 0 on `selftest pass`,
+`--port` is omitted), prints every line, and exits 0 on `selftest fast pass`,
 1 on any failure or timeout, or 77 with `--skip-if-absent` when no Pico
 console is found at all. It is also registered as the `bench` ctest
 target, but only opt-in — configure with `-DPICOCO_BENCH=ON` to add it,

@@ -57,7 +57,7 @@ void bus_init(void) {
     bus_drive = false;
 }
 
-#ifdef PICOCO_PIO_ENGINE
+#ifndef PICOCO_HOST
 void bus_drive_set(bool on) { bus_drive = on; bus_engine_drive(on); }
 #else
 /* host: no engine to re-point, nothing to lock */

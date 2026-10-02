@@ -30,9 +30,6 @@
 #ifdef PICOCO_HAVE_FAKE6809
 #include "fake6809.h"
 #endif
-#ifdef PICOCO_HAVE_NET
-#include "net_selftest.h"
-#endif
 
 static console_out_fn g_out;
 static void *g_out_ctx;
@@ -211,7 +208,7 @@ static int cmd_dw_selftest(void) {
     return 0;
 }
 
-#ifdef PICOCO_HAVE_FAKE6809
+#ifndef PICOCO_HOST
 static void selftest_line(const char *s) { outf("%s\n", s); }
 #endif
 
@@ -226,14 +223,7 @@ static int cmd_bus(int argc, char **argv) {
     if (strcasecmp(argv[1], "selftest") == 0) {
         if (argc >= 3 && strcasecmp(argv[2], "net") == 0) {
 #ifdef PICOCO_HAVE_NET
-#ifdef PICOCO_PIO_ENGINE
-            return cerr("bus selftest net: not supported by this engine (no Becker path)");
-#endif
-            int rc = net_selftest(selftest_line);
-            if (rc == -2) return cerr("bus selftest net: needs becker net with the link up, and no CoCo attached");
-            if (rc != 0) return cerr("selftest FAIL");
-            outf("selftest net pass\n");
-            return 0;
+            return cerr("bus selftest net: not supported by this engine");
 #else
             return cerr("net: needs Plus-W");
 #endif
@@ -241,39 +231,28 @@ static int cmd_bus(int argc, char **argv) {
 #ifndef PICOCO_HAVE_FAKE6809
         return cerr("bus selftest: pico only (host build)");
 #else
-#ifdef PICOCO_PIO_ENGINE
-        if (argc >= 3 && strcasecmp(argv[2], "fast") == 0) {
-            int opts = 0;
-            for (int i = 3; i < argc; i++) {
-                if (strcasecmp(argv[i], "stress") == 0) opts |= FAST_OPT_STRESS;
-                else if (strcasecmp(argv[i], "radio") == 0) opts |= FAST_OPT_RADIO;
-                else if (strcasecmp(argv[i], "restarts") == 0) opts |= FAST_OPT_RESTARTS;
-                else if (strcasecmp(argv[i], "switches") == 0) opts |= FAST_OPT_SWITCHES;
-                else return cerr("usage: bus selftest fast [stress] [radio] [restarts] [switches]");
-            }
-            int rc = fake6809_fast(opts, selftest_line);
-            if (rc == -2) return cerr("bus selftest: bus is live (CoCo attached), refused");
-            if (rc != 0) return cerr("selftest fast FAIL");
-            outf("selftest fast pass\n");
-            return 0;
+        int opts = 0;
+        for (int i = 2; i < argc; i++) {
+            if (strcasecmp(argv[i], "stress") == 0) opts |= FAST_OPT_STRESS;
+            else if (strcasecmp(argv[i], "radio") == 0) opts |= FAST_OPT_RADIO;
+            else if (strcasecmp(argv[i], "restarts") == 0) opts |= FAST_OPT_RESTARTS;
+            else if (strcasecmp(argv[i], "switches") == 0) opts |= FAST_OPT_SWITCHES;
+            else return cerr("usage: bus selftest [stress] [radio] [restarts] [switches] | bus selftest net");
         }
-#endif
-        fake_result_t r;
-        int rc = fake6809_selftest(&r, selftest_line);
+        int rc = fake6809_fast(opts, selftest_line);
         if (rc == -2) return cerr("bus selftest: bus is live (CoCo attached), refused");
-        outf("selftest checks %u mismatches %u ring_overrun %u\n", r.cycles, r.mismatches, r.ring_overrun);
-        if (rc != 0) return cerr("selftest FAIL");
-        outf("selftest pass\n");
+        if (rc != 0) return cerr("selftest fast FAIL");
+        outf("selftest fast pass\n");
         return 0;
 #endif
     }
-#ifdef PICOCO_PIO_ENGINE
+#ifndef PICOCO_HOST
     if (strcasecmp(argv[1], "engine") == 0) {   /* who holds which PIO SM and DMA channel */
         bus_engine_resources(selftest_line);
         return 0;
     }
 #endif
-    return cerr("usage: bus drive on|off | bus selftest [fast [stress]]");
+    return cerr("usage: bus drive on|off | bus selftest [stress] [radio] [restarts] [switches] | bus engine");
 }
 
 /* "crash panic" is a hidden subcommand (not in help): exercises the

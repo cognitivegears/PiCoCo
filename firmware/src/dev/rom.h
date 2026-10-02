@@ -25,8 +25,8 @@ bool rom_loaded(void);       /* true after a successful load until rom_off/rom_p
 bool rom_is_dos(void);       /* loaded and bytes 0,1 == "DK" (HDB-DOS / RS-DOS style ROM) */
 
 /* Bank-fill primitives: build a banked image straight into bus_mem
- * (begin/publish frame rom_load_file's banked path; all three build
- * fake6809.c's synthetic self-test image). A caller writing through
+ * (begin/publish frame rom_load_file's banked path and the banks
+ * `bus selftest` fills). A caller writing through
  * rom_bank_buf must leave BUS_IO_LO..HI alone. */
 void     rom_banks_begin(void);      /* unbank: count 0, bank 0, rom_have/rom_dos false */
 uint8_t *rom_bank_buf(int b);        /* pointer to bus_mem[b]; NULL if b >= ROM_MAX_BANKS */

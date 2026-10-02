@@ -14,7 +14,7 @@ import time
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from pconsole import open_port  # noqa: E402
 
-TIMEOUT_S = 20.0
+TIMEOUT_S = 60.0  # per command; `bus selftest` takes ~2 s
 
 
 def run(fd, cmd):
@@ -63,7 +63,7 @@ def main():
         print(line)
         if "FAIL" in line or line.startswith("err") or line == "<timeout>":
             ok = False
-    if not any(l == "selftest pass" for l in out):
+    if not any(l == "selftest fast pass" for l in out):
         ok = False
     # A saved config may have loaded a ROM the self-test cleared; replay it.
     # Fire-and-forget: a reboot drops the USB connection before replying "ok".
