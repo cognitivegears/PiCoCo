@@ -256,8 +256,18 @@ static int cmd_bus(int argc, char **argv) {
 #endif
     }
 #ifdef PICOCO_PIO_ENGINE
-    if (strcasecmp(argv[1], "engine") == 0) {   /* spike knobs: bus engine bypass|prio on|off */
-        if (argc >= 4) {
+    if (strcasecmp(argv[1], "engine") == 0) {   /* spike knobs: bus engine bypass|prio on|off, order a|b, trig pin|irq1|irq2|naive */
+        if (argc >= 4 && strcasecmp(argv[2], "order") == 0) {
+            int o = strcasecmp(argv[3], "a") == 0 ? 0 : strcasecmp(argv[3], "b") == 0 ? 1 : -1;
+            if (o < 0) return cerr("usage: bus engine order a|b");
+            bus_engine_variant(o, -1);
+        } else if (argc >= 4 && strcasecmp(argv[2], "trig") == 0) {
+            static const char *const names[] = { "pin", "irq1", "irq2", "naive" };
+            int t = -1;
+            for (int i = 0; i < 4; i++) if (strcasecmp(argv[3], names[i]) == 0) t = i;
+            if (t < 0) return cerr("usage: bus engine trig pin|irq1|irq2|naive");
+            bus_engine_variant(-1, t);
+        } else if (argc >= 4) {
             int v = strcasecmp(argv[3], "on") == 0 ? 1 : strcasecmp(argv[3], "off") == 0 ? 0 : -1;
             if (v < 0) return cerr("usage: bus engine bypass|prio on|off");
             if (strcasecmp(argv[2], "bypass") == 0) bus_engine_tune(v, -1);
@@ -266,7 +276,7 @@ static int cmd_bus(int argc, char **argv) {
         }
         bool b, p;
         bus_engine_get(&b, &p);
-        outf("bus engine bypass %s prio %s\n", b ? "on" : "off", p ? "on" : "off");
+        outf("bus engine bypass %s prio %s, %s\n", b ? "on" : "off", p ? "on" : "off", bus_engine_desc());
         return 0;
     }
 #endif

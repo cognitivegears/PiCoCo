@@ -440,6 +440,7 @@ int fake6809_selftest(fake_result_t *r, void (*line)(const char *s)) {
 #include "hardware/dma.h"
 
 #define FAST_N 4096
+#define FAST_UNSEL (1u << 17)            /* TX word: OE_BUS stays high this cycle */
 #define FAST_WIN 0x3F00                  /* ROM window: table indices 0x0000-0x3EFF */
 static uint32_t fast_tx[FAST_N], fast_rx[FAST_N];
 static uint8_t  stress_buf[4096];
@@ -464,16 +465,26 @@ static void fast_pattern(void) {
 static void fast_mix(bool on) {
     for (int k = 0; k < FAST_N; k++) fast_tx[k] = (on && k % 3 == 2) ? (fast_tx[k] & ~0x4000u) : (fast_tx[k] | 0x4000u);
 }
+/* k%4: 0 read, 1 unselected, 2 read, 3 write: covers write->read, read->gap,
+ * gap->read and write->read->gap. Off: all selected reads. */
+static void fast_gaps(bool on) {
+    for (int k = 0; k < FAST_N; k++) {
+        uint32_t w = (fast_tx[k] | 0x4000u) & ~FAST_UNSEL;
+        if (on && k % 4 == 1) w |= FAST_UNSEL;
+        if (on && k % 4 == 3) w &= ~0x4000u;
+        fast_tx[k] = w;
+    }
+}
 
 static void fast_timing(int e, int pre, int post) {
     for (int k = 0; k < FAST_N; k++)
-        fast_tx[k] = (fast_tx[k] & 0x7FFFu) | ((uint32_t)e << 15) | ((uint32_t)pre << 18) | ((uint32_t)post << 25);
+        fast_tx[k] = (fast_tx[k] & (0x7FFFu | FAST_UNSEL)) | ((uint32_t)e << 15) | ((uint32_t)pre << 18) | ((uint32_t)post << 25);
 }
 
-typedef struct { uint32_t mism, zero, stale, rel_bad, lost; int first_k; uint16_t first_idx; uint8_t first_exp, first_got; } fast_res_t;
+typedef struct { uint32_t mism, zero, stale, rel_bad, lost, spur, wrong, restarts; int first_k; uint16_t first_idx; uint8_t first_exp, first_got; } fast_res_t;
 
 static int fdma_tx = -1, fdma_rx = -1;
-static bool fast_stress;
+static bool fast_stress, fast_restart;
 
 static void fast_burst(fast_res_t *r) {
     memset(r, 0, sizeof *r);
@@ -495,8 +506,13 @@ static void fast_burst(fast_res_t *r) {
     dma_channel_configure(fdma_tx, &c, &pio->txf[sm], fast_tx, FAST_N, false);
     dma_start_channel_mask((1u << fdma_rx) | (1u << fdma_tx));
     uint32_t t0 = time_us_32();
+    uint32_t next_rs = t0 + 50;
     while (dma_channel_is_busy(fdma_rx) && time_us_32() - t0 < 20000) {
         if (fast_stress) memcpy(stress_buf, stress_buf + 2048, 2048), memcpy(stress_buf + 2048, stress_buf, 2048);
+#ifdef PICOCO_PIO_ENGINE
+        /* restart the engine under a running burst: it comes back mid-cycle */
+        if (fast_restart && (int32_t)(time_us_32() - next_rs) >= 0) { bus_engine_rebase(); r->restarts++; next_rs += 50; }
+#endif
     }
     if (dma_channel_is_busy(fdma_rx)) {          /* a dropped push (RX full) leaves the count short */
         r->lost = dma_channel_hw_addr(fdma_rx)->transfer_count;
@@ -506,12 +522,13 @@ static void fast_burst(fast_res_t *r) {
     uint8_t prev = 0;
     for (int k = 0; k < FAST_N; k++) {
         uint16_t idx = fast_tx[k] & 0x3FFF;
-        bool drv = bus_drive && (fast_tx[k] & 0x4000u);   /* a write or bus drive off: the pads must stay undriven (0x00) */
+        bool drv = bus_drive && (fast_tx[k] & 0x4000u) && !(fast_tx[k] & FAST_UNSEL);   /* a write or bus drive off: the pads must stay undriven (0x00) */
         uint8_t exp = drv ? bus_peek(idx) : 0, got = (uint8_t)(fast_rx[k] >> 8), rel = (uint8_t)fast_rx[k];
         if (rel) r->rel_bad++;
         if (got != exp) {
             r->mism++;
             if (got == 0) r->zero++; else if (got == prev) r->stale++;
+            if (!drv) r->spur++; else if (got) r->wrong++;
             if (r->first_k < 0) { r->first_k = k; r->first_idx = idx; r->first_exp = exp; r->first_got = got; }
         }
         prev = exp;
@@ -527,9 +544,10 @@ static void fast_set_rel(int k) {
 
 static void fast_line(void (*line)(const char *), const char *tag, int s, const fast_res_t *r) {
     char buf[160];
-    snprintf(buf, sizeof buf, "fast %s S=%d (%u ns): mismatches %lu/%d (zero %lu stale %lu) rel_nonzero %lu lost %lu",
+    snprintf(buf, sizeof buf, "fast %s S=%d (%u ns): mismatches %lu/%d (zero %lu stale %lu spurious %lu wrong %lu) rel_nonzero %lu lost %lu%s",
              tag, s, (unsigned)(s * 20 / 3), (unsigned long)r->mism, FAST_N, (unsigned long)r->zero,
-             (unsigned long)r->stale, (unsigned long)r->rel_bad, (unsigned long)r->lost);
+             (unsigned long)r->stale, (unsigned long)r->spur, (unsigned long)r->wrong,
+             (unsigned long)r->rel_bad, (unsigned long)r->lost, r->restarts ? " (restarts)" : "");
     line(buf);
     if (r->first_k >= 0) {
         snprintf(buf, sizeof buf, "fast %s first bad cycle %d idx %04x want %02x got %02x",
@@ -610,7 +628,7 @@ int fake6809_fast(bool stress, void (*line)(const char *s)) {
         pio_sm_unclaim(p2, 0);
         bool byp, pri;
         bus_engine_get(&byp, &pri);
-        snprintf(buf, sizeof buf, "fast engine: PIO0 + DMA, input sync bypass %s, DMA bus priority %s", byp ? "on" : "off", pri ? "on" : "off");
+        snprintf(buf, sizeof buf, "fast engine: PIO0 + DMA, input sync bypass %s, DMA bus priority %s, %s", byp ? "on" : "off", pri ? "on" : "off", bus_engine_desc());
         line(buf);
     }
 #endif
@@ -632,6 +650,23 @@ int fake6809_fast(bool stress, void (*line)(const char *s)) {
     fast_line(line, "1.79MHz mixed r/w", 36, &r);
     if (r.mism || r.lost) rc = -1;
     fast_mix(false);
+    fast_gaps(true);                                 /* unselected gaps: never driven, no stale trigger */
+    fast_burst(&r);
+    fast_line(line, "1.79MHz gaps r/w/unsel", 36, &r);
+    if (r.mism || r.lost) rc = -1;
+#ifdef PICOCO_PIO_ENGINE
+    fast_restart = true;                             /* engine restarted every 50 us under the burst */
+    fast_burst(&r);
+    fast_restart = false;
+    snprintf(buf, sizeof buf, "fast 1.79MHz restarts %lu under a gaps burst: spurious %lu wrong %lu (zero %lu = cycles lost to a restart)",
+             (unsigned long)r.restarts, (unsigned long)r.spur, (unsigned long)r.wrong, (unsigned long)r.zero);
+    line(buf);
+    if (r.spur || r.wrong || r.lost) rc = -1;
+    fast_burst(&r);
+    fast_line(line, "1.79MHz gaps after restarts", 36, &r);
+    if (r.mism || r.lost) rc = -1;
+#endif
+    fast_gaps(false);
     bus_drive_set(false);                            /* capture-only: nothing may be driven */
     fast_burst(&r);
     fast_line(line, "1.79MHz drive off", 36, &r);

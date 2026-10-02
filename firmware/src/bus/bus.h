@@ -36,6 +36,8 @@ void bus_engine_drive(bool on);           /* core0: start/stop the SM (bus_drive
 void bus_engine_rebase(void);             /* core0: reload the SM's base after bus_rom_base changed */
 void bus_engine_tune(int bypass, int prio);   /* -1 = leave; input sync bypass, DMA bus priority */
 void bus_engine_get(bool *bypass, bool *prio);
+void bus_engine_variant(int order, int trig);   /* spike part 3: -1 = leave; see bus_core1.c */
+const char *bus_engine_desc(void);
 #else
 #define BUS_WINDOW_ALIGN
 #endif

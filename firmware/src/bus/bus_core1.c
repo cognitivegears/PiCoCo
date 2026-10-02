@@ -29,29 +29,51 @@
 #include "hardware/dma.h"
 #include "hardware/structs/busctrl.h"
 #include "bus_engine.pio.h"
+#include <stdio.h>
 
 static PIO const epio = pio0;
-static int esm = -1, edma_a, edma_b;
-static uint eoff;
+static int esm = -1, hsm, edma_a, edma_b;
+static uint eoff, hoff;
+static const pio_program_t *eprog;
 static bool erunning;
 static bool ebypass = true, eprio = true;   /* measured defaults, see docs/superpowers/specs/2026-10-02-pio-engine-spike.md */
+/* Spike part 3 knobs. eorder: 0 = A (enable before pull), 1 = B (enable after).
+ * etrig: 0 = OE_BUS pin, 1 = helper one flag, 2 = helper two flags,
+ * 3 = helper two flags started at `wait 0` with no flag clear (the naive form). */
+static int eorder = 1, etrig = 0;   /* recommended: B on the pin (spike part 3) */
 
 #define ENG_IN_MASK ((0x3FFFu << PIN_A0) | (1u << PIN_RW) | (1u << PIN_OE_BUS))
 
-static void engine_init(void) {
-    esm = (int)pio_claim_unused_sm(epio, true);
-    eoff = pio_add_program(epio, &bus_engine_program);
-    pio_sm_config c = bus_engine_program_get_default_config(eoff);
+static void engine_load(void) {
+    if (eprog) pio_remove_program(epio, eprog, eoff);
+    eprog = eorder ? &bus_engine_late_program : &bus_engine_program;
+    eoff = pio_add_program(epio, eprog);
+    pio_sm_config c = eorder ? bus_engine_late_program_get_default_config(eoff) : bus_engine_program_get_default_config(eoff);
     sm_config_set_in_pins(&c, PIN_A0);
     sm_config_set_out_pins(&c, PIN_D0, 8);
     sm_config_set_jmp_pin(&c, PIN_RW);
     sm_config_set_in_shift(&c, false, false, 32);    /* shift left: isr = x << 14 | A13..A0 */
     sm_config_set_out_shift(&c, true, false, 32);
     sm_config_set_clkdiv(&c, 1.0f);
+    pio_sm_init(epio, (uint)esm, eoff, &c);
+    pio_sm_set_enabled(epio, (uint)esm, false);
+    if (!etrig)
+        epio->instr_mem[eoff + (eorder ? bus_engine_late_offset_trig : bus_engine_offset_trig)] = (uint16_t)pio_encode_wait_gpio(false, PIN_OE_BUS);
+    epio->instr_mem[hoff + bus_sel_p2_offset_flag1] = etrig >= 2 ? bus_sel_p2_program_instructions[bus_sel_p2_offset_flag1] : (uint16_t)pio_encode_nop();
+}
+
+static void engine_init(void) {
+    esm = (int)pio_claim_unused_sm(epio, true);
+    hsm = (int)pio_claim_unused_sm(epio, true);
+    hoff = pio_add_program(epio, &bus_sel_p2_program);
+    pio_sm_config hc = bus_sel_p2_program_get_default_config(hoff);
+    sm_config_set_clkdiv(&hc, 1.0f);
+    pio_sm_init(epio, (uint)hsm, hoff, &hc);
+    pio_sm_set_enabled(epio, (uint)hsm, false);
     pio_sm_set_pins_with_mask(epio, (uint)esm, 0, 0xFFu << PIN_D0);
     pio_sm_set_pindirs_with_mask(epio, (uint)esm, 0, 0xFFu << PIN_D0);
     for (int g = PIN_D0; g < PIN_D0 + 8; g++) pio_gpio_init(epio, (uint)g);
-    pio_sm_init(epio, (uint)esm, eoff, &c);
+    engine_load();
 
     edma_a = dma_claim_unused_channel(true);
     edma_b = dma_claim_unused_channel(true);
@@ -73,23 +95,32 @@ static void engine_init(void) {
 }
 
 static void engine_stop(void) {
-    pio_sm_set_enabled(epio, (uint)esm, false);
-    pio_sm_set_pins_with_mask(epio, (uint)esm, 0, 0xFFu << PIN_D0);      /* E9: low first... */
-    pio_sm_set_pindirs_with_mask(epio, (uint)esm, 0, 0xFFu << PIN_D0);   /* ...then never left driving */
+    pio_set_sm_mask_enabled(epio, (1u << esm) | (1u << hsm), false);
+    /* Two direct execs, a few clk: pio_sm_set_pins_with_mask() goes pin by pin
+     * and left D0-D7 driven for ~1 us, into the next cycles (spike part 3). */
+    epio->sm[esm].instr = pio_encode_mov(pio_pins, pio_null);       /* E9: low first... */
+    epio->sm[esm].instr = 0xA063u;                                  /* ...then `mov pindirs, null` */
     erunning = false;
 }
 
 static void engine_start(void) {
-    while (dma_channel_is_busy((uint)edma_b)) { }   /* a byte in flight lands before the FIFOs are cleared */
+    /* A pointer still on its way from RX through DMA A to B would land in the
+     * TX FIFO after the clear below and serve every later read one cycle late:
+     * let both channels go quiet first. */
+    while (!pio_sm_is_rx_fifo_empty(epio, (uint)esm) || dma_channel_is_busy((uint)edma_b)) { }
+    busy_wait_at_least_cycles(64);
     pio_sm_clear_fifos(epio, (uint)esm);
     pio_sm_restart(epio, (uint)esm);
+    pio_sm_restart(epio, (uint)hsm);
     pio_sm_put(epio, (uint)esm, (uint32_t)(uintptr_t)bus_rom_base >> 14);
     pio_sm_exec(epio, (uint)esm, pio_encode_pull(false, true));
     pio_sm_exec(epio, (uint)esm, pio_encode_mov(pio_x, pio_osr));
-    pio_sm_exec(epio, (uint)esm, pio_encode_jmp(eoff + bus_engine_wrap_target));
+    pio_sm_exec(epio, (uint)esm, pio_encode_jmp(eoff + (eorder ? bus_engine_late_wrap_target : bus_engine_wrap_target)));
+    pio_sm_exec(epio, (uint)hsm, pio_encode_jmp(hoff + (etrig == 3 ? bus_sel_p2_offset_fall : 0)));
+    if (etrig != 3) epio->irq = 3u;                  /* no flag left from before the stop */
     epio->input_sync_bypass = ebypass ? (epio->input_sync_bypass | ENG_IN_MASK) : (epio->input_sync_bypass & ~ENG_IN_MASK);
     busctrl_hw->priority = eprio ? (BUSCTRL_BUS_PRIORITY_DMA_R_BITS | BUSCTRL_BUS_PRIORITY_DMA_W_BITS) : 0;
-    pio_sm_set_enabled(epio, (uint)esm, true);
+    pio_set_sm_mask_enabled(epio, (1u << esm) | (etrig ? (1u << hsm) : 0), true);   /* together: no flag raised before the read SM runs */
     erunning = true;
 }
 
@@ -111,6 +142,22 @@ void bus_engine_tune(int bypass, int prio) {
     if (erunning) { engine_stop(); engine_start(); }
 }
 void bus_engine_get(bool *bypass, bool *prio) { *bypass = ebypass; *prio = eprio; }
+
+void bus_engine_variant(int order, int trig) {
+    bool run = erunning;
+    if (esm < 0) engine_init();
+    if (erunning) engine_stop();
+    if (order >= 0) eorder = order;
+    if (trig >= 0) etrig = trig;
+    engine_load();
+    if (run) engine_start();
+}
+const char *bus_engine_desc(void) {
+    static const char *const t[] = { "trigger OE_BUS pin", "trigger helper 1 flag", "trigger helper 2 flags", "trigger helper 2 flags naive start" };
+    static char buf[64];
+    snprintf(buf, sizeof buf, "order %s, %s", eorder ? "B (enable after pull)" : "A (enable before pull)", t[etrig]);
+    return buf;
+}
 
 BUS_HOT void bus_core1_main(void) {
     (void)save_and_disable_interrupts();
