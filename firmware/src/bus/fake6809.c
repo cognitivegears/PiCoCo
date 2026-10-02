@@ -234,6 +234,16 @@ int fake6809_selftest(fake_result_t *r, void (*line)(const char *s)) {
     CHECK("read_bank0_marker", cycle(0xC000, true, true, 0, SAMPLE_LATE) == 0xA5);
     CHECK("read_bank0_fill",   cycle(0xC001, true, true, 0, SAMPLE_LATE) == 0x00);
     CHECK("read_top_of_window", cycle(0xFEFF, true, true, 0, SAMPLE_LATE) == 0x00);
+#ifdef PICOCO_PIO_ENGINE
+    (void)cyc0; (void)wr0;
+    /* Pico 2 PIO engine spike: no write path, no hooks, no counters. */
+    #define SKIP(name) line("selftest " name " skipped (spike)")
+    SKIP("bank_switch_next_read"); SKIP("bank_switch_back");
+    SKIP("becker_status_read");    /* banked: the engine serves the I/O page from the bank buffer */
+    SKIP("writes_counted"); SKIP("unselected_ignored"); SKIP("write_data_captured");
+    SKIP("no_ring_overrun"); SKIP("cycles_counted");
+    #undef SKIP
+#else
     cycle(0xFF40, false, true, 1, SAMPLE_LATE);            /* bank select 1 */
     CHECK("bank_switch_next_read", cycle(0xC001, true, true, 0, SAMPLE_LATE) == 0x01);
     cycle(0xFF40, false, true, 0, SAMPLE_LATE);
@@ -304,6 +314,7 @@ int fake6809_selftest(fake_result_t *r, void (*line)(const char *s)) {
     busy_wait_us(2);
     CHECK("cycles_counted", bus_stats.cycles - cyc0 == CYCLES_EXPECTED);   /* 6 reads + 2 bank writes + 10 $FF42 writes; the unselected cycle is not seen */
 #undef CYCLES_EXPECTED
+#endif
     float ns_per = 1e9f * CLKDIV / (float)clock_get_hz(clk_sys);
 #ifdef PICOCO_BOARD_PLUSW
     {
@@ -398,6 +409,7 @@ int fake6809_selftest(fake_result_t *r, void (*line)(const char *s)) {
     line(buf);
     CHECK("response_idle_within_230ns", idle_ok >= 0 && idle_ns <= 230);
 #endif
+#ifndef PICOCO_PIO_ENGINE   /* D0-D7 belong to PIO0 there: SIO cannot drive them */
     {   /* RP2350-E9 probe, information only: drive D0-D7 high, release onto the
          * internal pull-downs and see how long they still read high. A working
          * pull-down (~50-80 k into a few pF) is gone in microseconds. */
@@ -410,6 +422,7 @@ int fake6809_selftest(fake_result_t *r, void (*line)(const char *s)) {
         snprintf(buf, sizeof buf, "selftest pad_hold high then released: 10us %02x 1ms %02x 51ms %02x; low then released: %02x", h10, h1m, h50, l10);
         line(buf);
     }
+#endif
     r->ring_overrun = bus_stats.write_overrun - ov0;
     #undef CHECK
 
@@ -569,6 +582,32 @@ int fake6809_fast(bool stress, void (*line)(const char *s)) {
     fast_pattern();
     fast_set_rel(3);
     pio_sm_set_enabled(pio, sm, true);
+#ifdef PICOCO_PIO_ENGINE
+    {   /* What an 8-bit DMA write puts in a 32-bit TX FIFO: PIO2 SM0, never started. */
+        PIO p2 = pio2;
+        pio_sm_claim(p2, 0);
+        pio_sm_clear_fifos(p2, 0);
+        static uint8_t probe = 0xA7;
+        int ch = dma_claim_unused_channel(true);
+        dma_channel_config dc = dma_channel_get_default_config(ch);
+        channel_config_set_transfer_data_size(&dc, DMA_SIZE_8);
+        channel_config_set_read_increment(&dc, false);
+        channel_config_set_write_increment(&dc, false);
+        dma_channel_configure(ch, &dc, &p2->txf[0], &probe, 1, true);
+        dma_channel_wait_for_finish_blocking(ch);
+        dma_channel_unclaim(ch);
+        pio_sm_exec(p2, 0, pio_encode_pull(false, true));
+        pio_sm_exec(p2, 0, pio_encode_mov(pio_isr, pio_osr));
+        pio_sm_exec(p2, 0, pio_encode_push(false, true));
+        snprintf(buf, sizeof buf, "fast dma 8-bit write of %02x reaches the TX FIFO as %08lx", probe, (unsigned long)p2->rxf[0]);
+        line(buf);
+        pio_sm_unclaim(p2, 0);
+        bool byp, pri;
+        bus_engine_get(&byp, &pri);
+        snprintf(buf, sizeof buf, "fast engine: PIO0 + DMA, input sync bypass %s, DMA bus priority %s", byp ? "on" : "off", pri ? "on" : "off");
+        line(buf);
+    }
+#endif
     snprintf(buf, sizeof buf, "fast timing: cycle %d clk (high 42, low 42), address setup 25 clk, %d cycles back to back%s",
              84, FAST_N, stress ? ", core0 memcpy stress" : "");
     line(buf);

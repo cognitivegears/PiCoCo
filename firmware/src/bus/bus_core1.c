@@ -16,138 +16,105 @@
  * Flash-free per Plan B - everything reachable from here must be BUS_HOT or
  * static inline (see the nm/objdump acceptance check in the task report). */
 #ifndef PICOCO_BOARD_PLUSW
-/* Pico 2: OE_BUS (GP26) is in gpio_in, so one sample carries OE, address, R/W. */
-#define OE_LOW_IN(x) (!((x) & BUS_OE_MASK))
-
-#define KEY_MASK ((0x3FFFu << PIN_A0) | RW_MASK)
-
-/* Precompute while idle, enable on the edge. At 1.79 MHz (CoCo 3 fast mode,
- * all of NitrOS-9) E is high for 279 ns and the CPU latches data at E fall.
- * Address and R/W are valid from Q, a quarter cycle before E, so while OE_BUS
- * is high the loop keeps the response for the address on the bus sitting in
- * the output latch (outputs disabled), and the only work after OE_BUS falls is
- * one compare and one output-enable store.
+/* Pico 2: the PIO + DMA engine (bus_engine.pio) serves ROM-window and I/O-page
+ * reads with no CPU in the per-cycle path; core1 has nothing to do. The CPU
+ * loop this replaced is at tag fw-1.4-cpu-loop. Spike scope: no read hooks,
+ * no write capture, no trace or counters, so the Becker port does not work on
+ * this build.
  *
- * The idle loop is deliberately tiny (~8 clk_sys cycles a pass): it recomputes
- * only when address or R/W change, and a recompute pass is ~33 cycles, so keep
- * work out of both. Static counts, not scope measurements: a hit enables
- * ~55-105 ns after OE_BUS falls; OE_BUS falling during a recompute pass or a
- * miss can be 200 ns or more. The 2026-09-30 version recomputed on every pass
- * and then did three stores. Bench 2026-10-01
- * (NitrOS-9 over the bridge): 0.7-4 % of sectors had a byte read as 0x00, the
- * rate moving with unrelated code changes, i.e. the tail of that spread was
- * past the latch point.
- *
- * A cycle whose OE-low sample does not match the precomputed key (address
- * still settling, or back-to-back cycles with no idle sample) is served from
- * the fresh sample and counted, as before. */
+ * DMA A: PIO0 RX (the table byte's address) -> DMA B READ_ADDR_TRIG, endless.
+ * DMA B: that byte -> PIO0 TX, 8-bit, count 1, re-armed by every A write.
+ * Everything below runs on core0. */
+#include "hardware/pio.h"
+#include "hardware/dma.h"
+#include "hardware/structs/busctrl.h"
+#include "bus_engine.pio.h"
+
+static PIO const epio = pio0;
+static int esm = -1, edma_a, edma_b;
+static uint eoff;
+static bool erunning;
+static bool ebypass = true, eprio = true;   /* measured defaults, see docs/superpowers/specs/2026-10-02-pio-engine-spike.md */
+
+#define ENG_IN_MASK ((0x3FFFu << PIN_A0) | (1u << PIN_RW) | (1u << PIN_OE_BUS))
+
+static void engine_init(void) {
+    esm = (int)pio_claim_unused_sm(epio, true);
+    eoff = pio_add_program(epio, &bus_engine_program);
+    pio_sm_config c = bus_engine_program_get_default_config(eoff);
+    sm_config_set_in_pins(&c, PIN_A0);
+    sm_config_set_out_pins(&c, PIN_D0, 8);
+    sm_config_set_jmp_pin(&c, PIN_RW);
+    sm_config_set_in_shift(&c, false, false, 32);    /* shift left: isr = x << 14 | A13..A0 */
+    sm_config_set_out_shift(&c, true, false, 32);
+    sm_config_set_clkdiv(&c, 1.0f);
+    pio_sm_set_pins_with_mask(epio, (uint)esm, 0, 0xFFu << PIN_D0);
+    pio_sm_set_pindirs_with_mask(epio, (uint)esm, 0, 0xFFu << PIN_D0);
+    for (int g = PIN_D0; g < PIN_D0 + 8; g++) pio_gpio_init(epio, (uint)g);
+    pio_sm_init(epio, (uint)esm, eoff, &c);
+
+    edma_a = dma_claim_unused_channel(true);
+    edma_b = dma_claim_unused_channel(true);
+    dma_channel_config b = dma_channel_get_default_config((uint)edma_b);
+    channel_config_set_transfer_data_size(&b, DMA_SIZE_8);
+    channel_config_set_read_increment(&b, false);
+    channel_config_set_write_increment(&b, false);
+    channel_config_set_dreq(&b, pio_get_dreq(epio, (uint)esm, true));
+    channel_config_set_high_priority(&b, true);
+    dma_channel_configure((uint)edma_b, &b, &epio->txf[esm], bus_table, 1, false);
+    dma_channel_config a = dma_channel_get_default_config((uint)edma_a);
+    channel_config_set_transfer_data_size(&a, DMA_SIZE_32);
+    channel_config_set_read_increment(&a, false);
+    channel_config_set_write_increment(&a, false);
+    channel_config_set_dreq(&a, pio_get_dreq(epio, (uint)esm, false));
+    channel_config_set_high_priority(&a, true);
+    dma_channel_configure((uint)edma_a, &a, &dma_hw->ch[edma_b].al3_read_addr_trig, &epio->rxf[esm],
+                          dma_encode_endless_transfer_count(), true);
+}
+
+static void engine_stop(void) {
+    pio_sm_set_enabled(epio, (uint)esm, false);
+    pio_sm_set_pins_with_mask(epio, (uint)esm, 0, 0xFFu << PIN_D0);      /* E9: low first... */
+    pio_sm_set_pindirs_with_mask(epio, (uint)esm, 0, 0xFFu << PIN_D0);   /* ...then never left driving */
+    erunning = false;
+}
+
+static void engine_start(void) {
+    while (dma_channel_is_busy((uint)edma_b)) { }   /* a byte in flight lands before the FIFOs are cleared */
+    pio_sm_clear_fifos(epio, (uint)esm);
+    pio_sm_restart(epio, (uint)esm);
+    pio_sm_put(epio, (uint)esm, (uint32_t)(uintptr_t)bus_rom_base >> 14);
+    pio_sm_exec(epio, (uint)esm, pio_encode_pull(false, true));
+    pio_sm_exec(epio, (uint)esm, pio_encode_mov(pio_x, pio_osr));
+    pio_sm_exec(epio, (uint)esm, pio_encode_jmp(eoff + bus_engine_wrap_target));
+    epio->input_sync_bypass = ebypass ? (epio->input_sync_bypass | ENG_IN_MASK) : (epio->input_sync_bypass & ~ENG_IN_MASK);
+    busctrl_hw->priority = eprio ? (BUSCTRL_BUS_PRIORITY_DMA_R_BITS | BUSCTRL_BUS_PRIORITY_DMA_W_BITS) : 0;
+    pio_sm_set_enabled(epio, (uint)esm, true);
+    erunning = true;
+}
+
+void bus_engine_drive(bool on) {
+    if (esm < 0) engine_init();
+    if (erunning) engine_stop();
+    if (on) engine_start();
+}
+
+/* core0, after bus_rom_base changed: x must point at the new window. The SM is
+ * stopped for a few us; a cycle in that gap reads 0x00. */
+void bus_engine_rebase(void) {
+    if (erunning) { engine_stop(); engine_start(); }
+}
+
+void bus_engine_tune(int bypass, int prio) {
+    if (bypass >= 0) ebypass = bypass;
+    if (prio >= 0) eprio = prio;
+    if (erunning) { engine_stop(); engine_start(); }
+}
+void bus_engine_get(bool *bypass, bool *prio) { *bypass = ebypass; *prio = eprio; }
+
 BUS_HOT void bus_core1_main(void) {
-    (void)save_and_disable_interrupts();          /* never restored: core1 does nothing else */
-    uint32_t in;
-    for (;;) {
-        uint32_t key = ~0u;                       /* no idle sample yet: cannot match a real sample */
-        uint32_t oemask = 0;
-        for (;;) {                                /* idle: keep the latch loaded for the address on the bus */
-            in = sio_hw->gpio_in;
-            if (OE_LOW_IN(in)) break;             /* `in` is the sample that saw the cycle start */
-            uint32_t k = in & KEY_MASK;
-            if (k != key) {
-                /* Address lines do not all arrive together (A7 lags a few ns).
-                 * A recompute pass is long, so do not spend one on a sample that
-                 * is still moving: look again first. */
-                if ((sio_hw->gpio_in ^ in) & (KEY_MASK | BUS_OE_MASK)) continue;
-                key = k;
-                oemask = ((in & RW_MASK) && bus_drive) ? D_MASK : 0;   /* never enable into a write */
-                if (oemask) {                     /* latch only (outputs are off), and only for a read we will
-                                                   * drive: `bus selftest` puts its write data in this latch */
-                    sio_hw->gpio_clr = D_MASK;
-                    sio_hw->gpio_set = (uint32_t)bus_peek((in >> PIN_A0) & 0x3FFF) << PIN_D0;
-                }
-            }
-        }
-        bool hit = (in & KEY_MASK) == key;
-        if (hit) sio_hw->gpio_oe_set = oemask;
-        bool rd = (in & RW_MASK) != 0;
-        uint16_t idx = (in >> PIN_A0) & 0x3FFF;
-        if (rd) {                                 /* CoCo read */
-            bool drv = bus_drive;
-            if (drv) {
-                /* The enable above already happened on a hit; now check what was
-                 * enabled. The latch is only reloaded when address/RW change, so
-                 * core0 changing the table, the ROM bank or bus_drive while the
-                 * bus sat on one address leaves it stale (bench 2026-10-01: a
-                 * second `bus selftest` read 0xFF from a freshly built image).
-                 * Rare, so it is corrected here, after the fast path, not paid
-                 * for in the idle loop. */
-                uint32_t v = (uint32_t)bus_peek(idx) << PIN_D0;
-                if (!hit || !oemask || v != (sio_hw->gpio_out & D_MASK)) {   /* compare with the latch itself; drive first, count after */
-                    sio_hw->gpio_clr = D_MASK;
-                    sio_hw->gpio_set = v;
-                    sio_hw->gpio_oe_set = D_MASK;
-                    /* A miss with a key is address skew: a sample taken while the lines
-                     * were still changing and no clean idle sample before OE_BUS fell.
-                     * The second look in the idle loop took this from ~5 % of reads to 0. */
-                    if (!hit) {
-                        if (key != ~0u) { bus_stats.resample_key = key; bus_stats.resample_in = in; bus_stats.addr_resample++; bus_stats.addr_resample_bits |= (idx ^ ((key >> PIN_A0) & 0x3FFF)); }
-                        else bus_stats.late_precompute++;   /* back-to-back cycles (boot ROM copy): expected */
-                    }
-                }
-            }
-            /* Trace and counters run here, while the data is already on the bus
-             * and E is still high; the read hooks run after the release, in E
-             * low. A CoCo 1/2 executes its DOS ROM from the cart: the cycle
-             * after a Becker read is an opcode fetch from this same table,
-             * 1.12 us later (167 clk_sys cycles, OE_BUS low for ~80 of them).
-             * With hooks and trace both after the cycle (~160 cycles for a
-             * Becker read) the loop reached that fetch too late and the CPU
-             * read 0x00; with both inside the cycle they ran into the next
-             * one and held this byte on the bus (bench 2026-10-01, CoCo 2,
-             * coco/carttest.asm). Measured: trace + counters ~55 cycles, so
-             * they fit E high; a hook has E low, ~80, to itself. Keep hooks
-             * well under that. A CoCo 3 runs the DOS from RAM, never saw it. */
-            bus_record_read(idx, bus_peek(idx), time_us_32());
-            if (drv) {
-                /* End of cycle = OE_BUS high on three samples running, so a
-                 * spike on OE_BUS cannot clear the pads mid-cycle. Cheap guard:
-                 * oe_glitch has read 0 on the bench so far. */
-                for (;;) {
-                    if (!OE_HIGH()) continue;
-                    if (OE_HIGH() && OE_HIGH()) break;
-                    bus_stats.oe_glitch++;
-                }
-                sio_hw->gpio_clr = D_MASK;        /* leave the pads at 0 V, see DISCHARGE below */
-                sio_hw->gpio_clr = D_MASK;        /* second store: two clk_sys cycles of drive, as on the write path */
-                sio_hw->gpio_oe_clr = D_MASK;
-            } else {
-                while (!OE_HIGH()) { }
-                sio_hw->gpio_oe_clr = D_MASK;     /* bus_drive went false after the precompute enabled us */
-            }
-            bus_run_read_hooks(idx);
-        } else {                                  /* CoCo write: use the last gpio_in sample taken
-                                                    * while OE_BUS was still low, not the first one
-                                                    * with OE_BUS high (U10 may have begun
-                                                    * tri-stating by then). prev starts at `in`,
-                                                    * itself sampled while OE_BUS was low above. */
-            uint32_t d, prev = in;
-            for (;;) {
-                d = sio_hw->gpio_in;
-                if (OE_HIGH()) break;
-                prev = d;
-            }
-            /* DISCHARGE: RP2350-E9 - a pad left above ~1 V with only the internal
-             * pull-down sits near 2.2 V, so the bits the CoCo just wrote would
-             * still read high through U10 at the start of the next read cycle.
-             * A late $FF41 poll then showed bit 1 from the written byte, the
-             * Becker "ready" bit (bench 2026-10-01, NitrOS-9 boot: phantom byte
-             * after a $26 write). Drive low for two SIO writes, then release;
-             * OE_BUS is already high, so U10 is off. */
-            sio_hw->gpio_clr = D_MASK;
-            sio_hw->gpio_oe_set = D_MASK;
-            sio_hw->gpio_clr = D_MASK;
-            sio_hw->gpio_oe_clr = D_MASK;
-            bus_on_write(idx, (uint8_t)((prev >> PIN_D0) & 0xFF), time_us_32());
-        }
-    }
+    (void)save_and_disable_interrupts();
+    for (;;) __wfe();
 }
 #else  /* PICOCO_BOARD_PLUSW */
 #define E_MASK     (1u << PIN_E)

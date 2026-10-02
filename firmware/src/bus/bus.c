@@ -1,7 +1,7 @@
 #include "bus.h"
 #include <string.h>
 
-uint8_t bus_table[BUS_TABLE_SIZE];
+uint8_t bus_table[BUS_TABLE_SIZE] BUS_WINDOW_ALIGN;
 const uint8_t *volatile bus_rom_base = bus_table;
 volatile bus_stats_t bus_stats;
 volatile bool bus_drive;
@@ -57,7 +57,13 @@ void bus_fw_disable(uint16_t addr) {
     if ((addr & 0xFFE0) == 0xFF60) bus_fw_mask &= ~(1u << (addr & 0x1F));
 }
 
+#ifdef PICOCO_PIO_ENGINE
+void bus_drive_set(bool on) { bus_drive = on; bus_engine_drive(on); }
+void bus_set_rom_base(const uint8_t *p) { bus_rom_base = p; bus_engine_rebase(); }
+#else
 void bus_drive_set(bool on) { bus_drive = on; }
+void bus_set_rom_base(const uint8_t *p) { bus_rom_base = p; }
+#endif
 bool bus_drive_get(void) { return bus_drive; }
 
 BUS_HOT void bus_set_read(uint16_t idx, uint8_t v) {

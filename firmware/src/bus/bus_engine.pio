@@ -1,0 +1,26 @@
+; Pico 2 bus engine (pio-engine spike): serves cartridge reads with no CPU in
+; the path. PIO0, one SM. in_base = GP8 (A0), out_base = GP0 (D0, 8 pins),
+; jmp_pin = GP22 (R/W). x = table base >> 14 (bus_table/rom bank, 16 KB
+; aligned), loaded by core0 while the SM is stopped (bus_engine_rebase).
+;
+; Per read: the SM pushes the address of the table byte; DMA A moves it into
+; DMA B's READ_ADDR_TRIG; DMA B copies that one byte into the TX FIFO.
+.program bus_engine
+.pio_version 1
+.wrap_target
+top:
+    mov isr, x              ; isr = base >> 14, shift count 0
+    wait 0 gpio 26          ; OE_BUS low: selected and E high
+    jmp pin rd              ; R/W high = CoCo read
+    wait 1 gpio 26          ; a write: never drive
+    jmp top
+rd:
+    in pins, 14             ; isr = base | A13..A0: the table byte's address
+    push noblock
+    mov pindirs, ~null      ; drive now: the pads still hold 0x00 from the last release
+    pull block              ; the byte, from DMA B
+    out pins, 8
+    wait 1 gpio 26          ; end of the cycle
+    mov pins, null [1]      ; RP2350-E9: drive low two clk...
+    mov pindirs, null       ; ...then release
+.wrap

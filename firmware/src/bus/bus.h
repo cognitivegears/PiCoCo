@@ -28,12 +28,25 @@ typedef struct {
     uint32_t fw_selected;    /* Plus-W loop: cycles selected by bus_fw_mask ($FF60-$FF7F) */
 } bus_stats_t;   /* ponytail: addr_resample* = diagnostic, address changed between two samples after OE_BUS fell */
 
+/* Pico 2 PIO engine: the SM builds a table byte's address as (base >> 14) << 14
+ * | A13..A0, so every ROM window (bus_table, each rom bank) is 16 KB aligned. */
+#ifdef PICOCO_PIO_ENGINE
+#define BUS_WINDOW_ALIGN __attribute__((aligned(BUS_TABLE_SIZE)))
+void bus_engine_drive(bool on);           /* core0: start/stop the SM (bus_drive) */
+void bus_engine_rebase(void);             /* core0: reload the SM's base after bus_rom_base changed */
+void bus_engine_tune(int bypass, int prio);   /* -1 = leave; input sync bypass, DMA bus priority */
+void bus_engine_get(bool *bypass, bool *prio);
+#else
+#define BUS_WINDOW_ALIGN
+#endif
+
 extern uint8_t bus_table[BUS_TABLE_SIZE];
 
 /* ROM window source: bus_table by default, a 16 KB bank when a banked image
  * is loaded (rom.c). Swapped by the $FF40 write hook on core1; a pointer
  * store is atomic so a read in flight sees the old or the new bank whole. */
 extern const uint8_t *volatile bus_rom_base;
+void bus_set_rom_base(const uint8_t *p);   /* core0 store of bus_rom_base (also re-points the Pico 2 engine) */
 
 /* What a CoCo read of idx returns: ROM window from bus_rom_base, I/O page
  * ($FF00-$FFFF, idx >= 0x3F00) from bus_table. always_inline: used by core1. */

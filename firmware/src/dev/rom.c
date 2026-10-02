@@ -9,7 +9,7 @@
 static const device_t rom_device = { "rom", ROM_LO, ROM_HI, NULL, NULL };
 
 /* 128 KB of SRAM, .bss. Only the loaded banks are meaningful. */
-static uint8_t rom_banks[ROM_MAX_BANKS][ROM_BANK_SIZE];
+static uint8_t rom_banks[ROM_MAX_BANKS][ROM_BANK_SIZE] BUS_WINDOW_ALIGN;
 static volatile uint8_t rom_nbanks;     /* 0 = unbanked; written by core0 (loader) only */
 static volatile uint8_t rom_bank_mask;
 static bool rom_have;
@@ -33,7 +33,7 @@ void rom_init(void) {
 static void unbank(void) {
     rom_nbanks = 0;
     rom_bank_mask = 0;
-    bus_rom_base = bus_table;
+    bus_set_rom_base(bus_table);
 }
 
 void rom_banks_begin(void) {
@@ -52,7 +52,7 @@ int rom_publish_banks(int nb) {
     /* Order matters for core1: base at bank 0, then mask, then the count
      * that lets the $FF40 hook start switching (same order as the old
      * rom_load_mem banked path). */
-    bus_rom_base = rom_banks[0];
+    bus_set_rom_base(rom_banks[0]);
     rom_bank_mask = (uint8_t)(nb - 1);
     rom_nbanks = (uint8_t)nb;
     rom_have = true;
