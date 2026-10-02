@@ -271,6 +271,32 @@ before `xrscreen.py` when `-type` has several keys.
    python3 coco/tools/xrscreen.py --wait-for 'PICOCO  32K ECB'
    ```
 
+4. CoCo 3 (autostart, no typing; `-machine coco3`, no `-no-cart-autorun`):
+   ```
+   xroar -machine coco3 -becker -becker-port 65511 -cart-rom manager \
+         -rompath ~/.xroar/roms -gdb -ao null -ui null &
+   python3 coco/tools/xrscreen.py --wait-for 'COCO3'
+   ```
+   Row 0 reads `PICOCO  64K ECB COCO3` and the two files are listed. XRoar
+   cannot swap its cart ROM, so the `$16`/`$17`/`$18` leave paths are bench
+   steps. `-type '\n\r'` (the `$17` restart) was tried but the stub's screen
+   never changed (no BASIC prompt exists to take the keys), so that check is
+   left to the bench.
+
+   **Super ECB patches a `DK` cart.** On a CoCo 3, Super Extended BASIC copies
+   the cart into RAM and patches the copy as if it were Disk BASIC (coco3.rom
+   `$C321`): 3 bytes at `$C0D9` and 11 NOPs at `$C8B4`, or at `$C0C6` when the
+   byte at `$C004` is `$D6`. The stub therefore keeps only a `jmp` at `$C002`,
+   real code from `$C100`, and `coco/stub/Makefile` fails the build if those
+   zones are not zero (before this, the patch landed mid-`POLL` and the first
+   poll always failed with `PICOCO NOT RESPONDING`).
+
+   Two harness traps: `picoco-host` exits when its stdin hits EOF, so run it
+   as `(sleep 3000 | build-host/picoco-host --dir "$D" --port 65511 --ui &)`;
+   and XRoar's GDB stub on `coco3` often never answers the first read (a
+   timed-out client also uses up the single connection), so restart XRoar
+   until `xrscreen.py` gets through.
+
 ## On the bench (real hardware)
 
 1. Copy `PICOCO.DSK` to the PiCoCo's flash: `fs export`, drag it onto the

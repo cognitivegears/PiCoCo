@@ -191,9 +191,6 @@ static int peek2(const char *name, uint8_t two[2]) {
 
 static uint8_t launch(void) {
     if (!nroms) return 0;
-    /* ponytail: a CoCo 3 runs the cart from a RAM copy, so neither JMP $C000 nor the
-     * cold restart reaches a swapped ROM yet; the next plan adds the CoCo 3 path. */
-    if (caps & UI_CAP_COCO3) { set_msg("COCO 3: NOT YET"); return 0; }
     const char *name = roms[sel];
     int rc = rom_check_file(g_store, name);
     uint8_t two[2];
@@ -202,7 +199,11 @@ static uint8_t launch(void) {
     bool dos = two[0] == 'D' && two[1] == 'K';
     if (dos && !(caps & UI_CAP_ECB)) { set_msg("NEEDS EXTENDED BASIC"); return 0; }
     snprintf(pending, sizeof pending, "%s", name);
-    pending_act = dos ? UI_ACT_COLD : UI_ACT_JUMP;
+    /* A CoCo 3 copies the cart to RAM at boot and runs all-RAM: a pak is
+     * started in ROM mode like the CoCo 3's own cart start ($8C28), a DOS ROM
+     * by re-running reset so the new cart is copied. */
+    bool c3 = (caps & UI_CAP_COCO3) != 0;
+    pending_act = dos ? (c3 ? UI_ACT_COLD3 : UI_ACT_COLD) : (c3 ? UI_ACT_JUMP3 : UI_ACT_JUMP);
     return pending_act;
 }
 
@@ -212,7 +213,7 @@ static uint8_t on_key(uint8_t key) {
     if (key == UI_KEY_UP && sel > 0) sel--;
     else if (key == UI_KEY_DOWN && sel + 1 < nroms) sel++;
     else if (key == UI_KEY_ENTER) act = launch();
-    else if (key == UI_KEY_BREAK) { pending[0] = '\0'; act = pending_act = UI_ACT_WARM; }
+    else if (key == UI_KEY_BREAK) { pending[0] = '\0'; act = pending_act = (caps & UI_CAP_COCO3) ? UI_ACT_WARM3 : UI_ACT_WARM; }
     if (sel < top) top = sel;
     if (sel >= top + LIST_ROWS) top = sel - LIST_ROWS + 1;
     return act;

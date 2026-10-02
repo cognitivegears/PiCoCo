@@ -29,7 +29,15 @@ FRAME   equ BUFSZ+10
 
         org $C000
         fcc "DK"
-START   orcc #$50
+* $C002 is the entry on every path. Only a jump lives here: on a CoCo 3,
+* Super Extended BASIC copies a DK cart to RAM and patches the copy as if it
+* were Disk BASIC (coco3.rom $C321): 3 bytes at $C0D9 and 11 NOPs at $C8B4,
+* or at $C0C6 if the byte at $C004 is $D6. Nothing of ours may sit there, and
+* $C004 must never be $D6 (it is the high byte of this jump's target, $C1).
+START   jmp BEGIN
+
+        rmb $C100-*
+BEGIN   orcc #$50
         leas -FRAME,s
         tfr s,y
         lda #$A5
@@ -41,13 +49,15 @@ START   orcc #$50
         sta FLAGS,y
         clr KEY,y
 MAIN    jsr POLL
-KEYW    jsr [$A000]
+KEYW    pshs y
+        jsr [$A000]
+        puls y                  PULS leaves the flags alone: Z is still POLCAT's
         beq KEYW
         sta KEY,y
         clr FLAGS,y
         bra MAIN
 
-* A = capability bits: 0 32K (a $7FFF write must take and not mirror $3FFF), 2 Extended BASIC, 4 CoCo 3
+* A = capability bits: 0 32K (a $7FFF write must take and not mirror $3FFF), 1 64K, 2 Extended BASIC, 4 CoCo 3
 DETECT  clrb
         ldx $8000
         cmpx #$4558
@@ -56,7 +66,7 @@ DETECT  clrb
 DET1    lda $FFFE
         cmpa #$8C
         bne DET2
-        orb #$10
+        orb #$12                CoCo 3, and 64K with it
 DET2    pshs b
         lda $7FFF
         ldb $3FFF
@@ -168,7 +178,9 @@ POLLB1  lda ,x+
         beq POLLB2
         sta ,u+
         bra POLLB1
-POLLB2  jsr [$A000]
+POLLB2  pshs y
+        jsr [$A000]
+        puls y
         beq POLLB2
         lda #$A5
         sta UICTL
@@ -231,7 +243,8 @@ ALV1    lda ,x+
         puls a
         jmp ,y
 
-* position-independent; A = action code. Sends 'G', waits for $06.
+* position-independent; A = action code ($10 jump, $11 cold, $13 warm, $16 CoCo 3 ROM-mode
+* jump, $17 CoCo 3 cold, $18 CoCo 3 warm). Sends 'G', waits for $06.
 LEAVER  tfr a,b
         lda #'G
         sta BDATA
@@ -252,10 +265,24 @@ LV2     lda BDATA
         beq LVJMP
         cmpb #$13
         beq LVWARM
-        clr RSTSW
+        cmpb #$16
+        beq LVJMP3
+        cmpb #$17
+        beq LVCOLD3
+        cmpb #$18
+        beq LVWARM3
+        clr RSTSW               11: cold restart
 LVWARM  jmp [$FFFE]
 LVJMP   andcc #$AF
         jmp $C000
+* CoCo 3: start the pak as the CoCo 3 ROM's own cart start does ($8C28):
+* 16K internal + 16K cartridge ROM, ROM mode. Interrupts stay masked.
+LVJMP3  lda #$CC
+        sta $FF90
+        sta $FFDE
+        jmp $C000
+LVCOLD3 clr RSTSW               reset recopies the cart (now the new ROM) to RAM
+LVWARM3 jmp $8C1B
 LVFAIL  leas FRAME,y
         jmp START
 LEAVEND
