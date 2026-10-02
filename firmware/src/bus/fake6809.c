@@ -411,6 +411,7 @@ int fake6809_selftest(fake_result_t *r, void (*line)(const char *s)) {
 #include "hardware/dma.h"
 #include "hardware/watchdog.h"
 #include "hardware/structs/busctrl.h"
+#include "hardware/structs/m33.h"
 #include "net.h"
 #ifdef PICOCO_BOARD_PLUSW
 #include "pico/cyw43_arch.h"
@@ -578,6 +579,100 @@ static void (*fast_mid_burst)(void);     /* called once, ~200 us into a burst (d
 static int radio_cb(void *env, const cyw43_ev_scan_result_t *r) { (void)env; if (r) radio_results++; return 0; }
 #endif
 
+/* Bank switches under a burst (fast_switch): banks 0 and 1 alternate.
+ * - Window: each switch logs the RX progress before and after it (p0, p1:
+ *   cycles whose result had landed). A read before p0 must give the old bank,
+ *   one after p1 the new one, one in p0..p1 either; any other byte is bad.
+ * - Phase: the fake runs clk-exact from its DMA start (84 clk per cycle; a
+ *   Pico 2's unselected cycle is 1 clk longer), so the DWT cycle count at the start and just
+ *   before the exec store places each exec in cycle c at phase 0..83 clk (t=0
+ *   = the previous cycle's OE_BUS rise, plus a constant start offset of a few
+ *   clk). The exec is placed at a random phase (fast_switch_bank) and cycle
+ *   c's read tallied old/new by phase: it must switch from new to old at one
+ *   phase (its `in x, 3`), and cycle c+1 must read new. */
+#define SW_MAX 64
+#define SW_BIN 4
+typedef struct { int p0, p1; uint32_t t; uint8_t bank; } sw_rec_t;
+typedef struct { uint32_t switches, bad, wrong_bank, next_old, ph_old[84 / SW_BIN + 1], ph_new[84 / SW_BIN + 1]; int bad_k; uint8_t bad_got, bad_exp; } sw_res_t;
+static sw_rec_t sw_log[SW_MAX];
+static int sw_n, rx_pos;
+static uint8_t sw_bank0;
+static uint32_t sw_t0;
+static sw_res_t swr;
+static int rx_progress(void) {
+    while (rx_pos < FAST_N && ((volatile uint32_t *)fast_rx)[rx_pos] != 0xDEADBEEFu) rx_pos++;
+    return rx_pos;
+}
+static int sw_c;                                 /* the fake's timeline: cycle sw_c starts sw_start clk after sw_t0 */
+static uint32_t sw_start;
+static inline uint32_t sw_len(int c) {
+#ifdef PICOCO_BOARD_PLUSW
+    (void)c;
+    return 84;                                   /* the selects are pins here: every cycle is the same length */
+#else
+    return 84 + (D_SEL(fast_desc[c]) ? 0 : 1);
+#endif
+}
+/* The exec lands at a chosen phase of the cycle under way: inside the lock,
+ * spin on the cycle counter until that phase, then exec. SRAM, so no flash
+ * fetch sits between the timestamp and the store. */
+static void __no_inline_not_in_flash_func(fast_switch_bank)(uint32_t target) {
+    uint8_t nb = bus_bank ^ 1;
+    int p0 = rx_progress();
+    uint32_t irq = bus_engine_lock(), t;
+    t = m33_hw->dwt_cyccnt;                      /* catch the timeline up, then aim at target in this cycle or the next */
+    while (sw_c + 1 < FAST_N && t - sw_t0 - sw_start >= sw_len(sw_c)) { sw_start += sw_len(sw_c); sw_c++; }
+    uint32_t deadline = sw_t0 + sw_start + target;
+    if ((int32_t)(deadline - t) < 16) deadline += sw_len(sw_c);   /* too close or past: the next cycle */
+    while ((int32_t)((t = m33_hw->dwt_cyccnt) - deadline) < 0) { }
+    bus_engine_set_bank_locked(nb);
+    bus_engine_unlock(irq);
+    sw_log[sw_n++] = (sw_rec_t){ p0, rx_progress(), t, nb };
+}
+/* 1 for a read cycle c whose two banks differ: old (2) or new (1); 0 otherwise */
+static int sw_read_bank(int c, uint8_t oldb) {
+    if (c < 0 || c >= FAST_N) return 0;
+    uint32_t d = fast_desc[c];
+    uint16_t idx = d & 0x3FFF;
+    if (!((d & D_RD) && D_SEL(d)) || idx >= FAST_WIN || bus_mem[0][idx] == bus_mem[1][idx]) return 0;
+    uint8_t got = (uint8_t)(fast_rx[c] >> 8);
+    return got == bus_mem[oldb][idx] ? 2 : got == bus_mem[oldb ^ 1][idx] ? 1 : 0;
+}
+static void score_switches(sw_res_t *s) {
+    memset(s, 0, sizeof *s);
+    s->bad_k = -1;
+    s->switches = (uint32_t)sw_n;
+    uint8_t cur = sw_bank0;
+    int j = 0;
+    for (int k = 0; k < FAST_N; k++) {
+        while (j < sw_n && sw_log[j].p1 < k) { cur = sw_log[j].bank; j++; }   /* switch j is behind us */
+        bool inwin = j < sw_n && sw_log[j].p0 <= k;
+        uint32_t d = fast_desc[k];
+        uint16_t idx = d & 0x3FFF;
+        uint8_t got = (uint8_t)(fast_rx[k] >> 8), now = bus_mem[cur][idx], other = bus_mem[cur ^ 1][idx];
+        if (!((d & D_RD) && D_SEL(d))) { if (got == 0) continue; now = 0; }
+        else if (got == now) continue;
+        else if (got == other) { if (!inwin) s->wrong_bank++; continue; }
+        s->bad++;
+        if (s->bad_k < 0) { s->bad_k = k; s->bad_got = got; s->bad_exp = now; }
+    }
+    /* phase of each exec */
+    uint32_t start = 0;
+    int c = 0;
+    uint8_t oldb = sw_bank0;
+    for (j = 0; j < sw_n; j++) {
+        uint32_t dt = sw_log[j].t - sw_t0;
+        while (c + 1 < FAST_N && dt - start >= sw_len(c)) start += sw_len(c++);
+        uint32_t ph = dt - start;
+        if (ph > 84) ph = 84;
+        int b = sw_read_bank(c, oldb);
+        if (b == 2) s->ph_old[ph / SW_BIN]++;
+        if (b == 1) s->ph_new[ph / SW_BIN]++;
+        if (sw_read_bank(c + 1, oldb) == 2) s->next_old++;
+        oldb = sw_log[j].bank;
+    }
+}
+
 static void fast_burst(fast_res_t *r) {
     memset(r, 0, sizeof *r);
     r->first_k = r->spur_k = -1;
@@ -599,6 +694,11 @@ static void fast_burst(fast_res_t *r) {
     watchdog_update();
     fast_pop();                                  /* writes left from before: not this burst's */
     fast_ncap = 0;
+    rx_pos = 0; sw_n = 0; sw_bank0 = bus_bank;
+    m33_hw->demcr |= M33_DEMCR_TRCENA_BITS;
+    m33_hw->dwt_ctrl |= M33_DWT_CTRL_CYCCNTENA_BITS;
+    sw_c = 0; sw_start = 0;
+    sw_t0 = m33_hw->dwt_cyccnt;
     dma_start_channel_mask((1u << fdma_rx) | (1u << fdma_tx));
     uint32_t t0 = time_us_32();
     uint32_t next_rs = t0 + 50;
@@ -610,13 +710,13 @@ static void fast_burst(fast_res_t *r) {
         if (fast_stress) memcpy(stress_buf, stress_buf + 2048, 2048), memcpy(stress_buf + 2048, stress_buf, 2048);
         /* restart the engine under a running burst: it comes back mid-cycle */
         if (fast_restart && (int32_t)(time_us_32() - next_rs) >= 0) { bus_engine_drive(true); r->restarts++; next_rs += 50; }
-        /* bank switch under a running burst (to the same bank: the bytes stay right) */
-        if (fast_switch && (int32_t)(time_us_32() - next_rs) >= 0) {
-            /* any phase of the 84-clk bus cycle: 50 us alone is 89.29 cycles, so
-             * a burst saw only ~7 phases 12 clk apart, and which ones depended on
+        /* bank switch under a running burst, 0 <-> 1 */
+        if (fast_switch && sw_n < SW_MAX && (int32_t)(time_us_32() - next_rs) >= 0) {
+            /* a random phase of the 84-clk bus cycle: 50 us alone is 89.29 cycles,
+             * so a burst saw only ~7 phases 12 clk apart, and which ones depended on
              * code layout (a pause race hid there through Task 1) */
-            busy_wait_at_least_cycles(xs32(&sw_seed) % 84);
-            bus_engine_set_bank(bus_bank); r->restarts++; next_rs += 50;
+            fast_switch_bank(xs32(&sw_seed) % 84);
+            r->restarts++; next_rs += 50;
         }
         if (fast_mid_burst && !mid_done && time_us_32() - t0 > 200) { fast_mid_burst(); mid_done = true; }
         fast_pop();                              /* the write queue holds 255: keep it drained (and off core0's devices) */
@@ -640,6 +740,12 @@ static void fast_burst(fast_res_t *r) {
     }
     if (!events_drained()) r->lost++;            /* core1 never caught up: shows as lost */
     fast_pop();
+    if (fast_switch) {
+        score_switches(&swr);
+        r->mism = swr.bad + swr.wrong_bank;
+        r->first_k = swr.bad_k;
+        return;
+    }
     uint8_t prev = 0;
     for (int k = 0; k < FAST_N; k++) {
         uint32_t d = fast_desc[k];
@@ -1093,32 +1199,55 @@ int fake6809_fast(int opts, void (*line)(const char *s)) {
     fast_burst(&r);
     fast_line(line, "1.79MHz gaps after restarts", SREAL, &r);
     if (r.mism || r.lost) rc = -1;
-    if (opts & FAST_OPT_SWITCHES) {                  /* repeat just the switch burst; a failed one restarts the engine */
-        uint32_t tot = 0, bad = 0;
+    fast_fill_banks();                               /* banks 0 and 1 differ for the switch bursts */
+    bus_engine_set_bank(0);
+    if (opts & FAST_OPT_SWITCHES) {                  /* 40 switch bursts, reads and gaps in turn */
+        sw_res_t t;
+        memset(&t, 0, sizeof t);
+        uint32_t badb = 0;
         for (int i = 0; i < 40; i++) {
+            if (i & 1) fast_gaps(); else fast_pattern(D_CTS);
+            fast_at(0, SREAL);
             fast_switch = true; fast_burst(&r); fast_switch = false;
-            tot += r.restarts;
-            if (r.mism) {
-                bad++;
-                snprintf(buf, sizeof buf, "fast switches: burst %d mism %lu zero %lu stale %lu wrong %lu first %d, pio0 irq %02lx pc %lu",
-                         i, (unsigned long)r.mism, (unsigned long)r.zero, (unsigned long)r.stale, (unsigned long)r.wrong, r.first_k,
-                         (unsigned long)pio0->irq, (unsigned long)pio0->sm[0].addr);
+            bus_engine_set_bank(0);
+            t.switches += swr.switches; t.bad += swr.bad; t.wrong_bank += swr.wrong_bank; t.next_old += swr.next_old;
+            for (int p = 0; p <= 84 / SW_BIN; p++) { t.ph_old[p] += swr.ph_old[p]; t.ph_new[p] += swr.ph_new[p]; }
+            if (swr.bad || swr.wrong_bank || r.lost) {
+                badb++;
+                snprintf(buf, sizeof buf, "fast switches: burst %d (%s) bad %lu wrong bank %lu lost %lu, first bad cycle %d got %02x want %02x, pio0 irq %02lx",
+                         i, (i & 1) ? "gaps" : "reads", (unsigned long)swr.bad, (unsigned long)swr.wrong_bank, (unsigned long)r.lost,
+                         swr.bad_k, swr.bad_got, swr.bad_exp, (unsigned long)pio0->irq);
                 line(buf);
                 bus_engine_drive(true);
             }
         }
-        snprintf(buf, sizeof buf, "fast switches: %lu switches in 40 bursts, %lu bursts bad", (unsigned long)tot, (unsigned long)bad);
+        snprintf(buf, sizeof buf, "fast switches: %lu in 40 bursts (S=%d), %lu bursts bad; bad %lu, wrong bank %lu; next cycle old %lu",
+                 (unsigned long)t.switches, SREAL, (unsigned long)badb, (unsigned long)t.bad, (unsigned long)t.wrong_bank, (unsigned long)t.next_old);
         line(buf);
-        if (bad) rc = -1;
+        for (int h = 0; h < 2; h++) {                /* the cycle the exec landed in, by phase: new/old */
+            int pos = snprintf(buf, sizeof buf, "fast switches phase %s (clk:new/old)", h ? "42-83" : "0-41");
+            for (int p = h * (42 / SW_BIN + 1); p <= (h ? 84 / SW_BIN : 42 / SW_BIN); p++)
+                pos += snprintf(buf + pos, sizeof buf - pos, " %d:%lu/%lu", p * SW_BIN, (unsigned long)t.ph_new[p], (unsigned long)t.ph_old[p]);
+            line(buf);
+        }
+        if (badb) rc = -1;
         goto done;
     }
-    fast_switch = true;                              /* bus_engine_set_bank every 50 us, mid-cycle included */
-    fast_burst(&r);
-    fast_switch = false;
-    snprintf(buf, sizeof buf, "fast 1.79MHz bank switches %lu under a gaps burst: mismatches %lu (zero %lu stale %lu spurious %lu wrong %lu)",
-             (unsigned long)r.restarts, (unsigned long)r.mism, (unsigned long)r.zero, (unsigned long)r.stale, (unsigned long)r.spur, (unsigned long)r.wrong);
-    line(buf);
-    if (r.mism || r.lost) rc = -1;                   /* wrong/stale = desync (a jmp between push and pull); zero = a read the pause made late */
+    for (int g = 0; g < 2; g++) {                    /* bank switches every 50 us at a random phase: reads, then gaps */
+        if (g) fast_gaps(); else fast_pattern(D_CTS);
+        fast_at(0, SREAL);
+        fast_switch = true;
+        fast_burst(&r);
+        fast_switch = false;
+        bus_engine_set_bank(0);
+        uint32_t old = 0;
+        for (int p = 0; p <= 84 / SW_BIN; p++) old += swr.ph_old[p];
+        snprintf(buf, sizeof buf, "fast 1.79MHz bank switches %lu under a %s burst S=%d: bad %lu, wrong bank %lu, lost %lu; old-bank reads %lu, next cycle old %lu",
+                 (unsigned long)swr.switches, g ? "gaps" : "reads", SREAL, (unsigned long)swr.bad, (unsigned long)swr.wrong_bank,
+                 (unsigned long)r.lost, (unsigned long)old, (unsigned long)swr.next_old);
+        line(buf);
+        if (swr.bad || swr.wrong_bank || r.lost) rc = -1;
+    }
     bus_drive_set(false);                            /* capture-only: nothing may be driven */
     fast_burst(&r);
     fast_line(line, "1.79MHz drive off", SREAL, &r);

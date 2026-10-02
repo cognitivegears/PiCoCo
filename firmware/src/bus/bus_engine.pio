@@ -2,7 +2,7 @@
 ; base 0). in_base = GP8 (A0), out_base = GP0 (D0, 8 pins), jmp_pin = GP22
 ; (R/W). Y = &bus_mem >> 17 (the 128 KB-aligned table block), X = bank; both
 ; loaded by core0 while the SM is stopped (bus_engine.c, engine_start), X
-; again by bus_engine_set_bank.
+; again by bus_engine_set_bank: one exec'd `set x`, anywhere in the program.
 ;
 ; Per read: the SM pushes the address of the table byte; DMA A moves it into
 ; DMA B's READ_ADDR_TRIG; DMA B copies that one byte into the TX FIFO.
@@ -13,15 +13,16 @@
 ;   Plus-W:  trig `wait 1 irq 0`, ends `wait 1 irq 2`, both raised in this block
 ;            by bus_sel_pw, which watches OE_BUS (GP40) from a GPIO-base-16 PIO.
 ;
-; Nothing may go between the start wait and `push`, or between `pull` and
-; `mov pindirs`: each instruction there costs 1 clk of read latency.
+; Nothing more may go between the start wait and `push`, or between `pull`
+; and `mov pindirs`: each instruction there costs 1 clk of read latency. The
+; one there, `in x, 3`, is the bank, read at the last moment so a bank switch
+; never has to touch the program counter (it costs every read 1 clk).
 
 .program bus_read
 .pio_version 1
 .wrap_target
 public top:
-    mov isr, y              ; y = &bus_mem >> 17 (constant)
-    in x, 3                 ; x = bank
+    mov isr, y              ; y = &bus_mem >> 17 (constant while running)
 public trig:
     wait 0 gpio 26          ; Pico 2 as assembled; Plus-W: patched to `wait 1 irq 0`
     jmp pin rd              ; R/W high = CoCo read
@@ -29,6 +30,7 @@ public wend:
     wait 1 gpio 26          ; a write: never driven. Plus-W: `wait 1 irq 2`
     jmp top
 rd:
+    in x, 3                 ; x = bank, as it is now
     in pins, 14             ; isr = &bus_mem[x][A13..A0]
     push noblock
     pull block              ; the byte, from DMA B

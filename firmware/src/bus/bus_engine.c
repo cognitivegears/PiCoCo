@@ -31,7 +31,6 @@ static PIO const epio = pio0;
 static int esm = -1, edma_a, edma_b;
 static int evsm = -1, edma_c;
 static uint eoff;
-static volatile bool erunning;
 static spin_lock_t *elock;       /* stop/start vs the bank calls (the two cores) */
 #define ENG_BYPASS ((0x3FFFu << PIN_A0) | (1u << PIN_RW))
 #ifdef PICOCO_BOARD_PLUSW
@@ -153,7 +152,6 @@ static void __no_inline_not_in_flash_func(engine_stop)(void) {
     engine_enable(false);
     epio->sm[esm].instr = pio_encode_mov(pio_pins, pio_null);       /* E9: low first... */
     epio->sm[esm].instr = 0xA063u;                                  /* ...then `mov pindirs, null` */
-    erunning = false;
     spin_unlock(elock, irq);
 }
 
@@ -180,7 +178,6 @@ static void __no_inline_not_in_flash_func(engine_start)(void) {
 #ifdef PICOCO_BOARD_PLUSW
     epio->irq = 5u;                                  /* no flag 0 or 2 left from before (the flags live in PIO0); flag 1 is the event SM's */
 #endif
-    erunning = true;
     engine_enable(true);                             /* Plus-W: together, so no flag is raised before the read SM runs */
     spin_unlock(elock, irq);
 }
@@ -235,40 +232,19 @@ BUS_HOT void bus_engine_unlock(uint32_t saved) {
     else restore_interrupts(saved);
 }
 
-/* Bank for the next cycle: `set x, bank`, and, if the SM is idle at the start
- * wait, `jmp top` so the pointer it precomputed is rebuilt. Anywhere else in
- * the program the SM passes `top` before its next cycle and picks up the new
- * X by itself. A `jmp top` that lands between a read's push and its pull
- * leaves DMA B's byte in the TX FIFO for the next cycle and serves every
- * later read one cycle late (measured: 1551-1770 of 2048 reads wrong under
- * a switch burst), so the jump is issued only with the SM paused at `trig`.
- * The pause covers a CTRL read, a PC read and the jump: a cycle that starts
- * in it is served late. SRAM, interrupts off (the lock): it must never stall
- * on a flash fetch with the SM paused. */
+/* Bank for the next read: one exec'd `set x, bank`, under the lock with
+ * the bus_bank store, so the record and the register never disagree. No
+ * pause, no PC read, no jump: an exec'd instruction runs at an instruction
+ * boundary; an SM stalled in a `wait` or `pull` runs it and stays stalled, a
+ * running one is delayed by 1 clk (`bus selftest fast` switches at every
+ * phase of the cycle). The read program takes the bank (`in x, 3`) right
+ * after the start wait, so a bank write takes effect for every cycle whose
+ * `in x, 3` has not yet run; a write that lands after it leaves that one read
+ * served from the old bank. Nothing is ever desynchronised or served from a
+ * wrong address. SRAM: core1's $FF40 hook calls it. */
 BUS_HOT void bus_engine_set_bank_locked(uint8_t bank) {
-    bus_bank = bank;                                 /* with the register, under the lock: they never disagree */
-    if (esm < 0) return;                             /* engine never started: engine_start loads bus_bank */
-    pio_sm_hw_t *s = &epio->sm[esm];
-    uint32_t set = pio_encode_set(pio_x, bank), jmp = pio_encode_jmp(eoff + bus_read_offset_top);
-    uint32_t trig = eoff + bus_read_offset_trig;
-    io_rw_32 *pause = hw_clear_alias(&epio->ctrl), *resume = hw_set_alias(&epio->ctrl);
-    uint32_t mask = 1u << esm;
-    bool run = erunning;
-    s->instr = set;                                  /* safe anywhere in the program */
-    if (s->addr == trig) {                           /* idle at the start wait (or just leaving it) */
-        *pause = mask;
-        /* The PC only counts once CTRL shows the SM stopped: a PC read
-         * straight after the pause can be served before the pause stops it.
-         * Measured on a Plus-W with switches at every phase of the cycle:
-         * without this, 0.7% of switches jumped a read SM that had already
-         * taken its start flag, leaving that cycle's end flag pending and every
-         * later read released at once (a plain CTRL write did no better). The
-         * cost is this read inside the pause: a cycle that starts in it can be
-         * served past the margin (`bus selftest fast switches`). */
-        while (epio->ctrl & mask) { }
-        if (s->addr == trig) s->instr = jmp;         /* paused: it cannot leave `trig` before the jump */
-        if (run) *resume = mask;
-    }
+    bus_bank = bank;
+    if (esm >= 0) epio->sm[esm].instr = pio_encode_set(pio_x, bank);   /* never started: engine_start loads bus_bank */
 }
 
 BUS_HOT void bus_engine_set_bank(uint8_t bank) {
