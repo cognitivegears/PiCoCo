@@ -410,6 +410,7 @@ int fake6809_selftest(fake_result_t *r, void (*line)(const char *s)) {
  * is in fake6809.pio. */
 #include "hardware/dma.h"
 #include "hardware/watchdog.h"
+#include "hardware/structs/busctrl.h"
 #include "net.h"
 #ifdef PICOCO_BOARD_PLUSW
 #include "pico/cyw43_arch.h"
@@ -428,7 +429,7 @@ static uint32_t fast_desc[FAST_N], fast_tx[FAST_N], fast_rx[FAST_N];
 static uint8_t  stress_buf[4096], io_save[32];
 
 static uint32_t xs32(uint32_t *s) { uint32_t x = *s; x ^= x << 13; x ^= x >> 17; x ^= x << 5; return *s = x; }
-static uint32_t pat_seed = 0x1234567u;
+static uint32_t pat_seed = 0x1234567u, sw_seed = 0x2545F491u;
 
 static uint8_t desc_byte(uint32_t d) { return bus_peek((uint16_t)(d & 0x3FFF)); }
 
@@ -448,10 +449,13 @@ static void fast_fill_banks(void) {
         for (uint32_t i = 0; i < FAST_WIN; i++) { uint8_t v = (uint8_t)xs32(&s); bus_mem[b][i] = v ? v : 0x5A; }
     }
 }
+/* $FF41/$FF42 are left out: their read hooks (becker.c) run on core1 now and
+ * rewrite those entries mid-burst. Task 3 tests them on purpose. */
+static bool hooked(uint32_t d) { uint32_t i = d & 0x3FFF; return i == BUS_IDX_BECKER_STATUS || i == BUS_IDX_BECKER_DATA; }
 static uint32_t pick(uint32_t sel, uint8_t avoid) {
     uint32_t d;
     do d = (sel == D_SCS ? FAST_IO + xs32(&pat_seed) % 32 : xs32(&pat_seed) % FAST_WIN) | sel | D_RD;
-    while (desc_byte(d) == avoid);
+    while (desc_byte(d) == avoid || hooked(d));
     return d;
 }
 /* ROM reads (or, Plus-W late /SCS bursts, I/O reads), all selected */
@@ -543,6 +547,28 @@ typedef struct { uint32_t mism, zero, stale, rel_bad, lost, spur, wrong, restart
                  int spur_k; uint8_t spur_got, spur_prev; } fast_res_t;
 
 static int fdma_tx = -1, fdma_rx = -1;
+
+/* Writes with data (fast_wpattern): fake_wdata in PIO0 drives them. */
+static uint8_t fast_wdat[FAST_N];        /* per cycle: the data of a write, else 0 */
+static uint8_t fast_wlist[FAST_N];       /* the writes' data in order, fed to fake_wdata by DMA */
+static int fast_nw;
+static bool fast_wdrive;                 /* this burst's writes carry fast_wdat */
+static uint32_t fast_wcap[FAST_N];       /* what bus_pop_write gave during the burst: idx << 8 | data */
+static int fast_ncap;
+static void fast_pop(void) {
+    uint16_t i; uint8_t d;
+    while (bus_pop_write(&i, &d)) if (fast_ncap < FAST_N) fast_wcap[fast_ncap++] = (uint32_t)i << 8 | d;
+}
+/* core1 has consumed every event: the ring holds only empty slots. */
+static bool events_drained(void) {
+    uint32_t t0 = time_us_32();
+    for (;;) {
+        int i = 0;
+        while (i < BUS_EVENTS && bus_events[i] == BUS_EV_NONE) i++;
+        if (i == BUS_EVENTS) return true;
+        if (time_us_32() - t0 > 10000) return false;
+    }
+}
 static bool fast_stress, fast_restart, fast_switch, fast_radio;
 static uint32_t radio_results, radio_scans, radio_fails;
 static int radio_rc __attribute__((unused));
@@ -571,6 +597,8 @@ static void fast_burst(fast_res_t *r) {
     channel_config_set_high_priority(&c, true);
     dma_channel_configure(fdma_tx, &c, &pio->txf[sm], fast_tx, FAST_N, false);
     watchdog_update();
+    fast_pop();                                  /* writes left from before: not this burst's */
+    fast_ncap = 0;
     dma_start_channel_mask((1u << fdma_rx) | (1u << fdma_tx));
     uint32_t t0 = time_us_32();
     uint32_t next_rs = t0 + 50;
@@ -583,8 +611,15 @@ static void fast_burst(fast_res_t *r) {
         /* restart the engine under a running burst: it comes back mid-cycle */
         if (fast_restart && (int32_t)(time_us_32() - next_rs) >= 0) { bus_engine_drive(true); r->restarts++; next_rs += 50; }
         /* bank switch under a running burst (to the same bank: the bytes stay right) */
-        if (fast_switch && (int32_t)(time_us_32() - next_rs) >= 0) { bus_engine_set_bank(bus_bank); r->restarts++; next_rs += 50; }
+        if (fast_switch && (int32_t)(time_us_32() - next_rs) >= 0) {
+            /* any phase of the 84-clk bus cycle: 50 us alone is 89.29 cycles, so
+             * a burst saw only ~7 phases 12 clk apart, and which ones depended on
+             * code layout (a pause race hid there through Task 1) */
+            busy_wait_at_least_cycles(xs32(&sw_seed) % 84);
+            bus_engine_set_bank(bus_bank); r->restarts++; next_rs += 50;
+        }
         if (fast_mid_burst && !mid_done && time_us_32() - t0 > 200) { fast_mid_burst(); mid_done = true; }
+        fast_pop();                              /* the write queue holds 255: keep it drained (and off core0's devices) */
 #ifdef PICOCO_BOARD_PLUSW
         /* radio busy: keep a scan running and the cyw43 driver polled, so its
          * PIO2 SPI state machine and its DMA channels move data during the burst */
@@ -603,17 +638,20 @@ static void fast_burst(fast_res_t *r) {
         dma_channel_abort(fdma_rx);
         dma_channel_abort(fdma_tx);
     }
+    if (!events_drained()) r->lost++;            /* core1 never caught up: shows as lost */
+    fast_pop();
     uint8_t prev = 0;
     for (int k = 0; k < FAST_N; k++) {
         uint32_t d = fast_desc[k];
         uint16_t idx = d & 0x3FFF;
         bool drv = bus_drive && (d & D_RD) && D_SEL(d);   /* a write, unselected, or bus drive off: the pads must stay undriven (0x00) */
-        uint8_t exp = drv ? bus_peek(idx) : 0, got = (uint8_t)(fast_rx[k] >> 8), rel = (uint8_t)fast_rx[k];
+        bool wdrv = fast_wdrive && !(d & D_RD) && D_SEL(d); /* ...unless fake_wdata drives this write's data */
+        uint8_t exp = drv ? bus_peek(idx) : wdrv ? fast_wdat[k] : 0, got = (uint8_t)(fast_rx[k] >> 8), rel = (uint8_t)fast_rx[k];
         if (rel) r->rel_bad++;
         if (got != exp) {
             r->mism++;
             if (got == 0) r->zero++; else if (got == prev) r->stale++;
-            if (!drv) { if (r->spur_k < 0) { r->spur_k = k; r->spur_got = got; r->spur_prev = prev; } r->spur++; }
+            if (!drv && !wdrv) { if (r->spur_k < 0) { r->spur_k = k; r->spur_got = got; r->spur_prev = prev; } r->spur++; }
             else if (got) r->wrong++;
             if (r->first_k < 0) { r->first_k = k; r->first_idx = idx; r->first_exp = exp; r->first_got = got; }
         }
@@ -735,6 +773,121 @@ static void probe_done(bool from_scs, int *dmin, int *dmax, int *n) {
 }
 #endif
 
+/* Writes with data: k%6 = ROM read, ROM-window write, I/O-window write, I/O
+ * read, unselected, ROM read. That has read->write, two writes on
+ * consecutive cycles, write->read, read->gap and gap->read. Write data is
+ * nonzero (an undriven bus reads 0x00). */
+static void fast_wpattern(void) {
+    fast_pattern(D_CTS);
+    uint32_t s = 0xC0FFEEu;
+    uint8_t prev = 0;
+    fast_nw = 0;
+    for (int k = 0; k < FAST_N; k++) {
+        uint32_t d = fast_desc[k];
+        switch (k % 6) {
+        case 1: d = (xs32(&s) % FAST_WIN) | D_CTS; break;
+        case 2: d = (FAST_IO + xs32(&s) % 32) | D_SCS; break;
+        case 3: d = pick(D_SCS, prev); break;
+        case 4: d &= ~(3u << 15); break;
+        default: break;
+        }
+        fast_wdat[k] = 0;
+        if (!(d & D_RD)) { uint8_t v = (uint8_t)xs32(&s); fast_wdat[k] = v ? v : 0xA5; fast_wlist[fast_nw++] = fast_wdat[k]; }
+        fast_desc[k] = d;
+        if ((d & D_RD) && D_SEL(d)) prev = desc_byte(d);
+    }
+}
+
+#ifdef PICOCO_BOARD_PLUSW
+#define WD_PROG fake_wdata_pw_program
+#define WD_CFG  fake_wdata_pw_program_get_default_config
+#else
+#define WD_PROG fake_wdata_p2_program
+#define WD_CFG  fake_wdata_p2_program_get_default_config
+#endif
+static int wd_sm = -1, wd_dma = -1;
+static uint wd_off;
+/* fake_wdata into PIO0 for one burst, fed fast_wlist by DMA. */
+static void wdata_arm(void) {
+    PIO p0 = pio0;
+    wd_sm = (int)pio_claim_unused_sm(p0, true);
+    wd_off = pio_add_program(p0, &WD_PROG);
+    pio_sm_config c = WD_CFG(wd_off);
+    sm_config_set_out_pins(&c, PIN_D0, 8);
+    sm_config_set_jmp_pin(&c, PIN_RW);
+    sm_config_set_out_shift(&c, true, false, 32);
+    sm_config_set_clkdiv(&c, 1.0f);
+    pio_sm_init(p0, (uint)wd_sm, wd_off, &c);
+    wd_dma = dma_claim_unused_channel(true);
+    dma_channel_config dc = dma_channel_get_default_config((uint)wd_dma);
+    channel_config_set_transfer_data_size(&dc, DMA_SIZE_8);
+    channel_config_set_read_increment(&dc, true);
+    channel_config_set_write_increment(&dc, false);
+    channel_config_set_dreq(&dc, pio_get_dreq(p0, (uint)wd_sm, true));
+    dma_channel_configure((uint)wd_dma, &dc, &p0->txf[wd_sm], fast_wlist, (uint)fast_nw, true);
+    pio_sm_set_enabled(p0, (uint)wd_sm, true);
+    fast_wdrive = true;
+}
+static void wdata_disarm(void) {
+    pio_sm_set_enabled(pio0, (uint)wd_sm, false);
+    pio0->sm[wd_sm].instr = 0xA063u;                 /* `mov pindirs, null` */
+    dma_channel_abort((uint)wd_dma);
+    dma_channel_unclaim((uint)wd_dma);
+    pio_remove_program(pio0, &WD_PROG, wd_off);
+    pio_sm_unclaim(pio0, (uint)wd_sm);
+    fast_wdrive = false;
+}
+
+/* Every selected write arrived through bus_pop_write, in order, with its data. */
+static bool fast_check_writes(void (*line)(const char *), uint32_t ov0) {
+    char buf[160];
+    uint32_t lost = 0, order = 0, wrong = 0, n = 0;
+    int p = 0;
+    for (int k = 0; k < FAST_N; k++) {
+        uint32_t d = fast_desc[k];
+        if ((d & D_RD) || !D_SEL(d)) continue;
+        n++;
+        if (p >= fast_ncap) { lost++; continue; }
+        uint32_t c = fast_wcap[p++];
+        if ((c >> 8) != (d & 0x3FFF)) order++;
+        else if ((uint8_t)c != fast_wdat[k]) wrong++;
+    }
+    order += (uint32_t)(fast_ncap - p);              /* more than were driven */
+    lost += bus_stats.write_overrun - ov0;
+    snprintf(buf, sizeof buf, "fast writes: %lu lost, %lu out of order, %lu wrong data of %lu",
+             (unsigned long)lost, (unsigned long)order, (unsigned long)wrong, (unsigned long)n);
+    line(buf);
+    return !lost && !order && !wrong;
+}
+
+/* The trace's last 512 events against the last 512 selected cycles driven:
+ * index, R/W, data (a read: the byte served; a write: its data), and seq with
+ * no gap; then the burst's event count. A word with bits 23-31 set would fail
+ * the trace's tag check and show here as missing. */
+static bool fast_check_events(void (*line)(const char *), uint32_t c0) {
+    static bus_trace_entry te[BUS_TRACE_SIZE];
+    char buf[160];
+    bus_trace_freeze(true);
+    size_t n = bus_trace_copy(te, BUS_TRACE_SIZE);
+    bus_trace_freeze(false);
+    uint32_t mism = (uint32_t)(BUS_TRACE_SIZE - n), sel = 0;
+    for (int k = 0; k < FAST_N; k++) if (D_SEL(fast_desc[k])) sel++;
+    int k = FAST_N;
+    for (int i = (int)n - 1; i >= 0; i--) {
+        do k--; while (k >= 0 && !D_SEL(fast_desc[k]));
+        if (k < 0) { mism++; continue; }
+        uint32_t d = fast_desc[k];
+        uint16_t idx = d & 0x3FFF;
+        uint8_t rd = (d & D_RD) ? 1 : 0, exp = rd ? bus_peek(idx) : fast_wdat[k];
+        if (te[i].idx != idx || te[i].rw != rd || te[i].data != exp || (i && te[i].seq != te[i - 1].seq + 1)) mism++;
+    }
+    uint32_t counted = bus_stats.cycles - c0;
+    snprintf(buf, sizeof buf, "fast events: %lu mismatches of %u (the last %u of %lu selected cycles); counted %lu of %lu",
+             (unsigned long)mism, (unsigned)BUS_TRACE_SIZE, (unsigned)BUS_TRACE_SIZE, (unsigned long)sel, (unsigned long)counted, (unsigned long)sel);
+    line(buf);
+    return !mism && counted == sel;
+}
+
 int fake6809_fast(int opts, void (*line)(const char *s)) {
     char buf[200];
     uint32_t c0 = bus_stats.cycles;
@@ -800,7 +953,18 @@ int fake6809_fast(int opts, void (*line)(const char *s)) {
         snprintf(buf, sizeof buf, "fast dma 8-bit write of %02x reaches the TX FIFO as %08lx", probe8, (unsigned long)pio->rxf[psm8]);
         line(buf);
         pio_sm_unclaim(pio, (uint)psm8);
-        line("fast engine: PIO0 + DMA, input sync bypass on A0-A13 and R/W (OE_BUS synchronised), DMA bus priority on");
+        uint32_t byp = pio0->input_sync_bypass, am = 0x3FFFu << PIN_A0;
+        const char *sy[2] = { "synchronised", "bypassed" };
+        snprintf(buf, sizeof buf, "fast engine: PIO0 + DMA, pio0 input_sync_bypass %08lx: A0-A13 %s, R/W %s, GP26 %s, D0-D7 %s; DMA bus priority %s",
+                 (unsigned long)byp, (byp & am) == am ? sy[1] : (byp & am) ? "mixed" : sy[0], sy[(byp >> PIN_RW) & 1],
+                 sy[(byp >> 26) & 1], (byp & 0xFF) == 0xFF ? sy[1] : (byp & 0xFF) ? "mixed" : sy[0],
+                 busctrl_hw->priority == (BUSCTRL_BUS_PRIORITY_DMA_R_BITS | BUSCTRL_BUS_PRIORITY_DMA_W_BITS) ? "on (DMA R+W)" : "other");
+        line(buf);
+#ifdef PICOCO_BOARD_PLUSW
+        snprintf(buf, sizeof buf, "fast engine: helper OE_BUS GP40 in pio2 (gpio base %u) %s",
+                 pio_get_gpio_base(pio2), sy[(pio2->input_sync_bypass >> (PIN_OE_BUS - pio_get_gpio_base(pio2))) & 1]);
+        line(buf);
+#endif
         snprintf(buf, sizeof buf, "fast test: fake 6809 pio1 sm%d, dma tx %d rx %d", sm, fdma_tx, fdma_rx);
         line(buf);
         bus_engine_resources(line);
@@ -816,6 +980,24 @@ int fake6809_fast(int opts, void (*line)(const char *s)) {
 
     fast_res_t r;
     int rc = 0;
+    {   /* event_drop's source: a nonblocking push into a full RX FIFO (idle PIO1 SM, 4 deep) */
+        int psm = (int)pio_claim_unused_sm(pio, true);
+        uint32_t bit = 1u << (PIO_FDEBUG_RXSTALL_LSB + psm);
+        pio_sm_clear_fifos(pio, (uint)psm);
+        pio->fdebug = bit;
+        for (int i = 0; i < 4; i++) pio_sm_exec(pio, (uint)psm, pio_encode_push(false, false));
+        bool before = pio->fdebug & bit;
+        pio_sm_exec(pio, (uint)psm, pio_encode_push(false, false));
+        bool after = pio->fdebug & bit;
+        pio_sm_clear_fifos(pio, (uint)psm);
+        pio->fdebug = bit;
+        pio_sm_unclaim(pio, (uint)psm);
+        snprintf(buf, sizeof buf, "fast drop flag: push noblock into a full RX FIFO sets FDEBUG.RXSTALL %s (set before the drop: %s)",
+                 after ? "yes" : "no", before ? "yes" : "no");
+        line(buf);
+        if (!after || before) rc = -1;
+    }
+    bus_engine_check_drops();                        /* clear anything from before the test */
 #ifdef PICOCO_BOARD_PLUSW
     /* The fake decode's own delay, measured, so it can be taken out. */
     int dmin, dmax, dn, lmin, lmax, ln;
@@ -838,11 +1020,21 @@ int fake6809_fast(int opts, void (*line)(const char *s)) {
 #define SREAL 36
 #define SREAL89 72
 #endif
-    for (int i = 0; i < 5; i++) {                    /* (a) realistic, 1.79 MHz */
-        fast_at(0, SREAL);
-        fast_burst(&r);
-        fast_line(line, "1.79MHz", SREAL, &r);
-        if (r.mism || r.lost) rc = -1;
+    {   /* (a) realistic, 1.79 MHz: back-to-back cart reads, and core1 keeping up with them */
+        uint32_t c0 = bus_stats.cycles, d0 = bus_stats.event_drop;
+        bus_stats.event_lag_max = 0;
+        for (int i = 0; i < 5; i++) {
+            fast_at(0, SREAL);
+            fast_burst(&r);
+            fast_line(line, "1.79MHz", SREAL, &r);
+            if (r.mism || r.lost) rc = -1;
+        }
+        bus_engine_check_drops();
+        uint32_t counted = bus_stats.cycles - c0, drop = bus_stats.event_drop - d0;
+        snprintf(buf, sizeof buf, "fast event rate 1.79MHz: counted %lu of %u, lag max %lu, drop %lu",
+                 (unsigned long)counted, (unsigned)(5 * FAST_N), (unsigned long)bus_stats.event_lag_max, (unsigned long)drop);
+        line(buf);
+        if (counted != 5 * FAST_N || drop || bus_stats.event_lag_max >= BUS_EVENTS / 2) rc = -1;
     }
     fast_mix();                                      /* reads with writes between them: writes must never be driven */
     fast_at(0, SREAL);
@@ -854,6 +1046,21 @@ int fake6809_fast(int opts, void (*line)(const char *s)) {
     fast_burst(&r);
     fast_line(line, "1.79MHz gaps r/w/unsel", SREAL, &r);
     if (r.mism || r.lost) rc = -1;
+    {   /* writes with data, reads, I/O and gaps: write capture and event content */
+        fast_wpattern();
+        fast_at(0, SREAL);
+        bus_trace_freeze(false);
+        uint32_t c0 = bus_stats.cycles, ov0 = bus_stats.write_overrun;
+        wdata_arm();
+        fast_burst(&r);
+        wdata_disarm();
+        fast_line(line, "1.79MHz writes r/w/io/unsel", SREAL, &r);
+        if (r.mism || r.lost) rc = -1;
+        if (!fast_check_writes(line, ov0)) rc = -1;
+        if (!fast_check_events(line, c0)) rc = -1;
+        fast_gaps();
+        fast_at(0, SREAL);
+    }
     fast_restart = true;                             /* engine restarted every 50 us under the burst */
     fast_burst(&r);
     fast_restart = false;
@@ -886,6 +1093,25 @@ int fake6809_fast(int opts, void (*line)(const char *s)) {
     fast_burst(&r);
     fast_line(line, "1.79MHz gaps after restarts", SREAL, &r);
     if (r.mism || r.lost) rc = -1;
+    if (opts & FAST_OPT_SWITCHES) {                  /* repeat just the switch burst; a failed one restarts the engine */
+        uint32_t tot = 0, bad = 0;
+        for (int i = 0; i < 40; i++) {
+            fast_switch = true; fast_burst(&r); fast_switch = false;
+            tot += r.restarts;
+            if (r.mism) {
+                bad++;
+                snprintf(buf, sizeof buf, "fast switches: burst %d mism %lu zero %lu stale %lu wrong %lu first %d, pio0 irq %02lx pc %lu",
+                         i, (unsigned long)r.mism, (unsigned long)r.zero, (unsigned long)r.stale, (unsigned long)r.wrong, r.first_k,
+                         (unsigned long)pio0->irq, (unsigned long)pio0->sm[0].addr);
+                line(buf);
+                bus_engine_drive(true);
+            }
+        }
+        snprintf(buf, sizeof buf, "fast switches: %lu switches in 40 bursts, %lu bursts bad", (unsigned long)tot, (unsigned long)bad);
+        line(buf);
+        if (bad) rc = -1;
+        goto done;
+    }
     fast_switch = true;                              /* bus_engine_set_bank every 50 us, mid-cycle included */
     fast_burst(&r);
     fast_switch = false;
@@ -903,7 +1129,6 @@ int fake6809_fast(int opts, void (*line)(const char *s)) {
         int good = 0;
         uint32_t bmis = 0;
         for (int b = 0; b < BUS_BANKS; b++) {
-            bus_bank = (uint8_t)b;
             bus_engine_set_bank((uint8_t)b);
             fast_pattern(D_CTS);
             fast_add_io();
@@ -915,7 +1140,6 @@ int fake6809_fast(int opts, void (*line)(const char *s)) {
             } else good++;
             bmis += r.mism;
         }
-        bus_bank = 0;
         bus_engine_set_bank(0);
         snprintf(buf, sizeof buf, "fast banks: %d/%d banks read their own pattern, %lu mismatches", good, BUS_BANKS, (unsigned long)bmis);
         line(buf);

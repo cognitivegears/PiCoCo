@@ -181,3 +181,40 @@ hit:
 .wrap_target
     in pins, 16
 .wrap
+
+; Write data for `bus selftest fast` (bare module): D0-D7 belong to PIO0, the
+; engine's block, so the fake 6809 in PIO1 cannot drive them. This test-only
+; SM, loaded into PIO0 for one burst, drives each write cycle's data from its
+; TX FIFO (one byte per write, by DMA), as the CoCo would; reads are left to
+; the engine. out pins GP0 x8, jmp_pin R/W (GP22).
+; Pico 2: a selected cycle is OE_BUS (GP26) low.
+.program fake_wdata_p2
+.pio_version 1
+.wrap_target
+    wait 0 gpio 26          ; a selected cycle
+    jmp pin rd              ; R/W high: a read, the engine's
+    pull block              ; this write's data
+    out pins, 8
+    mov pindirs, ~null
+    wait 1 gpio 26          ; cycle over
+    mov pins, null [1]      ; RP2350-E9: drive low, then release
+    mov pindirs, null
+rd:
+    wait 1 gpio 26
+.wrap
+
+; Plus-W: a cycle is E (GP26) high; every write is driven, selected or not.
+.program fake_wdata_pw
+.pio_version 1
+.wrap_target
+    wait 1 gpio 26          ; E high
+    jmp pin rd
+    pull block
+    out pins, 8
+    mov pindirs, ~null
+    wait 0 gpio 26          ; E low
+    mov pins, null [1]
+    mov pindirs, null
+rd:
+    wait 0 gpio 26
+.wrap

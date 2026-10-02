@@ -25,4 +25,5 @@ void    fake6809_end(void);
 #define FAST_OPT_STRESS 1   /* core0 memcpy loop during every burst */
 #define FAST_OPT_RADIO  2   /* Plus-W: WiFi scans + cyw43 polling during every burst */
 #define FAST_OPT_RESTARTS 4 /* stop after 40 more engine-restart bursts */
+#define FAST_OPT_SWITCHES 8 /* stop after 40 more bank-switch bursts */
 int fake6809_fast(int opts, void (*line)(const char *s));

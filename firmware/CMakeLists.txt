@@ -83,6 +83,10 @@ if(NOT PICOCO_HOST)
     pico_stdlib pico_unique_id pico_multicore pico_aon_timer
     hardware_flash hardware_sync hardware_watchdog hardware_pio hardware_dma
     tinyusb_device tinyusb_board)
+  # bus_mem (128 KB, 128 KB aligned) and bus_events (8 KB, 8 KB aligned) in
+  # their own region at the top of SRAM (ld/), so .bss pays no alignment padding.
+  pico_set_linker_script_var(picoco RAM_LENGTH 0x5E000)
+  pico_add_linker_script_override_path(picoco ${CMAKE_CURRENT_LIST_DIR}/ld FILES memory_extra.incl section_extra_post_data.incl)
   pico_add_extra_outputs(picoco)
   find_package(Python3 COMPONENTS Interpreter)
   if(Python3_FOUND)

@@ -248,7 +248,8 @@ static int cmd_bus(int argc, char **argv) {
                 if (strcasecmp(argv[i], "stress") == 0) opts |= FAST_OPT_STRESS;
                 else if (strcasecmp(argv[i], "radio") == 0) opts |= FAST_OPT_RADIO;
                 else if (strcasecmp(argv[i], "restarts") == 0) opts |= FAST_OPT_RESTARTS;
-                else return cerr("usage: bus selftest fast [stress] [radio] [restarts]");
+                else if (strcasecmp(argv[i], "switches") == 0) opts |= FAST_OPT_SWITCHES;
+                else return cerr("usage: bus selftest fast [stress] [radio] [restarts] [switches]");
             }
             int rc = fake6809_fast(opts, selftest_line);
             if (rc == -2) return cerr("bus selftest: bus is live (CoCo attached), refused");
@@ -299,8 +300,7 @@ static int cmd_status(void) {
     outf("uptime_ms %u\n", plat_now_ms());
     outf("bus cycles %u reads %u writes %u write_overrun %u\n",
          bus_stats.cycles, bus_stats.reads, bus_stats.writes, bus_stats.write_overrun);
-    outf("bus addr_resample %u bits %04x late_precompute %u\n", bus_stats.addr_resample, bus_stats.addr_resample_bits, bus_stats.late_precompute);
-    outf("bus oe_glitch %u resample_key %08x in %08x\n", bus_stats.oe_glitch, (unsigned)bus_stats.resample_key, (unsigned)bus_stats.resample_in);
+    outf("bus engine_stall %u event_lag_max %u event_drop %u\n", bus_stats.engine_stall, bus_stats.event_lag_max, bus_stats.event_drop);
     outf("bus whooks %u\n", bus_stats.whooks_run);
     outf("bus drive %s\n", bus_drive_get() ? "on" : "off");
     outf("last reset %s\n", plat_last_reset());
@@ -329,13 +329,14 @@ static int cmd_trace(int argc, char **argv) {
         int n = argc >= 3 ? atoi(argv[2]) : 64;
         if (n < 1) n = 1;
         if (n > BUS_TRACE_SIZE) n = BUS_TRACE_SIZE;
+        bool was_frozen = bus_trace_frozen();   /* frozen by a fault or `trace freeze`: stays frozen until `trace run` */
         bus_trace_freeze(true);
         size_t got = bus_trace_copy(trace_buf, (size_t)n);
         for (size_t i = 0; i < got; i++) {
-            outf("%u %04x %c %02x\n", trace_buf[i].t_us, trace_buf[i].idx,
+            outf("%u %04x %c %02x\n", (unsigned)trace_buf[i].seq, trace_buf[i].idx,
                  trace_buf[i].rw ? 'R' : 'W', trace_buf[i].data);
         }
-        bus_trace_freeze(false);
+        if (!was_frozen) bus_trace_freeze(false);
         return 0;
     }
     return cerr("usage: trace dump [n]|freeze|run");
@@ -753,7 +754,7 @@ static int cmd_log(int argc, char **argv) {
 static int cmd_stats(int argc, char **argv) {
     if (argc < 2 || strcasecmp(argv[1], "reset") != 0) return cerr("usage: stats reset");
     bus_stats.cycles = 0; bus_stats.reads = 0; bus_stats.writes = 0; bus_stats.write_overrun = 0;
-    bus_stats.addr_resample = 0; bus_stats.addr_resample_bits = 0; bus_stats.late_precompute = 0;
+    bus_stats.whooks_run = 0; bus_stats.engine_stall = 0; bus_stats.event_lag_max = 0; bus_stats.event_drop = 0;
     becker_stats = (becker_stats_t){ 0 };
     memset(&g_dw->stats, 0, sizeof(g_dw->stats));
     mode_stats.reply_overflow = 0;

@@ -3,15 +3,17 @@
 #include "mode.h"
 #include "plat.h"
 
+/* The engine's order: the read is served from the table, then the event
+ * (with the byte served) reaches bus_event. */
 uint8_t sim_read(uint16_t addr) {
     uint16_t idx = addr & 0x3FFF;
     uint8_t v = bus_peek(idx);
-    bus_on_read_done(idx, plat_now_us());
+    bus_event(BUS_EV(idx, 1, v));
     return v;
 }
 
 void sim_write(uint16_t addr, uint8_t d) {
-    bus_on_write(addr & 0x3FFF, d, plat_now_us());
+    bus_event(BUS_EV(addr & 0x3FFF, 0, d));
 }
 
 void sim_becker_putc(dw_server *dw, uint8_t b) {

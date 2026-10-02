@@ -19,12 +19,15 @@ static bool rom_dos;
 static cart_mode_t cart_mode;           /* initialized to CART_AUTO (0) by default */
 
 /* core1: switch banks on a $FF40 write. Inert while unbanked, so it stays
- * registered for the life of the firmware (no remove API needed). */
+ * registered for the life of the firmware (no remove API needed). The count
+ * is read and the bank set under the engine's lock, the lock core0's unbank
+ * and publish take: a hook can never see a count, lose the race to an
+ * unbank, and then select a bank for a ROM that is no longer banked. */
 static BUS_HOT void rom_bank_hook(uint8_t data) {
-    if (rom_nbanks) { bus_bank = data & rom_bank_mask; bus_engine_set_bank(bus_bank); }
+    uint32_t s = bus_engine_lock();
+    if (rom_nbanks) bus_engine_set_bank_locked(data & rom_bank_mask);
+    bus_engine_unlock(s);
 }
-
-static void set_bank0(void) { bus_bank = 0; bus_engine_set_bank(0); }
 
 /* n bytes of a ROM image into bank b, leaving the device-owned I/O entries
  * (BUS_IO_LO..HI) alone: only bus_io_set writes those. */
@@ -44,9 +47,11 @@ void rom_init(void) {
 }
 
 static void unbank(void) {
+    uint32_t s = bus_engine_lock();
     rom_nbanks = 0;
     rom_bank_mask = 0;
-    set_bank0();
+    bus_engine_set_bank_locked(0);
+    bus_engine_unlock(s);
 }
 
 void rom_banks_begin(void) {
@@ -62,12 +67,13 @@ uint8_t *rom_bank_buf(int b) {
 
 int rom_publish_banks(int nb) {
     if (nb != 2 && nb != 4 && nb != 8) return -2;
-    /* Order matters for core1: bank 0, then mask, then the count that lets
-     * the $FF40 hook start switching (same order as the old rom_load_mem
-     * banked path). */
-    set_bank0();
+    /* Under the lock the $FF40 hook takes: bank 0, the mask and the count
+     * that lets the hook start switching, as one step. */
+    uint32_t s = bus_engine_lock();
+    bus_engine_set_bank_locked(0);
     rom_bank_mask = (uint8_t)(nb - 1);
     rom_nbanks = (uint8_t)nb;
+    bus_engine_unlock(s);
     rom_have = true;
     rom_dos = (bus_mem[0][0] == 'D' && bus_mem[0][1] == 'K');
     return 0;
@@ -94,9 +100,9 @@ int rom_load_mem(const uint8_t *p, size_t n) {
     int nb = bank_count_for(n);
     if (n != 8192 && n != 16384 && nb == 0) return -2;
     if (nb) {
-        /* Order matters for core1: stop the hook, fill banks, then publish
-         * bank 0 and the count (rom_publish_banks). */
-        rom_nbanks = 0;
+        /* Stop the hook (bank 0, count 0), fill banks, then publish bank 0
+         * and the count (rom_publish_banks). */
+        unbank();
         for (int b = 0; b < nb; b++) bank_copy(b, p + (size_t)b * ROM_BANK_SIZE, ROM_BANK_SIZE);
         rom_publish_banks(nb);   /* nb is always 2/4/8 here: bank_count_for only returns those */
     } else {

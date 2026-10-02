@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""Decodes `trace dump` output (lines of "t_us idx R|W data", as printed by
-the console's "trace dump [n]" command) into a readable, address-mapped,
-DriveWire-aware log.
+"""Decodes `trace dump` output (lines of "seq idx R|W data", as printed by
+the console's "trace dump [n]" command; seq is the event count since boot)
+into a readable, address-mapped, DriveWire-aware log.
 
 Usage: tracedump.py [FILE]   (reads stdin if FILE is omitted or "-")
 """
@@ -43,15 +43,15 @@ def decode(lines, out):
         line = line.strip()
         if not line:
             continue
-        # ponytail: skip anything that isn't a "t_us idx R|W data" trace
+        # ponytail: skip anything that isn't a "seq idx R|W data" trace
         # line (e.g. the console's "ok"/"err ..." replies) instead of
         # requiring a pre-filtered input file.
         parts = line.split()
         if len(parts) != 4 or parts[2] not in ("R", "W"):
             continue
-        t_us_s, idx_s, rw, data_s = parts
+        seq_s, idx_s, rw, data_s = parts
         try:
-            t_us = int(t_us_s)
+            seq = int(seq_s)
             idx = int(idx_s, 16)
             data = int(data_s, 16)
         except ValueError:
@@ -81,7 +81,7 @@ def decode(lines, out):
                         note += " %s drive=%d lsn=%d" % (op_name(pending_op), drive, lsn)
                         pending_op = None
 
-        out.write("%10d  $%04X  %s  %02X  %s\n" % (t_us, addr, rw, data, note))
+        out.write("%10d  $%04X  %s  %02X  %s\n" % (seq, addr, rw, data, note))
 
 
 def main():

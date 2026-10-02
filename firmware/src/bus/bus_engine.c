@@ -9,24 +9,30 @@
 #include <stdio.h>
 
 /* The PIO + DMA engine (bus_engine.pio) serves ROM-window and I/O-page reads
- * with no CPU in the per-cycle path, on both boards. The CPU loops it
- * replaced are at tag fw-1.4-cpu-loop.
+ * with no CPU in the per-cycle path, on both boards, and records every
+ * selected cycle for core1. The CPU loops it replaced are at tag
+ * fw-1.4-cpu-loop.
  *
  * Read SM: PIO0 (GPIO base 0). Pico 2: it waits on OE_BUS (GP26) itself.
  * Plus-W: OE_BUS is GP40, outside PIO0's window, so bus_sel_pw watches it from
  * PIO2 (GPIO base 16, shared with the cyw43 driver) and raises PIO0 flags 0
- * (start), 1 (event SM, later) and 2 (end) across blocks.
+ * (start), 1 (event SM) and 2 (end) across blocks.
  * DMA A: PIO0 RX (the table byte's address) -> DMA B READ_ADDR_TRIG, endless.
  * DMA B: that byte -> PIO0 TX, 8-bit, count 1, re-armed by every A write.
- * Input sync bypass on A0-A13 and R/W only: OE_BUS keeps its synchroniser (an
- * asynchronous strobe). DMA has bus priority.
- * Everything here runs on core0 except bus_engine_set_bank. */
+ * Event SM: PIO0, one word per selected cycle; DMA C: its RX -> bus_events,
+ * an 8 KB write ring, endless. Both start once (engine_init) and never stop.
+ * Input sync bypass on A0-A13 and R/W only: the strobe (GP26) and D0-D7 keep
+ * their synchronisers. DMA has bus priority.
+ * Everything here runs on core0 except the bank calls. */
+
+_Static_assert(PIN_D0 == 0 && PIN_A0 == 8 && PIN_RW == 22, "event word layout (bus.h) is GP0..GP22");
 
 static PIO const epio = pio0;
 static int esm = -1, edma_a, edma_b;
+static int evsm = -1, edma_c;
 static uint eoff;
 static volatile bool erunning;
-static spin_lock_t *elock;       /* stop/start vs bus_engine_set_bank (the two cores) */
+static spin_lock_t *elock;       /* stop/start vs the bank calls (the two cores) */
 #define ENG_BYPASS ((0x3FFFu << PIN_A0) | (1u << PIN_RW))
 #ifdef PICOCO_BOARD_PLUSW
 static PIO hpio;                 /* the helper's block: pio2 */
@@ -34,7 +40,42 @@ static int hsm = -1;
 static uint hoff;
 #endif
 
+static void event_init(void) {
+    evsm = (int)pio_claim_unused_sm(epio, true);
+#ifdef PICOCO_BOARD_PLUSW
+    uint off = pio_add_program(epio, &bus_event_pw_program);
+    pio_sm_config c = bus_event_pw_program_get_default_config(off);
+    sm_config_set_jmp_pin(&c, PIN_E);
+#else
+    uint off = pio_add_program(epio, &bus_event_p2_program);
+    pio_sm_config c = bus_event_p2_program_get_default_config(off);
+    sm_config_set_jmp_pin(&c, PIN_OE_BUS);
+#endif
+    sm_config_set_in_pins(&c, PIN_D0);
+    sm_config_set_in_pin_count(&c, 23);              /* D0-D7, A0-A13, R/W; bits 23-31 read 0 */
+    sm_config_set_fifo_join(&c, PIO_FIFO_JOIN_RX);
+    sm_config_set_clkdiv(&c, 1.0f);
+    pio_sm_init(epio, (uint)evsm, off, &c);
+
+    /* The ring must hold only empty slots before DMA C writes its first word:
+     * core1 reads slot 0 first (bus_core1.c). */
+    for (int i = 0; i < BUS_EVENTS; i++) bus_events[i] = BUS_EV_NONE;
+    edma_c = dma_claim_unused_channel(true);
+    dma_channel_config cc = dma_channel_get_default_config((uint)edma_c);
+    channel_config_set_transfer_data_size(&cc, DMA_SIZE_32);
+    channel_config_set_read_increment(&cc, false);
+    channel_config_set_write_increment(&cc, true);
+    channel_config_set_ring(&cc, true, 13);          /* 2048 words: the write address wraps in bus_events */
+    channel_config_set_dreq(&cc, pio_get_dreq(epio, (uint)evsm, false));
+    channel_config_set_high_priority(&cc, true);
+    dma_channel_configure((uint)edma_c, &cc, (void *)bus_events, &epio->rxf[evsm],
+                          dma_encode_endless_transfer_count(), true);
+    pio_sm_set_enabled(epio, (uint)evsm, true);
+}
+
 static void engine_init(void) {
+    hard_assert(((uintptr_t)bus_mem & 0x1FFFF) == 0);
+    hard_assert(((uintptr_t)bus_events & (sizeof bus_events - 1)) == 0);
     elock = spin_lock_init((uint)spin_lock_claim_unused(true));
     esm = (int)pio_claim_unused_sm(epio, true);
     eoff = pio_add_program(epio, &bus_read_program);
@@ -47,6 +88,9 @@ static void engine_init(void) {
     sm_config_set_clkdiv(&c, 1.0f);
     pio_sm_init(epio, (uint)esm, eoff, &c);
     pio_sm_set_enabled(epio, (uint)esm, false);
+    /* The whole register, so the strobe's bit (GP26) is known to be clear.
+     * Nothing else writes PIO0's. */
+    epio->input_sync_bypass = ENG_BYPASS;
 #ifdef PICOCO_BOARD_PLUSW
     /* flags 0 (start) and 2 (end) from bus_sel_pw */
     epio->instr_mem[eoff + bus_read_offset_trig] = (uint16_t)pio_encode_wait_irq(true, false, 0);
@@ -84,10 +128,12 @@ static void engine_init(void) {
     channel_config_set_high_priority(&a, true);
     dma_channel_configure((uint)edma_a, &a, &dma_hw->ch[edma_b].al3_read_addr_trig, &epio->rxf[esm],
                           dma_encode_endless_transfer_count(), true);
+    busctrl_hw->priority = BUSCTRL_BUS_PRIORITY_DMA_R_BITS | BUSCTRL_BUS_PRIORITY_DMA_W_BITS;
+    event_init();
 }
 
 /* Read SM and helper start and stop in one register write. Plus-W: PIO2 is
- * PIO0's "prev" neighbour. */
+ * PIO0's "prev" neighbour. The event SM is not touched. */
 static inline __attribute__((always_inline)) void engine_enable(bool on) {
 #ifdef PICOCO_BOARD_PLUSW
     pio_set_sm_multi_mask_enabled(epio, 1u << hsm, 1u << esm, 0, on);
@@ -111,7 +157,8 @@ static void __no_inline_not_in_flash_func(engine_stop)(void) {
     spin_unlock(elock, irq);
 }
 
-static void engine_start(void) {
+/* SRAM, like engine_stop: the enable must not wait on a flash fetch. */
+static void __no_inline_not_in_flash_func(engine_start)(void) {
     /* A pointer still on its way from RX through DMA A to B would land in the
      * TX FIFO after the clear below and serve every later read one cycle late:
      * let both channels go quiet first. */
@@ -123,25 +170,69 @@ static void engine_start(void) {
     pio_sm_exec(epio, (uint)esm, pio_encode_pull(false, true));
     pio_sm_exec(epio, (uint)esm, pio_encode_mov(pio_y, pio_osr));
     pio_sm_exec(epio, (uint)esm, pio_encode_jmp(eoff + bus_read_offset_top));
-    epio->input_sync_bypass |= ENG_BYPASS;
 #ifdef PICOCO_BOARD_PLUSW
     pio_sm_restart(hpio, (uint)hsm);
     pio_sm_exec(hpio, (uint)hsm, pio_encode_jmp(hoff));   /* the `wait 1`: a cycle already under way is skipped */
     pio_set_input_sync_bypass_with_mask64(hpio, 0, 1ull << PIN_OE_BUS);
-    epio->irq = 7u;                                  /* no flag left from before the stop (the flags live in PIO0) */
 #endif
-    busctrl_hw->priority = BUSCTRL_BUS_PRIORITY_DMA_R_BITS | BUSCTRL_BUS_PRIORITY_DMA_W_BITS;
     uint32_t irq = spin_lock_blocking(elock);
     pio_sm_exec(epio, (uint)esm, pio_encode_set(pio_x, bus_bank));   /* under the lock: a bank switch meanwhile is not lost */
+#ifdef PICOCO_BOARD_PLUSW
+    epio->irq = 5u;                                  /* no flag 0 or 2 left from before (the flags live in PIO0); flag 1 is the event SM's */
+#endif
     erunning = true;
     engine_enable(true);                             /* Plus-W: together, so no flag is raised before the read SM runs */
     spin_unlock(elock, irq);
 }
 
+#ifdef PICOCO_BOARD_PLUSW
+/* bus drive off: the helper alone, so the event SM still sees cycles. Flags 0
+ * and 2 pile up unread; engine_start clears them. */
+static void helper_only(void) {
+    pio_sm_restart(hpio, (uint)hsm);
+    pio_sm_exec(hpio, (uint)hsm, pio_encode_jmp(hoff));
+    pio_sm_set_enabled(hpio, (uint)hsm, true);
+}
+#endif
+
 void bus_engine_drive(bool on) {
     if (esm < 0) engine_init();
-    if (erunning) engine_stop();
+    engine_stop();                                   /* also stops a Plus-W helper left running by drive off */
     if (on) engine_start();
+#ifdef PICOCO_BOARD_PLUSW
+    else helper_only();
+#endif
+}
+
+void bus_engine_init(void) {
+    if (esm < 0) bus_engine_drive(bus_drive_get());
+}
+
+void bus_engine_check_drops(void) {
+    if (evsm < 0) return;
+    /* RXSTALL is also set by a `push noblock` that found the RX FIFO full,
+     * i.e. a dropped event (RP2350 datasheet, FDEBUG; `bus selftest fast`
+     * confirms it on the chip). One count per check that finds it set. */
+    uint32_t bit = 1u << (PIO_FDEBUG_RXSTALL_LSB + evsm);
+    if (epio->fdebug & bit) { epio->fdebug = bit; bus_stats.event_drop++; }
+}
+
+void bus_engine_tick(uint32_t now_ms) {
+    static uint32_t last;
+    if (now_ms == last) return;
+    last = now_ms;
+    bus_engine_check_drops();
+}
+
+/* Before engine_init only core0 runs (core1 starts after bus_engine_init),
+ * so interrupts off is the whole lock. */
+BUS_HOT uint32_t bus_engine_lock(void) {
+    return elock ? spin_lock_blocking(elock) : save_and_disable_interrupts();
+}
+
+BUS_HOT void bus_engine_unlock(uint32_t saved) {
+    if (elock) spin_unlock(elock, saved);
+    else restore_interrupts(saved);
 }
 
 /* Bank for the next cycle: `set x, bank`, and, if the SM is idle at the start
@@ -151,24 +242,39 @@ void bus_engine_drive(bool on) {
  * leaves DMA B's byte in the TX FIFO for the next cycle and serves every
  * later read one cycle late (measured: 1551-1770 of 2048 reads wrong under
  * a switch burst), so the jump is issued only with the SM paused at `trig`.
- * The pause covers one PC read and the jump: a cycle that starts in it is
- * served a few clk late. SRAM, interrupts off (the lock): it must never
- * stall on a flash fetch with the SM paused. */
-BUS_HOT void bus_engine_set_bank(uint8_t bank) {
+ * The pause covers a CTRL read, a PC read and the jump: a cycle that starts
+ * in it is served late. SRAM, interrupts off (the lock): it must never stall
+ * on a flash fetch with the SM paused. */
+BUS_HOT void bus_engine_set_bank_locked(uint8_t bank) {
+    bus_bank = bank;                                 /* with the register, under the lock: they never disagree */
     if (esm < 0) return;                             /* engine never started: engine_start loads bus_bank */
     pio_sm_hw_t *s = &epio->sm[esm];
-    io_rw_32 *pause = hw_clear_alias(&epio->ctrl), *resume = hw_set_alias(&epio->ctrl);
     uint32_t set = pio_encode_set(pio_x, bank), jmp = pio_encode_jmp(eoff + bus_read_offset_top);
-    uint32_t trig = eoff + bus_read_offset_trig, mask = 1u << esm;
-    uint32_t irq = spin_lock_blocking(elock);
+    uint32_t trig = eoff + bus_read_offset_trig;
+    io_rw_32 *pause = hw_clear_alias(&epio->ctrl), *resume = hw_set_alias(&epio->ctrl);
+    uint32_t mask = 1u << esm;
     bool run = erunning;
     s->instr = set;                                  /* safe anywhere in the program */
     if (s->addr == trig) {                           /* idle at the start wait (or just leaving it) */
         *pause = mask;
+        /* The PC only counts once CTRL shows the SM stopped: a PC read
+         * straight after the pause can be served before the pause stops it.
+         * Measured on a Plus-W with switches at every phase of the cycle:
+         * without this, 0.7% of switches jumped a read SM that had already
+         * taken its start flag, leaving that cycle's end flag pending and every
+         * later read released at once (a plain CTRL write did no better). The
+         * cost is this read inside the pause: a cycle that starts in it can be
+         * served past the margin (`bus selftest fast switches`). */
+        while (epio->ctrl & mask) { }
         if (s->addr == trig) s->instr = jmp;         /* paused: it cannot leave `trig` before the jump */
         if (run) *resume = mask;
     }
-    spin_unlock(elock, irq);
+}
+
+BUS_HOT void bus_engine_set_bank(uint8_t bank) {
+    uint32_t irq = bus_engine_lock();
+    bus_engine_set_bank_locked(bank);
+    bus_engine_unlock(irq);
 }
 
 /* Who holds what: the engine's own SMs/channels and every claimed SM and DMA
@@ -177,10 +283,10 @@ void bus_engine_resources(void (*line)(const char *s)) {
     char buf[128];
     if (esm < 0) { line("bus engine not started"); return; }
 #ifdef PICOCO_BOARD_PLUSW
-    snprintf(buf, sizeof buf, "bus engine read pio0 sm%d, helper pio%u sm%d, dma A %d B %d",
-             esm, pio_get_index(hpio), hsm, edma_a, edma_b);
+    snprintf(buf, sizeof buf, "bus engine read pio0 sm%d, event sm%d, helper pio%u sm%d, dma A %d B %d C %d",
+             esm, evsm, pio_get_index(hpio), hsm, edma_a, edma_b, edma_c);
 #else
-    snprintf(buf, sizeof buf, "bus engine read pio0 sm%d, dma A %d B %d", esm, edma_a, edma_b);
+    snprintf(buf, sizeof buf, "bus engine read pio0 sm%d, event sm%d, dma A %d B %d C %d", esm, evsm, edma_a, edma_b, edma_c);
 #endif
     line(buf);
     for (uint i = 0; i < NUM_PIOS; i++) {

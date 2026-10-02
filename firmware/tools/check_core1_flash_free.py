@@ -43,7 +43,7 @@ SRAM_HI = 0x20082000  # RP2350: RAM (512K) + SCRATCH_X + SCRATCH_Y, see pico-sdk
 FLASH_LO = 0x10000000
 FLASH_HI = 0x20000000
 
-ALWAYS_ENTRIES = ["bus_core1_main"]
+ALWAYS_ENTRIES = ["bus_core1_main", "bus_event", "bus_engine_set_bank", "bus_engine_set_bank_locked", "bus_engine_lock", "bus_engine_unlock"]
 HOOK_RE = re.compile(r"bus_add_(?:read|write)_hook\([^,]+,\s*([A-Za-z_]\w*)\s*\)")
 BRANCH_LINE_RE = re.compile(r"^\s*([0-9a-fA-F]+):\s+([A-Za-z][A-Za-z0-9.]*)\s+([0-9a-fA-F]+)\s*<([^>]+)>")
 WORD_LINE_RE = re.compile(r"^\s*([0-9a-fA-F]+):\s+\.word\s+(?:0x)?([0-9a-fA-F]+)")

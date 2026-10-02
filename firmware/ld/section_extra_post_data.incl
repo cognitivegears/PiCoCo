@@ -1,0 +1,16 @@
+/* PiCoCo: see memory_extra.incl. NOLOAD: not zeroed at boot; bus_init fills
+ * bus_mem and engine_init fills bus_events. Two output sections: one would
+ * take bus_mem's 128 KB alignment and start at 0x20060000. */
+SECTIONS
+{
+    .bus_events (NOLOAD) :
+    {
+        KEEP(*(.bus_events))        /* 8 KB at 0x2005E000: DMA C's write ring, aligned to its size */
+    } > BUS_RAM
+    .bus_mem (NOLOAD) :
+    {
+        KEEP(*(.bus_mem))           /* 128 KB at 0x20060000: the read engine's table, aligned to its size */
+    } > BUS_RAM
+    ASSERT(ORIGIN(BUS_RAM) == RAM_ORIGIN + RAM_LENGTH, "BUS_RAM must start where RAM ends")
+    ASSERT(bus_events == 0x2005E000 && bus_mem == 0x20060000, "bus_ram layout")
+}

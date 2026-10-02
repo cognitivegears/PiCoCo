@@ -1,5 +1,6 @@
 #include "test.h"
 #include "bus.h"
+#include "sim_bus.h"
 #include "device.h"
 #include "rom.h"
 #include "becker.h"
@@ -25,7 +26,7 @@ TEST(status_follows_queue) {
     /* core0 push alone must not touch the table (single writer is core1) */
     ASSERT_EQ(bus_table[0x3F41], 0);
     ASSERT_EQ(bus_table[0x3F42], 0xFF);
-    bus_on_read_done(0x3F41, 0);
+    sim_read(0x3F41);
     ASSERT_EQ(bus_table[0x3F41], 2);
     ASSERT_EQ(bus_table[0x3F42], 0x41);
 }
@@ -33,20 +34,20 @@ TEST(status_follows_queue) {
 TEST(read_hook_pops_one) {
     setup();
     becker_write((const uint8_t *)"AB", 2);
-    bus_on_read_done(0x3F41, 0);
-    bus_on_read_done(0x3F42, 0);
+    sim_read(0x3F41);
+    sim_read(0x3F42);
     ASSERT_EQ(bus_table[0x3F42], 'B');
-    bus_on_read_done(0x3F42, 0);
+    sim_read(0x3F42);
     ASSERT_EQ(bus_table[0x3F41], 0);
     ASSERT_EQ(becker_stats.reads, 2);
-    bus_on_read_done(0x3F42, 0);
+    sim_read(0x3F42);
     ASSERT_EQ(becker_stats.underrun, 1);
 }
 
 TEST(status_read_does_not_pop) {
     setup();
     becker_write((const uint8_t *)"A", 1);
-    bus_on_read_done(0x3F41, 0);
+    sim_read(0x3F41);
     ASSERT_EQ(bus_table[0x3F42], 'A');
     ASSERT_EQ(becker_stats.reads, 0);
 }
@@ -54,9 +55,9 @@ TEST(status_read_does_not_pop) {
 TEST(status_poll_publishes_then_data_read_pops) {
     setup();
     becker_write((const uint8_t *)"Q", 1);
-    bus_on_read_done(0x3F41, 0);
+    sim_read(0x3F41);
     ASSERT_EQ(bus_table[0x3F41], 2);
-    bus_on_read_done(0x3F42, 0);
+    sim_read(0x3F42);
     ASSERT_EQ(becker_stats.reads, 1);
     ASSERT_EQ(bus_table[0x3F41], 0);
 }
@@ -64,19 +65,19 @@ TEST(status_poll_publishes_then_data_read_pops) {
 TEST(unpolled_data_read_does_not_lose_byte) {
     setup();
     becker_write((const uint8_t *)"Q", 1);
-    bus_on_read_done(0x3F42, 0);
+    sim_read(0x3F42);
     ASSERT_EQ(becker_stats.underrun, 1);
     ASSERT_EQ(becker_stats.reads, 0);
-    bus_on_read_done(0x3F41, 0);
+    sim_read(0x3F41);
     ASSERT_EQ(bus_table[0x3F42], 'Q');
-    bus_on_read_done(0x3F42, 0);
+    sim_read(0x3F42);
     ASSERT_EQ(becker_stats.reads, 1);
 }
 
 TEST(coco_write_reaches_stream) {
     setup();
-    bus_on_write(0x3F42, 0x52, 0);
-    bus_on_write(0x3F41, 0x99, 0);
+    sim_write(0x3F42, 0x52);
+    sim_write(0x3F41, 0x99);
     ASSERT_EQ(device_dispatch_writes(), 2);
     uint8_t buf[4];
     ASSERT_EQ(becker_read(buf, 4), 1);
@@ -95,7 +96,7 @@ TEST(tx_backpressure) {
 TEST(rx_overrun_counted) {
     setup();
     for (int i = 0; i < 1100; i++) {
-        bus_on_write(0x3F42, 1, 0);
+        sim_write(0x3F42, 1);
         device_dispatch_writes();
     }
     ASSERT(becker_stats.overrun > 0);
@@ -104,10 +105,10 @@ TEST(rx_overrun_counted) {
 
 TEST(loopback) {
     setup();
-    bus_on_write(0x3F42, 65, 0);
+    sim_write(0x3F42, 65);
     device_dispatch_writes();
     becker_loopback_pump();
-    bus_on_read_done(0x3F41, 0);
+    sim_read(0x3F41);
     ASSERT_EQ(bus_table[0x3F41], 2);
     ASSERT_EQ(bus_table[0x3F42], 65);
 }
@@ -129,7 +130,7 @@ TEST(rom_16k_keeps_becker) {
     ASSERT_EQ(rom_load_mem(img, 16384), 0);
     ASSERT_EQ(bus_table[0x3EFF], 0x11);
     ASSERT_EQ(bus_table[0x3F42], 0xFF); /* rom_load_mem skips this index; never clobbered */
-    bus_on_read_done(0x3F41, 0);
+    sim_read(0x3F41);
     ASSERT_EQ(bus_table[0x3F42], 'Z');
     ASSERT_EQ(bus_table[0x3F41], 2);
     ASSERT_EQ(rom_load_mem(img, 100), -2);
@@ -160,7 +161,7 @@ TEST(rom_load_file_test) {
 
 TEST(dispatch_skips_device_without_on_write) {
     setup();
-    bus_on_write(0x1000, 1, 0);
+    sim_write(0x1000, 1);
     ASSERT_EQ(device_dispatch_writes(), 1);
     ASSERT_EQ(becker_stats.writes, 0);
 }

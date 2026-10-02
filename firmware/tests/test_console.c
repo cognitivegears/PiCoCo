@@ -4,6 +4,7 @@
 #include "dw.h"
 #include "dw_store.h"
 #include "bus.h"
+#include "sim_bus.h"
 #include "device.h"
 #include "rom.h"
 #include "becker.h"
@@ -168,9 +169,11 @@ TEST(feed_splits_lines) {
 
 TEST(trace_dump_format) {
     setup();
-    bus_on_write(0x3F42, 0x41, 123);
+    sim_write(0x1000, 0x00);
+    sim_write(0x3F42, 0x41);
     console_exec("trace dump 1");
-    ASSERT(strstr(out, "123 3f42 W 41"));
+    ASSERT(strstr(out, "1 3f42 W 41"));        /* seq idx R|W data; seq 1 = the second event since bus_init */
+    ASSERT(!strstr(out, "1000"));
 }
 
 TEST(log_level_cmd) {
@@ -237,8 +240,8 @@ TEST(capture_writes_file) {
     setup();
     ASSERT_EQ(console_exec("dw capture on cap.bin"), 0);
     mode_set(MODE_NATIVE);
-    bus_on_write(0x3F42, 0x5A, 0);
-    bus_on_write(0x3F42, 0x41, 0);
+    sim_write(0x3F42, 0x5A);
+    sim_write(0x3F42, 0x41);
     mode_pump(&dw, 0);
     ASSERT_EQ(console_exec("dw capture off"), 0);
 
@@ -258,19 +261,19 @@ TEST(native_pump_end_to_end) {
     setup();
     ASSERT_EQ(console_exec("dw mount 0 raw.dsk"), 0);
     mode_set(MODE_NATIVE);
-    bus_on_write(0x3F42, 0x52, 0); /* DW_OP_READ */
+    sim_write(0x3F42, 0x52); /* DW_OP_READ */
     uint8_t payload[4] = { 0, 0, 0, 5 }; /* drive 0, lsn 5 */
-    for (int i = 0; i < 4; i++) bus_on_write(0x3F42, payload[i], 0);
+    for (int i = 0; i < 4; i++) sim_write(0x3F42, payload[i]);
     mode_pump(&dw, 0);
 
-    bus_on_read_done(0x3F41, 0); /* status poll: publishes (single-writer rule) */
+    sim_read(0x3F41); /* status poll: publishes (single-writer rule) */
     ASSERT_EQ(bus_table[0x3F41], 2);
     ASSERT_EQ(bus_table[0x3F42], 0); /* rc */
 
     uint8_t popped[259];
     for (int i = 0; i < 259; i++) {
         popped[i] = bus_table[0x3F42];
-        bus_on_read_done(0x3F42, 0);
+        sim_read(0x3F42);
         mode_pump(&dw, 0);
     }
     ASSERT_EQ(popped[0], 0);      /* rc */
@@ -293,17 +296,17 @@ TEST(native_pump_backpressure) {
      * batch: the actual worst case, not just two. */
     for (int r = 0; r < 12; r++) {
         uint8_t req[5] = { 0x52, 0, 0, 0, (uint8_t)r }; /* READ drive 0, lsn r */
-        for (int i = 0; i < 5; i++) bus_on_write(0x3F42, req[i], 0);
+        for (int i = 0; i < 5; i++) sim_write(0x3F42, req[i]);
     }
     mode_pump(&dw, 0);
     ASSERT_EQ(mode_stats.reply_overflow, 0);
 
-    bus_on_read_done(0x3F41, 0);
+    sim_read(0x3F41);
     uint8_t popped[12 * 259];
     int n = 0;
     while (becker_stats.reads < 12 * 259) {
         popped[n++] = bus_table[0x3F42];
-        bus_on_read_done(0x3F42, 0);
+        sim_read(0x3F42);
         mode_pump(&dw, 0);
     }
     ASSERT_EQ(becker_stats.reads, 12 * 259);

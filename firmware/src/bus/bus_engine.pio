@@ -40,17 +40,60 @@ public rend:
     mov pindirs, null       ; ...then release
 .wrap
 
+; Event SM: one word per selected cycle, at its end, reads and writes alike.
+; PIO0, in_base GP0 with in_count 23, so one `mov isr, pins` is D0-D7, A0-A13
+; and R/W, and bits 23-31 read 0 (bus.h: BUS_EV_NONE can never be pushed).
+; While the cycle lasts it keeps the last sample taken while the cycle was
+; still on (x); a sample that finds the cycle over may be from after its end
+; and is dropped. DMA C drains the RX FIFO (joined, 8 deep) into bus_events.
+; It runs whether or not the read path drives (bus drive off), and is never
+; restarted, so DMA C's position and core1's ring index stay in step.
+; Pico 2: jmp_pin = OE_BUS (GP26).
+.program bus_event_p2
+.pio_version 1
+.wrap_target
+    wait 1 gpio 26          ; between cycles
+    wait 0 gpio 26          ; a selected cycle
+smp:
+    mov isr, pins
+    jmp pin done            ; OE_BUS high: over; this sample may be from after the end
+    mov x, isr              ; a sample taken while the cycle was still on
+    jmp smp
+done:
+    mov isr, x
+    push noblock
+.wrap
+
+; Plus-W: jmp_pin = E (GP26); flag 1 from bus_sel_pw starts it.
+.program bus_event_pw
+.pio_version 1
+.wrap_target
+    wait 1 irq 1
+smp:
+    mov isr, pins
+    jmp pin keep            ; E still high
+    jmp done
+keep:
+    mov x, isr
+    jmp smp
+done:
+    mov isr, x
+    push noblock
+.wrap
+
 ; Select helper (Plus-W): runs in a PIO block with GPIO base 16 (the one the
 ; cyw43 driver also uses), watches the board's OE_BUS on GP40 and raises the
 ; read SM's flags in PIO0 across blocks (`next` wraps from PIO2 to PIO0).
-; Flag 1 is for the event SM (Task 2); nothing consumes it yet.
+; Flag 1 starts the event SM (bus_event_pw). With bus drive off the helper
+; runs alone, for the event SM; flags 0 and 2 then pile up unread and
+; engine_start clears them.
 .program bus_sel_pw
 .pio_version 1
 .wrap_target
     wait 1 gpio 40          ; starts here: a start while OE_BUS is low skips that cycle
     wait 0 gpio 40          ; OE_BUS low: selected and E high
     irq next set 0          ; read SM: cycle start
-    irq next set 1          ; event SM (later)
+    irq next set 1          ; event SM
     wait 1 gpio 40          ; OE_BUS high: cycle over
     irq next set 2          ; read SM: release
 .wrap

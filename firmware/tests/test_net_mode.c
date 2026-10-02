@@ -2,6 +2,7 @@
 #include "mode.h"
 #include "becker.h"
 #include "bus.h"
+#include "sim_bus.h"
 #include "device.h"
 #include "dw.h"
 #include "dw_store.h"
@@ -34,7 +35,7 @@ static void setup(void) {
 /* Bytes the CoCo writes to $FF42 come out of the to-server side. */
 TEST(coco_writes_reach_server) {
     setup();
-    for (int i = 0; i < 5; i++) bus_on_write(0x3F42, (uint8_t)(0x50 + i), 0);
+    for (int i = 0; i < 5; i++) sim_write(0x3F42, (uint8_t)(0x50 + i));
     mode_pump(&dw, 0);
     uint8_t got[16];
     size_t n = net_stub_take_to_server(got, sizeof got);
@@ -55,7 +56,7 @@ TEST(server_bytes_reach_coco) {
 TEST(not_up_consumes_quietly) {
     setup();
     net_stub_set_state(NET_CONNECTING);
-    bus_on_write(0x3F42, 0x23, 0);
+    sim_write(0x3F42, 0x23);
     mode_pump(&dw, 0);
     uint8_t got[4];
     ASSERT_EQ(net_stub_take_to_server(got, sizeof got), 0);
@@ -76,8 +77,8 @@ TEST(mode_net_drops_to_native_on_reconfigure) {
     const uint8_t reply[3] = { 1, 2, 3 };
     size_t empty = becker_tx_free();
     net_stub_push_from_server(reply, 3);
-    bus_on_write(0x3F42, 0x11, 0);
-    bus_on_write(0x3F42, 0x22, 0);
+    sim_write(0x3F42, 0x11);
+    sim_write(0x3F42, 0x22);
     ASSERT_EQ(console_exec("net server 1.2.3.4"), 0);
     ASSERT_EQ(mode_get(), MODE_NATIVE);
     net_stub_set_state(NET_UP);
@@ -93,7 +94,7 @@ TEST(mode_net_short_write_loses_nothing) {
     setup();
     static uint8_t fill[1020], got[1100];
     ASSERT_EQ(net_write(fill, sizeof fill), sizeof fill);
-    for (int i = 0; i < 10; i++) bus_on_write(0x3F42, (uint8_t)(0x60 + i), 0);
+    for (int i = 0; i < 10; i++) sim_write(0x3F42, (uint8_t)(0x60 + i));
     mode_pump(&dw, 0);
     mode_pump(&dw, 0);
     size_t n = net_stub_take_to_server(got, sizeof got);

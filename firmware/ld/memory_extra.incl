@@ -1,0 +1,8 @@
+/* PiCoCo: the bus engine's table and event ring (src/bus/bus.c) at the top of
+ * the 512 KB striped SRAM, below SCRATCH_X/Y. RAM is shrunk to end where this
+ * starts (RAM_LENGTH, firmware/CMakeLists.txt), so .bss no longer pads up to
+ * bus_mem's 128 KB alignment. Overrides the SDK's empty memory_extra.incl. */
+MEMORY
+{
+    BUS_RAM(rw) : ORIGIN = 0x2005E000, LENGTH = 0x22000
+}

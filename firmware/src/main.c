@@ -5,6 +5,7 @@
 #include "tusb.h"
 #include PICOCO_BOARD_H
 #include "bus.h"
+#include "bus_engine.h"
 #include "device.h"
 #include "rom.h"
 #include "becker.h"
@@ -77,6 +78,7 @@ int main(void) {
     dw_init(&g_dw, &g_store, mode_dw_send, NULL);
     console_init(console_out, NULL, &g_dw, &g_store);
     net_init();
+    bus_engine_init();   /* after net_init: the cyw43 driver claims PIO2 (GPIO base 16) first; before core1 and the config */
 #ifdef PICOCO_HAVE_NET
     net_dw = &g_dw;
 #endif
@@ -140,6 +142,7 @@ int main(void) {
         uint32_t now = plat_now_ms();
         plat_double_reset_tick(now);
         mode_pump(&g_dw, now);
+        bus_engine_tick(now);
         net_poll(now);
 #ifdef PIN_CART_DRV
         if (cart_until) {

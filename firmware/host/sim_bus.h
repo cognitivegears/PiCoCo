@@ -2,7 +2,7 @@
 #include <stdint.h>
 #include "dw.h"
 
-/* Virtual CoCo: drives bus.h the way the (not-yet-written) core1 loop will,
+/* Virtual CoCo: drives bus.h the way the engine and core1 event loop do,
  * so the host build can exercise the whole stack end to end. Addresses are
  * full 16-bit CoCo addresses ($C000..$FFFF); only the low 14 bits index
  * bus_table (see BUS_TABLE_SIZE). */

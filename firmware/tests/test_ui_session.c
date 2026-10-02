@@ -3,6 +3,7 @@
 #include "mode.h"
 #include "becker.h"
 #include "bus.h"
+#include "sim_bus.h"
 #include "device.h"
 #include "rom.h"
 #include "console.h"
@@ -33,7 +34,7 @@ static void setup(picoco_mode m) {
 }
 
 static void coco_writes(const uint8_t *p, size_t n) {
-    for (size_t i = 0; i < n; i++) bus_on_write(BUS_IDX_BECKER_DATA, p[i], 0);
+    for (size_t i = 0; i < n; i++) sim_write(BUS_IDX_BECKER_DATA, p[i]);
 }
 
 /* What the firmware queued for the CoCo, read the way the CoCo would. */
@@ -41,10 +42,10 @@ static size_t coco_reads(uint8_t *out, size_t cap) {
     size_t n = 0;
     for (int guard = 0; guard < 4000 && n < cap; guard++) {
         mode_pump(&dw, 0);
-        bus_on_read_done(BUS_IDX_BECKER_STATUS, 0);
+        sim_read(BUS_IDX_BECKER_STATUS);
         if (bus_table[BUS_IDX_BECKER_STATUS] != 0x02) { if (guard > 50 && n) break; continue; }
         out[n++] = bus_table[BUS_IDX_BECKER_DATA];
-        bus_on_read_done(BUS_IDX_BECKER_DATA, 0);
+        sim_read(BUS_IDX_BECKER_DATA);
     }
     return n;
 }
@@ -54,17 +55,17 @@ static const uint8_t first_poll[5] = { 'P', 2, 0, 0, (uint8_t)('P' + 2) };
 TEST(ctl_write_starts_and_ends_a_session) {
     setup(MODE_NATIVE);
     ASSERT(!ui_active());
-    bus_on_write(BUS_IDX_BECKER_CTL, 0xA5, 0);
+    sim_write(BUS_IDX_BECKER_CTL, 0xA5);
     mode_pump(&dw, 0);
     ASSERT(ui_active());
-    bus_on_write(BUS_IDX_BECKER_CTL, 0x5A, 0);
+    sim_write(BUS_IDX_BECKER_CTL, 0x5A);
     mode_pump(&dw, 0);
     ASSERT(!ui_active());
 }
 
 TEST(poll_is_answered_in_native_mode) {
     setup(MODE_NATIVE);
-    bus_on_write(BUS_IDX_BECKER_CTL, 0xA5, 0);
+    sim_write(BUS_IDX_BECKER_CTL, 0xA5);
     coco_writes(first_poll, sizeof first_poll);
     uint8_t got[700];
     size_t n = coco_reads(got, sizeof got);
@@ -77,7 +78,7 @@ TEST(poll_is_answered_in_native_mode) {
 /* In bridge mode Becker bytes normally go to CDC0; a session keeps them. */
 TEST(poll_is_answered_in_bridge_mode) {
     setup(MODE_BRIDGE);
-    bus_on_write(BUS_IDX_BECKER_CTL, 0xA5, 0);
+    sim_write(BUS_IDX_BECKER_CTL, 0xA5);
     coco_writes(first_poll, sizeof first_poll);
     uint8_t got[700];
     size_t n = coco_reads(got, sizeof got);
@@ -90,7 +91,7 @@ TEST(session_begin_drops_earlier_bytes) {
     setup(MODE_LOOP);
     const uint8_t stale[3] = { 'P', 'G', 'P' };
     coco_writes(stale, sizeof stale);
-    bus_on_write(BUS_IDX_BECKER_CTL, 0xA5, 0);
+    sim_write(BUS_IDX_BECKER_CTL, 0xA5);
     coco_writes(first_poll, sizeof first_poll);
     uint8_t got[700];
     size_t n = coco_reads(got, sizeof got);
@@ -100,9 +101,9 @@ TEST(session_begin_drops_earlier_bytes) {
 
 TEST(drivewire_works_again_after_the_session) {
     setup(MODE_NATIVE);
-    bus_on_write(BUS_IDX_BECKER_CTL, 0xA5, 0);
+    sim_write(BUS_IDX_BECKER_CTL, 0xA5);
     mode_pump(&dw, 0);
-    bus_on_write(BUS_IDX_BECKER_CTL, 0x5A, 0);
+    sim_write(BUS_IDX_BECKER_CTL, 0x5A);
     const uint8_t dwinit[2] = { 0x5A, 0x00 };       /* OP_DWINIT, driver version */
     coco_writes(dwinit, sizeof dwinit);
     uint8_t got[8];
