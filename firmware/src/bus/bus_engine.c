@@ -4,6 +4,7 @@
 #include "hardware/pio.h"
 #include "hardware/dma.h"
 #include "hardware/structs/busctrl.h"
+#include "hardware/structs/sio.h"
 #include "bus_engine.pio.h"
 #include PICOCO_BOARD_H
 #include <stdio.h>
@@ -16,7 +17,8 @@
  * Read SM: PIO0 (GPIO base 0). Pico 2: it waits on OE_BUS (GP26) itself.
  * Plus-W: OE_BUS is GP40, outside PIO0's window, so bus_sel_pw watches it from
  * PIO2 (GPIO base 16, shared with the cyw43 driver) and raises PIO0 flags 0
- * (start), 1 (event SM) and 2 (end) across blocks.
+ * (start), 1 (event SM) and 2 (end) across blocks. It runs from engine_init
+ * on, never stopped.
  * DMA A: PIO0 RX (the table byte's address) -> DMA B READ_ADDR_TRIG, endless.
  * DMA B: that byte -> PIO0 TX, 8-bit, count 1, re-armed by every A write.
  * Event SM: PIO0, one word per selected cycle; DMA C: its RX -> bus_events,
@@ -129,16 +131,18 @@ static void engine_init(void) {
                           dma_encode_endless_transfer_count(), true);
     busctrl_hw->priority = BUSCTRL_BUS_PRIORITY_DMA_R_BITS | BUSCTRL_BUS_PRIORITY_DMA_W_BITS;
     event_init();
+#ifdef PICOCO_BOARD_PLUSW
+    /* The helper runs from here on, through every stop, start and bus drive
+     * off, so the event SM (flag 1) never misses a cycle. GP40 keeps its
+     * synchroniser (an asynchronous strobe); set once, here. */
+    pio_set_input_sync_bypass_with_mask64(hpio, 0, 1ull << PIN_OE_BUS);
+    pio_sm_set_enabled(hpio, (uint)hsm, true);
+#endif
 }
 
-/* Read SM and helper start and stop in one register write. Plus-W: PIO2 is
- * PIO0's "prev" neighbour. The event SM is not touched. */
+/* The read SM only: the event SM and the Plus-W helper never stop. */
 static inline __attribute__((always_inline)) void engine_enable(bool on) {
-#ifdef PICOCO_BOARD_PLUSW
-    pio_set_sm_multi_mask_enabled(epio, 1u << hsm, 1u << esm, 0, on);
-#else
     pio_sm_set_enabled(epio, (uint)esm, on);
-#endif
 }
 
 /* From the disable to the release must be a few clk: whatever was on D0-D7
@@ -168,37 +172,35 @@ static void __no_inline_not_in_flash_func(engine_start)(void) {
     pio_sm_exec(epio, (uint)esm, pio_encode_pull(false, true));
     pio_sm_exec(epio, (uint)esm, pio_encode_mov(pio_y, pio_osr));
     pio_sm_exec(epio, (uint)esm, pio_encode_jmp(eoff + bus_read_offset_top));
-#ifdef PICOCO_BOARD_PLUSW
-    pio_sm_restart(hpio, (uint)hsm);
-    pio_sm_exec(hpio, (uint)hsm, pio_encode_jmp(hoff));   /* the `wait 1`: a cycle already under way is skipped */
-    pio_set_input_sync_bypass_with_mask64(hpio, 0, 1ull << PIN_OE_BUS);
-#endif
     uint32_t irq = spin_lock_blocking(elock);
     pio_sm_exec(epio, (uint)esm, pio_encode_set(pio_x, bus_bank));   /* under the lock: a bank switch meanwhile is not lost */
 #ifdef PICOCO_BOARD_PLUSW
-    epio->irq = 5u;                                  /* no flag 0 or 2 left from before (the flags live in PIO0); flag 1 is the event SM's */
+    /* While the read SM was stopped the running helper left flags 0 and 2 set
+     * (they live in PIO0; flag 1 is the event SM's). Clear them only between
+     * cycles: a cleared start whose end flag comes later would leave that end
+     * flag pending and release every later read at once. So: OE_BUS (GP40,
+     * read through SIO) high for 16 clk, so the last cycle's end flag is in
+     * (the helper raises it a few clk after the rise), clear, and still high
+     * after the clear, so no new cycle's start was cleared. A cycle that starts
+     * after that is served from its start flag, late, as on a Pico 2. Bounded
+     * by one bus cycle while the CoCo runs; no wait at all when it is idle. */
+    const uint32_t oe = 1u << (PIN_OE_BUS - 32);
+    for (;;) {
+        while (!(sio_hw->gpio_hi_in & oe)) { }
+        busy_wait_at_least_cycles(16);
+        if (!(sio_hw->gpio_hi_in & oe)) continue;
+        epio->irq = 5u;
+        if (sio_hw->gpio_hi_in & oe) break;
+    }
 #endif
-    engine_enable(true);                             /* Plus-W: together, so no flag is raised before the read SM runs */
+    engine_enable(true);
     spin_unlock(elock, irq);
 }
 
-#ifdef PICOCO_BOARD_PLUSW
-/* bus drive off: the helper alone, so the event SM still sees cycles. Flags 0
- * and 2 pile up unread; engine_start clears them. */
-static void helper_only(void) {
-    pio_sm_restart(hpio, (uint)hsm);
-    pio_sm_exec(hpio, (uint)hsm, pio_encode_jmp(hoff));
-    pio_sm_set_enabled(hpio, (uint)hsm, true);
-}
-#endif
-
 void bus_engine_drive(bool on) {
     if (esm < 0) engine_init();
-    engine_stop();                                   /* also stops a Plus-W helper left running by drive off */
+    engine_stop();
     if (on) engine_start();
-#ifdef PICOCO_BOARD_PLUSW
-    else helper_only();
-#endif
 }
 
 void bus_engine_init(void) {
@@ -243,6 +245,7 @@ BUS_HOT void bus_engine_unlock(uint32_t saved) {
  * served from the old bank. Nothing is ever desynchronised or served from a
  * wrong address. SRAM: core1's $FF40 hook calls it. */
 BUS_HOT void bus_engine_set_bank_locked(uint8_t bank) {
+    bank &= BUS_BANKS - 1;                           /* bus_peek indexes bus_mem with it */
     bus_bank = bank;
     if (esm >= 0) epio->sm[esm].instr = pio_encode_set(pio_x, bank);   /* never started: engine_start loads bus_bank */
 }

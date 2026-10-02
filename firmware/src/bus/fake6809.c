@@ -1127,7 +1127,7 @@ int fake6809_fast(int opts, void (*line)(const char *s)) {
 #define SREAL89 72
 #endif
     {   /* (a) realistic, 1.79 MHz: back-to-back cart reads, and core1 keeping up with them */
-        uint32_t c0 = bus_stats.cycles, d0 = bus_stats.event_drop;
+        uint32_t c0 = bus_stats.cycles, d0 = bus_stats.event_drop, l0 = bus_stats.event_lap;
         bus_stats.event_lag_max = 0;
         for (int i = 0; i < 5; i++) {
             fast_at(0, SREAL);
@@ -1136,11 +1136,11 @@ int fake6809_fast(int opts, void (*line)(const char *s)) {
             if (r.mism || r.lost) rc = -1;
         }
         bus_engine_check_drops();
-        uint32_t counted = bus_stats.cycles - c0, drop = bus_stats.event_drop - d0;
-        snprintf(buf, sizeof buf, "fast event rate 1.79MHz: counted %lu of %u, lag max %lu, drop %lu",
-                 (unsigned long)counted, (unsigned)(5 * FAST_N), (unsigned long)bus_stats.event_lag_max, (unsigned long)drop);
+        uint32_t counted = bus_stats.cycles - c0, drop = bus_stats.event_drop - d0, lap = bus_stats.event_lap - l0;
+        snprintf(buf, sizeof buf, "fast event rate 1.79MHz: counted %lu of %u, lag max %lu, drop %lu, lap %lu",
+                 (unsigned long)counted, (unsigned)(5 * FAST_N), (unsigned long)bus_stats.event_lag_max, (unsigned long)drop, (unsigned long)lap);
         line(buf);
-        if (counted != 5 * FAST_N || drop || bus_stats.event_lag_max >= BUS_EVENTS / 2) rc = -1;
+        if (counted != 5 * FAST_N || drop || lap || bus_stats.event_lag_max >= BUS_EVENTS / 2) rc = -1;
     }
     fast_mix();                                      /* reads with writes between them: writes must never be driven */
     fast_at(0, SREAL);
@@ -1167,13 +1167,17 @@ int fake6809_fast(int opts, void (*line)(const char *s)) {
         fast_gaps();
         fast_at(0, SREAL);
     }
+    uint32_t nsel = 0;
+    for (int k = 0; k < FAST_N; k++) if (D_SEL(fast_desc[k])) nsel++;
+    uint32_t ec0 = bus_stats.cycles;
     fast_restart = true;                             /* engine restarted every 50 us under the burst */
     fast_burst(&r);
     fast_restart = false;
-    snprintf(buf, sizeof buf, "fast 1.79MHz restarts %lu under a gaps burst: spurious %lu wrong %lu (zero %lu = cycles lost to a restart)",
-             (unsigned long)r.restarts, (unsigned long)r.spur, (unsigned long)r.wrong, (unsigned long)r.zero);
+    uint32_t evs = bus_stats.cycles - ec0;           /* the event SM (and the Plus-W helper) never stop: every cycle counts */
+    snprintf(buf, sizeof buf, "fast 1.79MHz restarts %lu under a gaps burst: spurious %lu wrong %lu (zero %lu = cycles lost to a restart); events %lu of %lu",
+             (unsigned long)r.restarts, (unsigned long)r.spur, (unsigned long)r.wrong, (unsigned long)r.zero, (unsigned long)evs, (unsigned long)nsel);
     line(buf);
-    if (r.spur || r.wrong || r.lost) rc = -1;
+    if (r.spur || r.wrong || r.lost || evs != nsel) rc = -1;
     if (r.spur_k >= 0) {
         snprintf(buf, sizeof buf, "fast 1.79MHz first spurious: cycle %d (%s, idx %04x) read %02x; previous cycle's byte %02x",
                  r.spur_k, (fast_desc[r.spur_k] & D_RD) ? "unselected" : "write", (unsigned)(fast_desc[r.spur_k] & 0x3FFF), r.spur_got, r.spur_prev);
@@ -1181,8 +1185,11 @@ int fake6809_fast(int opts, void (*line)(const char *s)) {
     }
     if (opts & FAST_OPT_RESTARTS) {                  /* repeat just the restart burst */
         uint32_t tot_rs = 0, tot_sp = 0, tot_wr = 0, tot_z = 0, bursts = 0;
+        uint32_t ev_short = 0;
         for (int i = 0; i < 40; i++) {
+            uint32_t e0 = bus_stats.cycles;
             fast_restart = true; fast_burst(&r); fast_restart = false;
+            ev_short += nsel - (bus_stats.cycles - e0);
             tot_rs += r.restarts; tot_sp += r.spur; tot_wr += r.wrong; tot_z += r.zero; bursts++;
             if (r.spur_k >= 0) {
                 snprintf(buf, sizeof buf, "fast restarts: burst %d spurious %lu, first at cycle %d (%s) read %02x, previous cycle's byte %02x",
@@ -1190,10 +1197,10 @@ int fake6809_fast(int opts, void (*line)(const char *s)) {
                 line(buf);
             }
         }
-        snprintf(buf, sizeof buf, "fast restarts: %lu bursts, %lu restarts, spurious %lu wrong %lu zero %lu", (unsigned long)bursts,
-                 (unsigned long)tot_rs, (unsigned long)tot_sp, (unsigned long)tot_wr, (unsigned long)tot_z);
+        snprintf(buf, sizeof buf, "fast restarts: %lu bursts, %lu restarts, spurious %lu wrong %lu zero %lu, events missing %ld",
+                 (unsigned long)bursts, (unsigned long)tot_rs, (unsigned long)tot_sp, (unsigned long)tot_wr, (unsigned long)tot_z, (long)(int32_t)ev_short);
         line(buf);
-        if (tot_sp || tot_wr) rc = -1;
+        if (tot_sp || tot_wr || ev_short) rc = -1;
         goto done;
     }
     fast_burst(&r);

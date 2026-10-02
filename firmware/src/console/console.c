@@ -300,7 +300,7 @@ static int cmd_status(void) {
     outf("uptime_ms %u\n", plat_now_ms());
     outf("bus cycles %u reads %u writes %u write_overrun %u\n",
          bus_stats.cycles, bus_stats.reads, bus_stats.writes, bus_stats.write_overrun);
-    outf("bus engine_stall %u event_lag_max %u event_drop %u\n", bus_stats.engine_stall, bus_stats.event_lag_max, bus_stats.event_drop);
+    outf("bus engine_stall %u event_lag_max %u event_drop %u event_lap %u\n", bus_stats.engine_stall, bus_stats.event_lag_max, bus_stats.event_drop, bus_stats.event_lap);
     outf("bus whooks %u\n", bus_stats.whooks_run);
     outf("bus drive %s\n", bus_drive_get() ? "on" : "off");
     outf("last reset %s\n", plat_last_reset());
@@ -754,7 +754,7 @@ static int cmd_log(int argc, char **argv) {
 static int cmd_stats(int argc, char **argv) {
     if (argc < 2 || strcasecmp(argv[1], "reset") != 0) return cerr("usage: stats reset");
     bus_stats.cycles = 0; bus_stats.reads = 0; bus_stats.writes = 0; bus_stats.write_overrun = 0;
-    bus_stats.whooks_run = 0; bus_stats.engine_stall = 0; bus_stats.event_lag_max = 0; bus_stats.event_drop = 0;
+    bus_stats.whooks_run = 0; bus_stats.engine_stall = 0; bus_stats.event_lag_max = 0; bus_stats.event_drop = 0; bus_stats.event_lap = 0;
     becker_stats = (becker_stats_t){ 0 };
     memset(&g_dw->stats, 0, sizeof(g_dw->stats));
     mode_stats.reply_overflow = 0;

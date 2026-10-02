@@ -78,7 +78,12 @@ int main(void) {
     dw_init(&g_dw, &g_store, mode_dw_send, NULL);
     console_init(console_out, NULL, &g_dw, &g_store);
     net_init();
-    bus_engine_init();   /* after net_init: the cyw43 driver claims PIO2 (GPIO base 16) first; before core1 and the config */
+    bus_engine_init();   /* after net_init: the cyw43 driver claims PIO2 (GPIO base 16) first */
+    /* core1 straight after the event stream starts, so no event waits unread
+     * through the config replay and the net hold (more than 2048 would lap
+     * the ring). Every hook is registered above; the config's rom load and
+     * bank changes take the engine lock (rom.c). /HALT stays held until below. */
+    multicore_launch_core1(bus_core1_main);
 #ifdef PICOCO_HAVE_NET
     net_dw = &g_dw;
 #endif
@@ -120,7 +125,6 @@ int main(void) {
     }
     int64_t rtc;
     if (plat_rtc_get(&rtc)) dw_time_set(&g_dw, rtc, plat_now_ms());
-    multicore_launch_core1(bus_core1_main);
     gpio_put(PIN_HALT, 0);   /* release /HALT: spec 8.1 */
     LOG_I(LOG_M_MAIN, "core1 up, halt released");
 #ifdef PIN_CART_DRV

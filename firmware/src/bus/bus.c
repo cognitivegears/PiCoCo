@@ -64,8 +64,8 @@ void bus_drive_set(bool on) { bus_drive = on; bus_engine_drive(on); }
 void bus_drive_set(bool on) { bus_drive = on; }
 uint32_t bus_engine_lock(void) { return 0; }
 void bus_engine_unlock(uint32_t saved) { (void)saved; }
-void bus_engine_set_bank_locked(uint8_t bank) { bus_bank = bank; }
-void bus_engine_set_bank(uint8_t bank) { bus_bank = bank; }
+void bus_engine_set_bank_locked(uint8_t bank) { bus_bank = bank & (BUS_BANKS - 1); }
+void bus_engine_set_bank(uint8_t bank) { bus_engine_set_bank_locked(bank); }
 #endif
 bool bus_drive_get(void) { return bus_drive; }
 

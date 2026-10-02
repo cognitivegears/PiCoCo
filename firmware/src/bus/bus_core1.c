@@ -10,7 +10,8 @@
  * back to BUS_EV_NONE before moving on.
  *
  * event_lag_max: every 256 events, count the unread slots ahead (SRAM reads
- * only, no DMA register). A lap of the ring would show as BUS_EVENTS - 1.
+ * only, no DMA register). A lap of the ring shows as BUS_EVENTS - 1 and
+ * counts in event_lap.
  * SRAM only, interrupts off; bus_event and the hooks are BUS_HOT. */
 BUS_HOT void bus_core1_main(void) {
     (void)save_and_disable_interrupts();
@@ -25,6 +26,7 @@ BUS_HOT void bus_core1_main(void) {
             uint32_t lag = 0;
             while (lag < BUS_EVENTS - 1 && bus_events[(r + lag) & (BUS_EVENTS - 1)] != BUS_EV_NONE) lag++;
             if (lag > bus_stats.event_lag_max) bus_stats.event_lag_max = lag;
+            if (lag == BUS_EVENTS - 1) bus_stats.event_lap++;   /* never silent; its own counter: event_drop is core0's */
         }
     }
 }
