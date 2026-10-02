@@ -24,7 +24,10 @@ volatile bool bus_core1_hold;
  * the next check). Then the ring is out of order and every slot is stale:
  * empty them all, forward from the writer, which core1 outruns, then the ones
  * DMA C wrote meanwhile, and go on from where it is now. Those events and
- * everything unread are dropped, counted once in event_lap. */
+ * everything unread are dropped, counted once in event_lap. Before a check
+ * finds the lap, core1 serves up to 255 stale slots out of order (256 more
+ * for each check that leaves a moving writer to the next); after detection,
+ * none. */
 static BUS_HOT uint32_t resync(uint32_t r) {
     uint32_t w = bus_engine_event_pos();
     if (bus_events[w] == BUS_EV_NONE || bus_engine_event_pos() != w) return r;

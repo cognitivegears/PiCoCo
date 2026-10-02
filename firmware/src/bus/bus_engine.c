@@ -239,7 +239,8 @@ void bus_engine_tick(uint32_t now_ms) {
     bus_engine_check_drops();
     bool s = esm >= 0 && (epio->ctrl & (1u << (PIO_CTRL_SM_ENABLE_LSB + esm)))   /* not with bus drive off */
           && pio_sm_get_pc(epio, (uint)esm) == eoff + bus_read_offset_wbyte && !dma_channel_is_busy((uint)edma_b)
-          && gpio_get(PIN_OE_BUS);
+          && gpio_get(PIN_OE_BUS)
+          && pio_sm_is_rx_fifo_empty(epio, (uint)esm);   /* a lost pointer only: one still in RX (DMA A dead or paused) would hang engine_start */
     if (s && stalled) { engine_stop(); engine_start(); bus_stats.engine_stall++; s = false; }
     stalled = s;
 }

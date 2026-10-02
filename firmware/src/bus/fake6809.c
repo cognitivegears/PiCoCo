@@ -1171,6 +1171,9 @@ static void __no_inline_not_in_flash_func(fast_hook_latency)(void) {
     restore_interrupts(irq);
 }
 
+/* fast lap: core1 let go mid-burst (fast_mid_burst) */
+static void release_hold(void) { bus_core1_hold = false; }
+
 int fake6809_fast(int opts, void (*line)(const char *s)) {
     char buf[200];
     uint32_t c0 = bus_stats.cycles;
@@ -1384,23 +1387,26 @@ int fake6809_fast(int opts, void (*line)(const char *s)) {
     fast_line(line, "1.79MHz gaps after restarts", SREAL, &r);
     if (r.mism || r.lost) rc = -1;
     {   /* lap: core1 held off the ring (it parks at its next 256-event check)
-         * through a gaps burst of 3072 events, so DMA C laps it; let go, it
-         * must resync, then serve a reads burst in order (the trace check),
-         * every event counted */
+         * through a gaps burst of 3072 events, so DMA C laps it; let go ~200 us
+         * into the reads burst after it, so the resync meets a running DMA C;
+         * then the next reads burst in order (the trace check), every event
+         * counted */
         uint32_t l0 = bus_stats.event_lap;
         bus_core1_hold = true;
         fast_burst(&r);                              /* r.lost: the ring never drains while core1 is parked */
-        bus_core1_hold = false;
-        bool drained = events_drained();
-        uint32_t laps = bus_stats.event_lap - l0, e0 = bus_stats.cycles;
         fast_pattern(D_CTS);
         fast_at(0, SREAL);
+        fast_mid_burst = release_hold;
+        fast_burst(&r);
+        fast_mid_burst = NULL;
+        bool drained = events_drained(), relbad = r.mism || r.lost;
+        uint32_t laps = bus_stats.event_lap - l0, e0 = bus_stats.cycles;
         fast_burst(&r);
         uint32_t evs = bus_stats.cycles - e0;
         bool inorder = fast_check_events(line, e0);
         snprintf(buf, sizeof buf, "fast lap: resync %lu, next burst events %lu of %u", (unsigned long)laps, (unsigned long)evs, FAST_N);
         line(buf);
-        if (!laps || !drained || !inorder || evs != FAST_N || r.mism || r.lost) rc = -1;
+        if (!laps || !drained || relbad || !inorder || evs != FAST_N || r.mism || r.lost) rc = -1;
     }
     {   /* stall: DMA A paused for a reads burst, so the read SM waits at `pull`
          * from the first cycle on; then left stalled (bus_engine_test_stall) for
@@ -1418,10 +1424,10 @@ int fake6809_fast(int opts, void (*line)(const char *s)) {
         fast_burst(&r);
         fast_tick = 0;
         uint32_t det = bus_stats.engine_stall - s0;
-        if (driven) snprintf(buf, sizeof buf, "fast stall: detected %lu, pins driven %lu times during the stall, next burst %lu mismatches",
-                             (unsigned long)det, (unsigned long)driven, (unsigned long)r.mism);
-        else snprintf(buf, sizeof buf, "fast stall: detected %lu, pins never driven during the stall, next burst %lu mismatches",
-                      (unsigned long)det, (unsigned long)r.mism);
+        char drv[24] = "never driven";
+        if (driven) snprintf(drv, sizeof drv, "driven %lu times", (unsigned long)driven);
+        snprintf(buf, sizeof buf, "fast stall: detected %lu, pins %s during the stall, next burst %lu mismatches",
+                 (unsigned long)det, drv, (unsigned long)r.mism);
         line(buf);
         if (det != 1 || driven || r.mism || r.lost) rc = -1;
         fast_gaps();
