@@ -583,6 +583,7 @@ On the 16K CoCo 2 (no Extended BASIC):
 | J.3.7 launch HDB-DOS | pass: ENTER on `HDBDW3BC3.ROM` restarts into HDB-DOS, `DIR` lists the disk. Found on the way: a soft restart in 1.79 MHz mode misses the second byte of the CoCo 3's `DK` check (back-to-back cart reads at 1.79 MHz), so the cart is not recopied; slow speed first fixes it | 2026-10-02 |
 | J.3.8 launch carttest (pak, ROM mode) | pass: the cart test runs from the cart on a CoCo 3 (6309) and prints PASS lines; `rom now load carttest.rom`, 30 M bus cycles, `dw reads 2742 crc_err 0`, `becker reads 709389 underrun 0`, `oe_glitch 0`, `addr_resample 0` | 2026-10-02 |
 | J.3.9 outside the window / power-on | pass: a RESET 10 s later is a plain warm start (`OK`, no banner); power-on boots have always been HDB-DOS | 2026-10-02 |
+| J.3 re-run on the head build (7ea34e6) | pass: double RESET, header `PICOCO  COCO 3`; ENTER on `HDBDW3BC3.ROM` gives HDB-DOS and `DIR`; double RESET, ENTER on `CARTTEST.ROM` prints PASS lines. These are the exits that select slow speed and clear `$FEED` | 2026-10-02 |
 | J.3.10 CoCo 2 double RESET | pass once with the first flash-marker build (3 s window): manager loaded, `EXEC 49154`, launch carttest, single RESET back to the saved ROM. Not re-run with the final 2 s window + debounce build | 2026-10-01 |
 
 ## How to resume with Claude
