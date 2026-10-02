@@ -19,3 +19,7 @@ int  fake6809_selftest(fake_result_t *r, void (*line)(const char *s));   /* 0 pa
 int     fake6809_begin(void);                                   /* 0 ok, -1 no PIO SM, -2 refused: bus live */
 uint8_t fake6809_cycle(uint16_t addr, bool rd, uint8_t data);   /* rd: byte core1 drove; write: data goes to core1 */
 void    fake6809_end(void);
+
+/* Pico 2: `bus selftest fast` - DMA-fed back-to-back reads at 1.79 and 0.89 MHz
+ * timing (fake6809_fast in fake6809.pio). 0 pass, -1 fail, -2 refused: bus live. */
+int fake6809_fast(bool stress, void (*line)(const char *s));

@@ -9,7 +9,7 @@ import sys
 import termios
 import time
 
-TIMEOUT_S = 6.0
+TIMEOUT_S = float(os.environ.get("PCONSOLE_TIMEOUT", "6.0"))
 
 
 def open_port(path):

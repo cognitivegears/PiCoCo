@@ -70,3 +70,36 @@ dly:
     out pins, 23    [15]     ; P4: E=0 Q=0 — cycle over, core1 has released D0-7
     push block
 .wrap
+
+; Fast fake 6809 for the Pico 2 build (`bus selftest fast`): clkdiv 1, one TX
+; word per cycle (fed by DMA), cycles back to back with no gap. Side-set =
+; OE_BUS (GP26). Counts are clk_sys cycles; t=0 is the OE_BUS rise that ends
+; the previous cycle, f=0 the OE_BUS fall.
+;   TX word: [14:0]  A0..A13, R/W            -> GP8..GP22 (out pins, 15)
+;            [17:15] e: OE_BUS high = 42 + 14*e (e=0 1.79 MHz, e=3 0.89 MHz)
+;            [24:18] pre: D0-D7 sampled at f = pre+1
+;            [31:25] post: OE_BUS low = pre + post + 3
+;   RX word: [15:8] D0-D7 at f = pre+1, [7:0] D0-D7 at t = k+1 after the rise
+;            that ends this cycle (release check).
+; k (delay of `rel`) and m (delay of the first pull) are patched at run time,
+; k + m = 13, so the address still changes at t=17: setup 25 clk (+14*e).
+.program fake6809_fast
+.side_set 1
+.wrap_target
+    pull block      side 1 [10]   ; t=k+3 .. 16  (m = 13-k; 10 for k=3)
+    out pins, 15    side 1        ; t=17: next address + R/W, 25 clk before the fall
+    out x, 3        side 1        ; t=18
+hiext:
+    jmp x-- hiext   side 1 [13]   ; t=19..32 for e=0 (14 clk per pass)
+    out x, 7        side 1        ; t=33: pre
+    out y, 7        side 1 [7]    ; t=34..41: post
+lo:
+    jmp x-- lo      side 0        ; f=0: OE_BUS falls; pre+1 clk
+    in pins, 8      side 0        ; f=pre+1: the CPU's latch point
+postl:
+    jmp y-- postl   side 0        ; post+1 clk
+public relchk:
+    nop             side 1 [3]    ; OE_BUS rises: t=0..k
+    in pins, 8      side 1        ; t=k+1: D0-D7 after the rise
+    push noblock    side 1        ; t=k+2
+.wrap

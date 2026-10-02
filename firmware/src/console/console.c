@@ -237,6 +237,15 @@ static int cmd_bus(int argc, char **argv) {
 #ifndef PICOCO_HAVE_FAKE6809
         return cerr("bus selftest: pico only (host build)");
 #else
+#ifndef PICOCO_BOARD_PLUSW
+        if (argc >= 3 && strcasecmp(argv[2], "fast") == 0) {
+            int rc = fake6809_fast(argc >= 4 && strcasecmp(argv[3], "stress") == 0, selftest_line);
+            if (rc == -2) return cerr("bus selftest: bus is live (CoCo attached), refused");
+            if (rc != 0) return cerr("selftest fast FAIL");
+            outf("selftest fast pass\n");
+            return 0;
+        }
+#endif
         fake_result_t r;
         int rc = fake6809_selftest(&r, selftest_line);
         if (rc == -2) return cerr("bus selftest: bus is live (CoCo attached), refused");

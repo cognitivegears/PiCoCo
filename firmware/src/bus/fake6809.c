@@ -419,3 +419,195 @@ int fake6809_selftest(fake_result_t *r, void (*line)(const char *s)) {
     line("selftest rom cleared; reload with rom load");
     return fails ? -1 : 0;
 }
+
+#ifndef PICOCO_BOARD_PLUSW
+/* `bus selftest fast`: real back-to-back 1.79 MHz cycles. fake6809_fast (PIO1,
+ * clkdiv 1) is fed one word per cycle by DMA and its samples are captured by
+ * DMA, so nothing on core0 can stretch a cycle. Timing is in fake6809.pio. */
+#include "hardware/dma.h"
+
+#define FAST_N 4096
+#define FAST_WIN 0x3F00                  /* ROM window: table indices 0x0000-0x3EFF */
+static uint32_t fast_tx[FAST_N], fast_rx[FAST_N];
+static uint8_t  stress_buf[4096];
+
+static uint32_t xs32(uint32_t *s) { uint32_t x = *s; x ^= x << 13; x ^= x >> 17; x ^= x << 5; return *s = x; }
+
+/* Table fill and address walk: every byte nonzero (an undriven bus reads 0x00)
+ * and every cycle's byte differs from the previous cycle's. */
+static void fast_pattern(void) {
+    uint32_t s = 0x1234567u;
+    for (uint32_t i = 0; i < FAST_WIN; i++) { uint8_t b = (uint8_t)xs32(&s); bus_table[i] = b ? b : 0x5A; }
+    uint16_t prev = 0;
+    for (int k = 0; k < FAST_N; k++) {
+        uint16_t idx;
+        do idx = (uint16_t)(xs32(&s) % FAST_WIN); while (bus_peek(idx) == bus_peek(prev));
+        fast_tx[k] = idx | 0x4000u;      /* R/W high: read */
+        prev = idx;
+    }
+}
+
+static void fast_timing(int e, int pre, int post) {
+    for (int k = 0; k < FAST_N; k++)
+        fast_tx[k] = (fast_tx[k] & 0x7FFFu) | ((uint32_t)e << 15) | ((uint32_t)pre << 18) | ((uint32_t)post << 25);
+}
+
+typedef struct { uint32_t mism, zero, stale, rel_bad, lost; int first_k; uint16_t first_idx; uint8_t first_exp, first_got; } fast_res_t;
+
+static int fdma_tx = -1, fdma_rx = -1;
+static bool fast_stress;
+
+static void fast_burst(fast_res_t *r) {
+    memset(r, 0, sizeof *r);
+    r->first_k = -1;
+    for (int k = 0; k < FAST_N; k++) fast_rx[k] = 0xDEADBEEFu;
+    dma_channel_config c = dma_channel_get_default_config(fdma_rx);
+    channel_config_set_transfer_data_size(&c, DMA_SIZE_32);
+    channel_config_set_read_increment(&c, false);
+    channel_config_set_write_increment(&c, true);
+    channel_config_set_dreq(&c, pio_get_dreq(pio, sm, false));
+    channel_config_set_high_priority(&c, true);
+    dma_channel_configure(fdma_rx, &c, fast_rx, &pio->rxf[sm], FAST_N, false);
+    c = dma_channel_get_default_config(fdma_tx);
+    channel_config_set_transfer_data_size(&c, DMA_SIZE_32);
+    channel_config_set_read_increment(&c, true);
+    channel_config_set_write_increment(&c, false);
+    channel_config_set_dreq(&c, pio_get_dreq(pio, sm, true));
+    channel_config_set_high_priority(&c, true);
+    dma_channel_configure(fdma_tx, &c, &pio->txf[sm], fast_tx, FAST_N, false);
+    dma_start_channel_mask((1u << fdma_rx) | (1u << fdma_tx));
+    uint32_t t0 = time_us_32();
+    while (dma_channel_is_busy(fdma_rx) && time_us_32() - t0 < 20000) {
+        if (fast_stress) memcpy(stress_buf, stress_buf + 2048, 2048), memcpy(stress_buf + 2048, stress_buf, 2048);
+    }
+    if (dma_channel_is_busy(fdma_rx)) {          /* a dropped push (RX full) leaves the count short */
+        r->lost = dma_channel_hw_addr(fdma_rx)->transfer_count;
+        dma_channel_abort(fdma_rx);
+        dma_channel_abort(fdma_tx);
+    }
+    uint8_t prev = 0;
+    for (int k = 0; k < FAST_N; k++) {
+        uint16_t idx = fast_tx[k] & 0x3FFF;
+        uint8_t exp = bus_peek(idx), got = (uint8_t)(fast_rx[k] >> 8), rel = (uint8_t)fast_rx[k];
+        if (rel) r->rel_bad++;
+        if (got != exp) {
+            r->mism++;
+            if (got == 0) r->zero++; else if (got == prev) r->stale++;
+            if (r->first_k < 0) { r->first_k = k; r->first_idx = idx; r->first_exp = exp; r->first_got = got; }
+        }
+        prev = exp;
+    }
+}
+
+/* Patch the release-check point: `rel` nop delay k, first pull delay 13-k. */
+static void fast_set_rel(int k) {
+    uint16_t p = fake6809_fast_program_instructions[0], n = fake6809_fast_program_instructions[fake6809_fast_offset_relchk];
+    pio->instr_mem[offset] = (p & ~0x0F00u) | (uint16_t)((13 - k) << 8);
+    pio->instr_mem[offset + fake6809_fast_offset_relchk] = (n & ~0x0F00u) | (uint16_t)(k << 8);
+}
+
+static void fast_line(void (*line)(const char *), const char *tag, int s, const fast_res_t *r) {
+    char buf[160];
+    snprintf(buf, sizeof buf, "fast %s S=%d (%u ns): mismatches %lu/%d (zero %lu stale %lu) rel_nonzero %lu lost %lu",
+             tag, s, (unsigned)(s * 20 / 3), (unsigned long)r->mism, FAST_N, (unsigned long)r->zero,
+             (unsigned long)r->stale, (unsigned long)r->rel_bad, (unsigned long)r->lost);
+    line(buf);
+    if (r->first_k >= 0) {
+        snprintf(buf, sizeof buf, "fast %s first bad cycle %d idx %04x want %02x got %02x",
+                 tag, r->first_k, r->first_idx, r->first_exp, r->first_got);
+        line(buf);
+    }
+}
+
+/* Sweep the sample point S = 1..smax at one clock rate; print per-S mismatch
+ * counts (S = 1..lowsum+1) and return response_clk: the smallest S from which every later S reads
+ * the whole burst correctly (-1: never). */
+static int fast_sweep(void (*line)(const char *), const char *tag, int e, int lowsum) {
+    char buf[200];
+    int pos = snprintf(buf, sizeof buf, "fast %s sweep", tag), stable = -1, inbuf = 0;
+    fast_res_t r;
+    for (int s = 1; s <= lowsum + 1; s++) {
+        fast_timing(e, s - 1, lowsum - (s - 1));
+        fast_burst(&r);
+        if (r.mism == 0) { if (stable < 0) stable = s; } else stable = -1;
+        pos += snprintf(buf + pos, sizeof buf - pos, " %d:%lu", s, (unsigned long)r.mism);
+        inbuf = 1;
+        if (pos > 150) { line(buf); pos = snprintf(buf, sizeof buf, "fast %s sweep", tag); inbuf = 0; }
+    }
+    if (inbuf) line(buf);
+    snprintf(buf, sizeof buf, "fast %s response_clk %d (%d ns after OE_BUS fell)", tag, stable, stable < 0 ? -1 : stable * 20 / 3);
+    line(buf);
+    return stable;
+}
+
+int fake6809_fast(bool stress, void (*line)(const char *s)) {
+    char buf[128];
+    uint32_t c0 = bus_stats.cycles;
+    sleep_ms(100);
+    if (bus_stats.cycles != c0) return -2;
+    if (!pins_idle_10ms()) return -2;
+    sm = pio_claim_unused_sm(pio, false);
+    if (sm < 0) return -1;
+    offset = pio_add_program(pio, &fake6809_fast_program);
+    pio_sm_config c = fake6809_fast_program_get_default_config(offset);
+    sm_config_set_out_pins(&c, PIN_A0, 15);
+    sm_config_set_in_pins(&c, PIN_D0);
+    sm_config_set_sideset_pins(&c, PIN_OE_BUS);
+    sm_config_set_out_shift(&c, true, false, 32);
+    sm_config_set_in_shift(&c, false, false, 32);
+    sm_config_set_clkdiv(&c, 1.0f);
+    pins_to_pio();
+    uint32_t bypass_was = pio->input_sync_bypass;
+    pio->input_sync_bypass = bypass_was | D_MASK;   /* sample D0-D7 at the stated clk, not 2 clk later */
+    pio_sm_init(pio, sm, offset, &c);
+    fdma_tx = dma_claim_unused_channel(true);
+    fdma_rx = dma_claim_unused_channel(true);
+    fast_stress = stress;
+    bool drive_was = bus_drive_get();
+    bus_drive_set(true);
+    rom_banks_begin();                               /* unbanked: the window is bus_table */
+    fast_pattern();
+    fast_set_rel(3);
+    pio_sm_set_enabled(pio, sm, true);
+    snprintf(buf, sizeof buf, "fast timing: cycle %d clk (high 42, low 42), address setup 25 clk, %d cycles back to back%s",
+             84, FAST_N, stress ? ", core0 memcpy stress" : "");
+    line(buf);
+
+    fast_res_t r;
+    int rc = 0;
+    for (int i = 0; i < 5; i++) {                    /* (a) realistic: S=36 (240 ns) at 1.79 MHz */
+        fast_timing(0, 35, 39 - 35);
+        fast_burst(&r);
+        fast_line(line, "1.79MHz", 36, &r);
+        if (r.mism || r.lost) rc = -1;
+    }
+    int resp = fast_sweep(line, "1.79MHz", 0, 39);   /* (b) */
+    if (resp < 0 || resp > 36) rc = -1;
+    {   /* release: earliest point after the rise where D0-D7 read 0 for the whole burst */
+        int rel_ok = -1;
+        fast_timing(0, 35, 4);
+        for (int k = 0; k <= 13 && rel_ok < 0; k++) { fast_set_rel(k); fast_burst(&r); if (!r.rel_bad && !r.mism) rel_ok = k + 1; }
+        fast_set_rel(3);
+        snprintf(buf, sizeof buf, "fast 1.79MHz release_clk %d (D0-D7 low on every cycle %d clk after OE_BUS rose; -1 = not by 14)", rel_ok, rel_ok);
+        line(buf);
+    }
+    fast_timing(3, 71, 81 - 71);                     /* (c) 0.89 MHz: high 84, low 84, S=72 (480 ns) */
+    fast_burst(&r);
+    fast_line(line, "0.89MHz", 72, &r);
+    if (r.mism || r.lost) rc = -1;
+    fast_sweep(line, "0.89MHz", 3, 81);
+
+    pio_sm_set_enabled(pio, sm, false);
+    dma_channel_unclaim(fdma_tx);
+    dma_channel_unclaim(fdma_rx);
+    pio->input_sync_bypass = bypass_was;
+    pins_to_sio();
+    pio_remove_program(pio, &fake6809_fast_program, offset);
+    pio_sm_unclaim(pio, sm);
+    sm = -1;
+    rom_off();
+    bus_drive_set(drive_was);
+    line("selftest rom cleared; reload with rom load");
+    return rc;
+}
+#endif
