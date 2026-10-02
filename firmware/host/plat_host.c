@@ -108,3 +108,4 @@ void plat_rtc_set(int64_t unix_secs) { (void)unix_secs; }
 
 bool plat_double_reset(void) { return false; }
 void plat_double_reset_tick(uint32_t now_ms) { (void)now_ms; }
+uint32_t plat_double_reset_seen(void) { return 0; }

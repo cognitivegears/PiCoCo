@@ -9,7 +9,9 @@
 #include "usb_descriptors.h"
 #include "ff.h"
 #include "crash.h"
-#include "pico/platform/sections.h"
+#include "hardware/flash.h"
+#include "hardware/sync.h"
+#include <string.h>
 #include <stdio.h>
 
 uint32_t plat_now_us(void) { return time_us_32(); }
@@ -139,18 +141,58 @@ void plat_rtc_set(int64_t unix_secs) {
     else aon_timer_start(&ts);
 }
 
-/* A 32-bit magic value, so RAM noise at power-on cannot look like a hit. */
-#define DBL_MAGIC 0xD0B1E5E7u
-static uint32_t __uninitialized_ram(dbl_marker);
+/* Double RESET marker. A CoCo RESET pulls the RP2350's RUN pin, and nothing
+ * volatile in the chip survives that: main SRAM came back as noise and the
+ * always-on POWMAN scratch registers came back as 0 (bench 2026-10-01). So
+ * the marker is a byte log in its own flash sector, just below the
+ * filesystem. Every boot programs the next byte to 0x00 ("armed"); once the
+ * window has passed, the byte after it ("disarmed"). An odd count of 0x00
+ * bytes at boot therefore means the previous boot was reset inside its
+ * window. A byte is only ever programmed once from 0xFF, and the sector is
+ * erased once every ~2000 boots, before core1 starts. */
+#define DBL_OFF  (PICOCO_FS_OFFSET - FLASH_SECTOR_SIZE)
+#define DBL_LOG  ((const uint8_t *)(XIP_BASE + DBL_OFF))
+static uint32_t dbl_pos;        /* the byte the tick will program */
 static bool dbl_armed;
+static uint32_t dbl_seen;       /* 0x00 bytes found at boot, for the boot log */
+uint32_t plat_double_reset_seen(void) { return dbl_seen; }
+
+static void dbl_prog(uint32_t pos) {
+    uint8_t page[FLASH_PAGE_SIZE];
+    memset(page, 0xFF, sizeof page);             /* 0xFF leaves the page's other bytes as they are */
+    page[pos % FLASH_PAGE_SIZE] = 0x00;
+    uint32_t irq = save_and_disable_interrupts();
+    flash_range_program(DBL_OFF + (pos & ~(uint32_t)(FLASH_PAGE_SIZE - 1)), page, FLASH_PAGE_SIZE);
+    restore_interrupts(irq);
+}
 
 bool plat_double_reset(void) {
-    bool hit = dbl_marker == DBL_MAGIC;
-    dbl_marker = hit ? 0 : DBL_MAGIC;            /* a third reset is a plain boot again */
-    dbl_armed = !hit;
-    return hit;
+    /* Debounce: a RESET line that chatters reboots the chip again within
+     * milliseconds. Waiting before the marker is touched means such a boot
+     * never arms it, so one press cannot read as two. */
+    busy_wait_ms(PICOCO_RESET_DEBOUNCE_MS);
+    uint32_t n = 0;
+    while (n < FLASH_SECTOR_SIZE && DBL_LOG[n] == 0x00) n++;
+    dbl_seen = n;
+    bool hit = (n & 1u) != 0;
+    /* Full, or not the clean 0x00...0xFF shape (first boot of this firmware on old flash contents). */
+    if (n + 2 > FLASH_SECTOR_SIZE || DBL_LOG[n] != 0xFF || DBL_LOG[n + 1] != 0xFF) {
+        uint32_t irq = save_and_disable_interrupts();
+        flash_range_erase(DBL_OFF, FLASH_SECTOR_SIZE);
+        restore_interrupts(irq);
+        n = 0;
+        if (hit) { dbl_armed = false; return true; }   /* an empty log is already "disarmed" */
+    }
+    /* A hit stays a hit until the window closes (the tick then makes the
+     * count even): a bouncing RESET line or a third quick press must not turn
+     * the manager back into a plain boot (bench 2026-10-01). */
+    if (hit) { dbl_pos = n; dbl_armed = true; return true; }
+    dbl_prog(n);                                 /* arm */
+    dbl_pos = n + 1;
+    dbl_armed = true;
+    return false;
 }
 
 void plat_double_reset_tick(uint32_t now_ms) {
-    if (dbl_armed && now_ms >= PICOCO_DOUBLE_RESET_MS) { dbl_marker = 0; dbl_armed = false; }
+    if (dbl_armed && now_ms >= PICOCO_DOUBLE_RESET_MS) { dbl_prog(dbl_pos); dbl_armed = false; }
 }

@@ -531,6 +531,36 @@ the Pico. Never swap the ROM from the USB console while the stub is running.
 9. With the manager on screen, unplug and replug nothing, just wait 5
    minutes, then press down: the highlight still moves (idle session).
 
+### J.3 CoCo 3 (6309, 2 MB) and double RESET
+
+Read-path regression first (the 2026-10-01 core1 change, I.5):
+
+1. `hdbdw3bck.rom` saved: power on, HDB-DOS banner, `DIR`,
+   `LOADM"DINORUN":EXEC`. `status`: `late_precompute` near the old 4097
+   per boot, `addr_resample 0`, `oe_glitch 0`, `crc_err 0`, `underrun 0`.
+2. `rom load hdbdw3bc3.rom`, `save`, power-cycle: same checks at 1.79 MHz,
+   four `LOADM`s and a `SAVE`.
+
+Manager (no key has reached the stub on a CoCo 3 in any emulator, so keys
+come first, launches after):
+
+3. RESET twice within 3 s: the manager autostarts, header
+   `PICOCO  64K ECB COCO3`. Boot log: `double reset: manager for this boot`.
+4. Arrows move the highlight.
+5. BREAK: record what happens (expected: the manager again, since a CoCo 3
+   restart re-enters a `DK` cart; `rom now` still the manager).
+6. RESET once: back to the saved default (HDB-DOS), not the manager.
+7. RESET twice, ENTER on the saved HDB-DOS ROM: the CoCo 3 restarts into
+   HDB-DOS; `DIR` works. `status`: `rom now load <that rom>`.
+8. RESET twice, ENTER on `CARTTEST.ROM`: the cart test runs and prints
+   `PASS` lines with `ERR 0000` (a pak started in ROM mode).
+9. RESET once, 10 s later RESET once: HDB-DOS both times (outside the
+   window). A plain power-on is also HDB-DOS, never the manager.
+
+On the 16K CoCo 2 (no Extended BASIC):
+
+10. RESET twice, `EXEC 49154`: the manager.
+
 ### J.2 Results
 
 | Check | Result | Date |
@@ -544,6 +574,16 @@ the Pico. Never swap the ROM from the USB console while the stub is running.
 | J.1.7 no USB | pass on cart power alone | 2026-10-01 |
 | J.1.8 counters | pass: after 35 minutes in the manager on cart power, 16.9 M bus cycles, `underrun 0`, `overrun 0`, `oe_glitch 0`, `addr_resample 0`; `rom now load manager` | 2026-10-01 |
 | J.1.9 idle session | pass: highlight still moves after 5 minutes idle | 2026-10-01 |
+| J.3.1 HDB-DOS 0.89 MHz, read-path regression | pass (firmware 1.4, Pico 2 PCB): banner, `DIR`, `LOADM"DINORUN":EXEC`; `dw reads 97 crc_err 0`, `becker reads 24929 underrun 0 overrun 0`, `addr_resample 0`, `oe_glitch 0`. `late_precompute 0` (was 4097 per boot: the trace now runs inside the cycle, so the ROM copy is served from the preload) | 2026-10-02 |
+| J.3.2 HDB-DOS 1.79 MHz | pass (`hdbdw3bc3.rom`): DINORUN load, three `LOADM"PICOCO:3"`, `SAVE` + `DIR`; `dw reads 199 writes 4 crc_err 0`, `becker reads 51147 underrun 0 overrun 0`, `addr_resample 0`, `oe_glitch 0`, `late_precompute 0` | 2026-10-02 |
+| J.3.3 double RESET brings the manager | pass on the CoCo 3: two presses about a second apart, the manager autostarts; log `double reset: manager for this boot`, `rom now load manager`, `rom next` unchanged. The marker is a byte log in flash (neither SRAM nor the POWMAN scratch registers survive a CoCo RESET on this board); window 2 s. Earlier failures were a window of ~0.2 s: the boot log stamps are microseconds, and the Pico releases /HALT ~3 ms after reset | 2026-10-02 |
+| J.3.4 arrows | pass: first key presses seen by the stub on a CoCo 3 (manager entered with `rom launch manager` from the console, then `POKE &HFFD8,0:POKE &HFEED,0:POKE 113,0:EXEC &H8C1B`) | 2026-10-02 |
+| J.3.5 BREAK | as expected: the screen clears and the manager comes back (a CoCo 3 restart re-enters a `DK` cart). Leaving is by launching a ROM | 2026-10-02 |
+| J.3.6 single RESET returns to the default | pass: one RESET from the manager gives HDB-DOS (cold, banner) | 2026-10-02 |
+| J.3.7 launch HDB-DOS | pass: ENTER on `HDBDW3BC3.ROM` restarts into HDB-DOS, `DIR` lists the disk. Found on the way: a soft restart in 1.79 MHz mode misses the second byte of the CoCo 3's `DK` check (back-to-back cart reads at 1.79 MHz), so the cart is not recopied; slow speed first fixes it | 2026-10-02 |
+| J.3.8 launch carttest (pak, ROM mode) | pass: the cart test runs from the cart on a CoCo 3 (6309) and prints PASS lines; `rom now load carttest.rom`, 30 M bus cycles, `dw reads 2742 crc_err 0`, `becker reads 709389 underrun 0`, `oe_glitch 0`, `addr_resample 0` | 2026-10-02 |
+| J.3.9 outside the window / power-on | pass: a RESET 10 s later is a plain warm start (`OK`, no banner); power-on boots have always been HDB-DOS | 2026-10-02 |
+| J.3.10 CoCo 2 double RESET | pass once with the first flash-marker build (3 s window): manager loaded, `EXEC 49154`, launch carttest, single RESET back to the saved ROM. Not re-run with the final 2 s window + debounce build | 2026-10-01 |
 
 ## How to resume with Claude
 

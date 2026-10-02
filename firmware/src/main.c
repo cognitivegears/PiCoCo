@@ -84,7 +84,7 @@ int main(void) {
     crash_mode_hook = mode_get_u32;
     plat_reset_latch();   /* before watchdog_enable() below clobbers the marker it reads */
     watchdog_enable(8000, true);
-    LOG_I(LOG_M_MAIN, "boot");
+    LOG_I(LOG_M_MAIN, "boot, reset log %u", (unsigned)plat_double_reset_seen());
     if (fs_flash_mount() == 0) {
         int n = console_run_config();
         if (n < 0) LOG_I(LOG_M_MAIN, "fs ok, config: none");
