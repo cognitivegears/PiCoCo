@@ -760,7 +760,11 @@ hand debug.
 - **A14/A15 to the module on a Pico 2 build (required).** Today they reach
   only the Plus-W pad grid. Without A14 a 32K Program Pak cannot work
   (bench 2026-10-02: Silpheed, Super Pitfall). Options and what it breaks:
-  `docs/ADDITIONAL_ROADMAP.md` section 9.
+  `docs/ADDITIONAL_ROADMAP.md` section 9. **Placement:** A14 and A15 go on
+  the GPIOs directly above A13 (A0-A15 contiguous, R/W next to them), so
+  the PIO bus engine captures the whole address with one `IN PINS`. The
+  Plus-W pad-grid positions (GP29/GP30, with /CTS, /SCS, E and Q between
+  them and A13) do not meet this.
 
 Hardware items from the 2026-09-19 quality reviews that need a re-place
 or a bench MPI first, so they wait for the next spin rather than this
