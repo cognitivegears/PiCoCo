@@ -185,11 +185,17 @@ static void __no_inline_not_in_flash_func(engine_start)(void) {
      * after that is served from its start flag, late, as on a Pico 2. Bounded
      * by one bus cycle while the CoCo runs; no wait at all when it is idle. */
     const uint32_t oe = 1u << (PIN_OE_BUS - 32);
-    for (;;) {
-        while (!(sio_hw->gpio_hi_in & oe)) { }
+    /* Capped (interrupts off, elock held, and the first call comes before the
+     * watchdog). Assumes OE_BUS is low for at most one E-high half (560 ns at
+     * 0.89 MHz, ~12 passes of ~7 clk), so 64 passes (~3 us) mean it is
+     * stuck: clear and enable anyway. */
+    for (int n = 0;; n++) {
+        if (n == 64) { epio->irq = 5u; (void)epio->irq; bus_stats.start_wait_cap++; break; }
+        if (!(sio_hw->gpio_hi_in & oe)) continue;
         busy_wait_at_least_cycles(16);
         if (!(sio_hw->gpio_hi_in & oe)) continue;
         epio->irq = 5u;
+        (void)epio->irq;                             /* read back: the clear has landed before the re-check */
         if (sio_hw->gpio_hi_in & oe) break;
     }
 #endif

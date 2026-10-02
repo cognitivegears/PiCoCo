@@ -43,6 +43,7 @@ typedef struct {
     uint32_t event_lag_max;  /* core1: most ring entries waiting, sampled every 256 events */
     uint32_t event_drop;     /* core0: checks that found the event SM had dropped a push (RX FIFO full) */
     uint32_t event_lap;      /* core1: lag checks that found the ring lapped (events overwritten unread) */
+    uint32_t start_wait_cap; /* core0, Plus-W: engine starts whose wait for OE_BUS high hit its cap */
 } bus_stats_t;
 
 /* The table the engine serves: eight 16 KB banks in one 128 KB-aligned block.
