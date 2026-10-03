@@ -765,14 +765,14 @@ CoCo 2 (16K, no Extended BASIC):
 
 | Check | Result | Date |
 |---|---|---|
-| K.2.1 CoCo 3 HDB-DOS 0.89 MHz, loads + SAVE | | |
-| K.2.2 CoCo 3 HDB-DOS 1.79 MHz, 4 LOADMs + SAVE | | |
-| K.2.3 manager, HDB-DOS / pak / carttest launches | | |
-| K.2.4 double RESET from a pak | | |
-| K.2.5 Tetris displays correctly | | |
-| K.2.6 CoCo 3 counters | | |
-| K.2.7 CoCo 2 manager, carttest launch | | |
-| K.2.8 CoCo 2 carttest 30 min + counters | | |
+| K.2.1 CoCo 3 HDB-DOS 0.89 MHz, loads + SAVE | PASS: DIR, SAVE, DIR, LOADM DINORUN; dw reads 110 writes 4 crc_err 0; underrun 0 overrun 0 (one LOADM: DINORUN auto-runs) | 2026-10-03 |
+| K.2.2 CoCo 3 HDB-DOS 1.79 MHz, 4 LOADMs + SAVE | PASS: DIR, SAVE, DIR, LOADM DINORUN; dw reads 105 writes 4 crc_err 0; underrun 0 overrun 0 (one LOADM, see K.2.1) | 2026-10-03 |
+| K.2.3 manager, HDB-DOS / pak / carttest launches | PASS: HDB-DOS DIR; THEXDER (16K) displays; carttest PASS lines, 2665 reads crc_err 0. First double RESET after a console `rom load`+`save` needed a power cycle (once, not reproduced) | 2026-10-03 |
+| K.2.4 double RESET from a pak | PASS: from Thexder and from carttest back to the manager | 2026-10-03 |
+| K.2.5 Tetris displays correctly | PASS: 151 s, 123.6 M cart cycles at 1.79 MHz, lag max 0 | 2026-10-03 |
+| K.2.6 CoCo 3 counters | PASS on every row: engine_stall 0 event_drop 0 event_lap 0 start_wait_cap 0, becker underrun 0 overrun 0, dw crc_err 0 | 2026-10-03 |
+| K.2.7 CoCo 2 manager, carttest launch | PASS: EXEC 49154 manager, carttest PASS lines; 1608 reads crc_err 0 at the soak start. (First attempt hit HDB-DOS: the CoCo 3 rows had saved hdbdw3bck.rom; `rom load manager` + `save` restored the default) | 2026-10-03 |
+| K.2.8 CoCo 2 carttest 30 min + counters | FAIL: soak 1 stopped at PASS 0007 (54 M cycles, `engine_stall 1`, CoCo crashed into an FF sweep); soak 2 on 6fa526c (stall diagnostic): `engine_stall 3` in ~5 min, carttest survived two restarts, died at PASS 0013. Logged state at detection: SM at `pull`, RX 0, TX 0, DMA B idle, OE_BUS high, **486 cycles served correctly between the two ticks** (frozen trace: normal carttest flow, good data) = guard false positive; the restart is what crashes the CoCo. Trace shows ~7 % exact duplicate read events (`0140R34 0140R34`), the event SM's signature of a short OE_BUS high blip mid-cycle. CoCo 3: 0 stalls in 155 M+ cycles. Old CPU loop: `oe_glitch 0` on this CoCo 2 (sampled every ~25 clk; PIO reacts to 1 clk). dw crc_err 0, underrun 0 throughout | 2026-10-03 |
 
 ## How to resume with Claude
 
