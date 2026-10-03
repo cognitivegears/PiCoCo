@@ -612,6 +612,9 @@ static uint wd_off;
 static void wdata_arm(void) {
     PIO p0 = pio0;
     wd_sm = (int)pio_claim_unused_sm(p0, true);
+    /* PIO0 is exactly full here (read 14 + event 9 + wdata 9 = 32); the SDK
+     * returns an error offset instead of panicking when a program does not fit. */
+    hard_assert(pio_can_add_program(p0, &WD_PROG));
     wd_off = pio_add_program(p0, &WD_PROG);
     pio_sm_config c = WD_CFG(wd_off);
     sm_config_set_out_pins(&c, PIN_D0, 8);
