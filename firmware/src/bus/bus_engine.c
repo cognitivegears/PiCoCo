@@ -1,5 +1,6 @@
 #include "bus.h"
 #include "bus_engine.h"
+#include "log.h"
 #include "hardware/sync.h"
 #include "hardware/pio.h"
 #include "hardware/dma.h"
@@ -241,11 +242,24 @@ void bus_engine_tick(uint32_t now_ms) {
     bus_engine_check_drops();
     bool on = esm >= 0 && (epio->ctrl & (1u << (PIO_CTRL_SM_ENABLE_LSB + esm)));
     if (!on && esm >= 0 && bus_drive) engine_start();   /* a Plus-W start whose wait hit its cap left it stopped: retry */
+    uint pc = on ? pio_sm_get_pc(epio, (uint)esm) : 0;
     bool s = on                                          /* not with bus drive off */
-          && pio_sm_get_pc(epio, (uint)esm) == eoff + bus_read_offset_wbyte && !dma_channel_is_busy((uint)edma_b)
+          && pc == eoff + bus_read_offset_wbyte && !dma_channel_is_busy((uint)edma_b)
           && gpio_get(PIN_OE_BUS)
           && pio_sm_is_rx_fifo_empty(epio, (uint)esm);   /* a lost pointer only: one still in RX (DMA A dead or paused) would hang engine_start */
-    if (s && stalled) { engine_stop(); engine_start(); bus_stats.engine_stall++; s = false; }
+    static uint32_t cyc1;   /* events seen at the first stalled tick: did the bus keep cycling? */
+    if (s && !stalled) cyc1 = bus_stats.cycles;
+    if (s && stalled) {
+        /* Bench diagnostic (2026-10-03, CoCo 2 carttest stall): keep the trace
+         * and log the engine's state before the restart wipes it. */
+        bus_trace_freeze(true);
+        LOG_E(LOG_M_BUS, "stall: pc %u (wbyte %u) rx %u tx %u dmaA busy %u dmaB busy %u oe %u cycles %lu -> %lu uptime %lu",
+              pc, eoff + bus_read_offset_wbyte, (unsigned)pio_sm_get_rx_fifo_level(epio, (uint)esm),
+              (unsigned)pio_sm_get_tx_fifo_level(epio, (uint)esm), (unsigned)dma_channel_is_busy((uint)edma_a),
+              (unsigned)dma_channel_is_busy((uint)edma_b), (unsigned)gpio_get(PIN_OE_BUS),
+              (unsigned long)cyc1, (unsigned long)bus_stats.cycles, (unsigned long)now_ms);
+        engine_stop(); engine_start(); bus_stats.engine_stall++; s = false;
+    }
     stalled = s;
 }
 
