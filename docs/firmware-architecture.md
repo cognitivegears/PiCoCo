@@ -352,11 +352,13 @@ It prints `selftest fast pass` only if every gated line passed; the
 expected lines per board are in `firmware/README.md` and
 `firmware/TEST_PLAN.md` section K.
 
-It is safe to run on an unplugged PCB: with no cart +5 V present, the
-board's own +3.3 V rail (derived from +5 V through the LDO) is off, so
+By design it should be safe on a PCB powered from USB alone: with no cart
++5 V present the board's +3.3 V rail (an LDO off +5 V) is off, so
 U10/U11/U12/U13/U15's outputs sit in their unpowered high-impedance state
-(LVC "partial-power-down" `Ioff`) and cannot drive against the PIO no
-matter what it does. On success (or failure) it calls `rom_off()` and
+(LVC "partial-power-down" `Ioff`) and cannot drive against the PIO. That
+has never been run; until someone checks it on a scope, run the self-test
+on a bare module only, and never with a CoCo attached (the engine would
+drive into a live bus). On success (or failure) it calls `rom_off()` and
 prints `selftest rom cleared; reload with rom load` — the synthetic image
 does not survive a run either way, which is why `firmware/tools/bench.py`
 sends `reboot` at the end of its own run, to replay a saved `rom load`
