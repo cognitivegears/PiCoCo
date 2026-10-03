@@ -772,7 +772,7 @@ CoCo 2 (16K, no Extended BASIC):
 | K.2.5 Tetris displays correctly | PASS: 151 s, 123.6 M cart cycles at 1.79 MHz, lag max 0 | 2026-10-03 |
 | K.2.6 CoCo 3 counters | PASS on every row: engine_stall 0 event_drop 0 event_lap 0 start_wait_cap 0, becker underrun 0 overrun 0, dw crc_err 0 | 2026-10-03 |
 | K.2.7 CoCo 2 manager, carttest launch | PASS: EXEC 49154 manager, carttest PASS lines; 1608 reads crc_err 0 at the soak start. (First attempt hit HDB-DOS: the CoCo 3 rows had saved hdbdw3bck.rom; `rom load manager` + `save` restored the default) | 2026-10-03 |
-| K.2.8 CoCo 2 carttest 30 min + counters | FAIL: soak 1 stopped at PASS 0007 (54 M cycles, `engine_stall 1`, CoCo crashed into an FF sweep); soak 2 on 6fa526c (stall diagnostic): `engine_stall 3` in ~5 min, carttest survived two restarts, died at PASS 0013. Logged state at detection: SM at `pull`, RX 0, TX 0, DMA B idle, OE_BUS high, **486 cycles served correctly between the two ticks** (frozen trace: normal carttest flow, good data) = guard false positive; the restart is what crashes the CoCo. Trace shows ~7 % exact duplicate read events (`0140R34 0140R34`), the event SM's signature of a short OE_BUS high blip mid-cycle. CoCo 3: 0 stalls in 155 M+ cycles. Old CPU loop: `oe_glitch 0` on this CoCo 2 (sampled every ~25 clk; PIO reacts to 1 clk). dw crc_err 0, underrun 0 throughout | 2026-10-03 |
+| K.2.8 CoCo 2 carttest 30 min + counters | PASS on f1b4b85 (guard dwell check): 31 min, 866 M cycles, `engine_stall 0`, `dw reads 72195 crc_err 0`, `becker reads 18.7 M underrun 0 overrun 0`, `event_lag_max 1`, `event_dup 75.1 M` (8.7 % of reads: OE_BUS high blips on the first selected cycle after a 6809 internal cycle; never on a `$FF42` read). Soaks 1-2 before the fix: see the dated results below | 2026-10-03 |
 
 ## How to resume with Claude
 
@@ -788,6 +788,24 @@ moves): reflash from current `main`: `bootsel` on the console, wait for `/Volume
 heading.
 
 ## Results
+
+### 2026-10-03, PCB v2.3.1 #1, Pico 2, CoCo 2 (26-3026, 16K, no ECB): PIO engine stall guard
+carttest soaks 1 and 2 (7bec09f, 6fa526c) died after 7-13 PASS lines with
+`engine_stall` 1-3. Logged at detection (6fa526c): SM at `pull`, RX 0, TX 0,
+DMA B idle, OE_BUS high, 486 cycles served correctly between the two ticks,
+frozen trace normal. A guard false positive: a short OE_BUS high blip near
+the end of a cycle makes the read SM re-push and pass through `pull` after
+the cycle; the restart (stop, discharge, start) crashed the CoCo (the
+cassette relay clicks when the crashed CPU reaches BASIC's PIA init). The
+trace shows ~7-9 % duplicate read events, each on the first selected cycle
+after a 6809 internal cycle (CLRA, TSTA, DECB, LEAX, JSR, ANDCC). The old
+CPU loop never saw them (`oe_glitch 0`, sampled every ~25 clk). Fix
+f1b4b85: a tick counts only after 32 consecutive PC reads at `pull`;
+`event_dup` counts the blips. Soak 3: 31 min clean (K.2.8). The CoCo 3
+never shows a blip or a stall. Open: the blips' origin (scope OE_BUS on the
+cycle after a CLRA), whether to filter them in PIO, and a bare-module
+`bus selftest` on f1b4b85 (the forced-stall line with the dwell check).
+
 
 ### 2026-09-30, PCB v2.3.1 #1, Pico 2, CoCo 3 (firmware 1.3 + core1 timing fix)
 First assembled PCB (docs/pcb-bringup.md has the phase-by-phase log). HDB-DOS
