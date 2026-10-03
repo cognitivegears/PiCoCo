@@ -252,7 +252,7 @@ static int cmd_bus(int argc, char **argv) {
         return 0;
     }
 #endif
-    return cerr("usage: bus drive on|off | bus selftest [stress] [radio] [restarts] [switches] | bus engine");
+    return cerr("usage: bus drive on|off | bus selftest [stress] [radio] [restarts] [switches] | bus selftest net | bus engine");
 }
 
 /* "crash panic" is a hidden subcommand (not in help): exercises the
@@ -315,7 +315,7 @@ static int cmd_trace(int argc, char **argv) {
             outf("%u %04x %c %02x\n", (unsigned)trace_buf[i].seq, trace_buf[i].idx,
                  trace_buf[i].rw ? 'R' : 'W', trace_buf[i].data);
         }
-        if (!was_frozen) bus_trace_freeze(false);
+        if (!was_frozen) bus_trace_thaw();     /* keeps the start: a second dump on an idle bus shows the same events */
         return 0;
     }
     return cerr("usage: trace dump [n]|freeze|run");

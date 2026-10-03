@@ -126,7 +126,7 @@ int main(void) {
     int64_t rtc;
     if (plat_rtc_get(&rtc)) dw_time_set(&g_dw, rtc, plat_now_ms());
     gpio_put(PIN_HALT, 0);   /* release /HALT: spec 8.1 */
-    LOG_I(LOG_M_MAIN, "core1 up, halt released");
+    LOG_I(LOG_M_MAIN, "core1 up, halt released, bus cycles %u", (unsigned)bus_stats.cycles);   /* nonzero: selects during the hold */
 #ifdef PIN_CART_DRV
     /* Autostart paks expect /CART pulsing after reset (a real pak ties it to
      * Q). Toggle Q4 for 500 ms after the /HALT release so Color BASIC's

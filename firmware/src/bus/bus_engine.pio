@@ -48,7 +48,10 @@ public rend:
 ; and R/W, and bits 23-31 read 0 (bus.h: BUS_EV_NONE can never be pushed).
 ; While the cycle lasts it keeps the last sample taken while the cycle was
 ; still on (x); a sample that finds the cycle over may be from after its end
-; and is dropped. DMA C drains the RX FIFO (joined, 8 deep) into bus_events.
+; and is dropped. x is seeded with 0 between cycles, so an OE_BUS glitch too
+; short for one sample pushes a harmless `0000 W 00` (visible in the trace),
+; not the previous cycle's event again (a `$FF42` read would pop a byte twice).
+; Never seed with ~null: that is BUS_EV_NONE, the empty-slot sentinel. DMA C drains the RX FIFO (joined, 8 deep) into bus_events.
 ; It runs whether or not the read path drives (bus drive off), and is never
 ; restarted, so DMA C's position and core1's ring index stay in step.
 ; Pico 2: jmp_pin = OE_BUS (GP26).
@@ -56,6 +59,7 @@ public rend:
 .pio_version 1
 .wrap_target
     wait 1 gpio 26          ; between cycles
+    mov x, null             ; the seed: off the read path, OE_BUS is high
     wait 0 gpio 26          ; a selected cycle
 smp:
     mov isr, pins
@@ -71,6 +75,7 @@ done:
 .program bus_event_pw
 .pio_version 1
 .wrap_target
+    mov x, null             ; the seed, between cycles
     wait 1 irq 1
 smp:
     mov isr, pins

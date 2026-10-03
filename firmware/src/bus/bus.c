@@ -126,6 +126,10 @@ void bus_trace_freeze(bool freeze) {
 
 bool bus_trace_frozen(void) { return trace_frozen; }
 
+/* `trace dump`'s own short freeze: thaw with the start kept. Events in the
+ * gap were never stored; the copy's tag check skips their slots. */
+void bus_trace_thaw(void) { trace_frozen = false; }
+
 /* core1, from a hook inside bus_event: a read's event is already stored, a
  * write's comes after its hooks and is left out. */
 BUS_HOT void bus_trace_freeze_hot(void) {

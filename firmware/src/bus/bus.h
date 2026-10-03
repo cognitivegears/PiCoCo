@@ -68,7 +68,7 @@ static inline __attribute__((always_inline)) uint8_t bus_peek(uint16_t idx) {
 void bus_io_set(uint16_t idx, uint8_t v);             /* BUS_HOT: stores into all BUS_BANKS banks; ignores idx outside BUS_IO_LO..HI */
 
 extern volatile bus_stats_t bus_stats;
-extern volatile bool bus_drive;   /* false = never drive D0..D7 (capture-only, milestone 0.4); read by core1 each cycle */
+extern volatile bool bus_drive;   /* false = never drive D0..D7 (capture-only, milestone 0.4): the read SM is stopped (bus_engine_drive) */
 
 void bus_drive_set(bool on);
 bool bus_drive_get(void);
@@ -91,5 +91,6 @@ bool bus_pop_write(uint16_t *idx, uint8_t *data);                   /* core0 con
  * events up to the freeze; `trace run` (freeze false) starts it afresh. */
 void bus_trace_freeze(bool freeze);
 bool bus_trace_frozen(void);
+void bus_trace_thaw(void);                    /* unfreeze keeping the start (`trace dump`); bus_trace_freeze(false) starts afresh */
 void bus_trace_freeze_hot(void);              /* BUS_HOT; freezes (never thaws); a read hook's own event is kept, a write hook's is not (stored after its hooks) */
 size_t bus_trace_copy(bus_trace_entry *out, size_t max);            /* the last max events, oldest first */

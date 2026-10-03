@@ -219,8 +219,9 @@ to be high for 16 clk, clears flags 0 and 2, reads the IRQ register back
 so the clear has landed, and checks OE_BUS is still high, else it goes
 round again. A start flag cleared while its end flag is still to come
 would leave that end flag pending and release every later read at once.
-The wait is capped at 64 passes (about 3 µs); at the cap it clears,
-enables anyway and counts `start_wait_cap`.
+The wait is capped at 64 passes (about 3 µs). At the cap it counts
+`start_wait_cap` and leaves the read SM stopped; `bus_engine_tick`
+retries the start on its next millisecond while `bus drive` is on.
 
 The radio holds DMA channels 0-1; the engine claims its channels and state
 machines through the SDK allocators, never by number (`bus engine` prints
@@ -403,9 +404,12 @@ added beyond the minimum (it costs every read 1 clk and saves a bank
 switch from touching the program counter). Change either stretch only
 with a self-test run on both boards.
 
-**Start and stop.** `engine_stop` and `engine_start` run from SRAM with
-interrupts off, under the engine's spin lock: from flash, a cache miss
-once left the pins driven for two cycles. Stop disables the read SM and
+**Start and stop.** `engine_stop` and `engine_start` run from SRAM: from
+flash, a cache miss once left the pins driven for two cycles. `engine_stop`
+runs whole with interrupts off, under the engine's spin lock;
+`engine_start` takes the lock only from the `X` load on. Its drain, FIFO
+clear, restart and `Y` load run with interrupts on and no lock, which is
+harmless because the read SM is stopped. Stop disables the read SM and
 execs `mov pins, null` then `mov pindirs, null`. Start waits until the
 read SM's RX FIFO is empty and DMA B is idle (a pointer still in flight
 would land after the FIFO clear and serve every later read one cycle

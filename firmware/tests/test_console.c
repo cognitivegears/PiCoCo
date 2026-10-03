@@ -174,6 +174,9 @@ TEST(trace_dump_format) {
     console_exec("trace dump 1");
     ASSERT(strstr(out, "1 3f42 W 41"));        /* seq idx R|W data; seq 1 = the second event since bus_init */
     ASSERT(!strstr(out, "1000"));
+    outn = 0; out[0] = '\0';
+    console_exec("trace dump 1");              /* idle bus: the dump's own freeze keeps the start */
+    ASSERT(strstr(out, "1 3f42 W 41"));
 }
 
 TEST(log_level_cmd) {

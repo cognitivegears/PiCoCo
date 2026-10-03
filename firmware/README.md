@@ -273,12 +273,15 @@ becker reads <n> writes <n> underrun <n> overrun <n>
 - `event_lap`: times core1 fell a whole ring (2048 events) behind and
   resynced; the events in between are lost.
 - `start_wait_cap`: Plus-W only, engine starts whose wait for OE_BUS high
-  hit its cap.
+  hit its cap. Such a start leaves the read SM stopped, and the next
+  millisecond tick retries it.
 - `whooks`: write hooks run on core1 (today the `$FF40` bank hook).
 
 After a CoCo session all of `engine_stall`, `event_drop` and `event_lap`
 should read 0. `stats reset` clears these, the Becker counters and
-`dw stats`.
+`dw stats`. Under traffic it races core1's own counters: `cycles`, `reads`
+and the Becker `reads` may miss a reset by a few percent. `engine_stall`,
+`event_drop`, `start_wait_cap`, `event_lap` and `underrun` are reliable.
 
 #### Plus-W limits (until the respin)
 

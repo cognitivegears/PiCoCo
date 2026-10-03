@@ -266,7 +266,7 @@ static bool events_drained(void) {
 static bool fast_stress, fast_restart, fast_switch, fast_radio;
 static uint32_t radio_results, radio_scans, radio_fails;
 static int radio_rc __attribute__((unused));
-static void (*fast_mid_burst)(void);     /* called once, ~200 us into a burst (decode probe) */
+static void (*fast_mid_burst)(void);     /* called once, ~200 us into a burst (decode probe, lap release, hook latency) */
 static uint32_t fast_tick;               /* nonzero: the stall guard runs on every pass, on made-up ms from here */
 
 #ifdef PICOCO_BOARD_PLUSW
@@ -1091,14 +1091,15 @@ int fake6809_fast(int opts, void (*line)(const char *s)) {
         fast_mid_burst = release_hold;
         fast_burst(&r);
         fast_mid_burst = NULL;
-        bool drained = events_drained(), relbad = r.mism || r.lost;
+        bus_core1_hold = false;                      /* never left parked, whatever the hook did */
+        bool relbad = r.mism || r.lost;              /* r.lost: also a ring that never drained */
         uint32_t laps = bus_stats.event_lap - l0, e0 = bus_stats.cycles;
         fast_burst(&r);
         uint32_t evs = bus_stats.cycles - e0;
         bool inorder = fast_check_events(line, e0);
         snprintf(buf, sizeof buf, "fast lap: resync %lu, next burst events %lu of %u", (unsigned long)laps, (unsigned long)evs, FAST_N);
         line(buf);
-        if (!laps || !drained || relbad || !inorder || evs != FAST_N || r.mism || r.lost) rc = -1;
+        if (!laps || relbad || !inorder || evs != FAST_N || r.mism || r.lost) rc = -1;
     }
     {   /* stall: DMA A paused for a reads burst, so the read SM waits at `pull`
          * from the first cycle on; then left stalled (bus_engine_test_stall) for
@@ -1372,7 +1373,9 @@ done:
     pio_remove_program(pio, &FAST_PROG, offset);
     pio_sm_unclaim(pio, sm);
     sm = -1;
-    for (int i = 0; i < 32; i++) bus_io_set((uint16_t)(FAST_IO + i), io_save[i]);
+    for (int i = 0; i < 32; i++)                     /* not $FF41/$FF42: they are core1's (becker_refresh below) */
+        if (FAST_IO + i != BUS_IDX_BECKER_STATUS && FAST_IO + i != BUS_IDX_BECKER_DATA) bus_io_set((uint16_t)(FAST_IO + i), io_save[i]);
+    becker_refresh();                                /* the fake is stopped: no cycle runs, so core1 is in no hook */
     rom_off();
     bus_drive_set(drive_was);
     line("selftest rom cleared; reload with rom load");

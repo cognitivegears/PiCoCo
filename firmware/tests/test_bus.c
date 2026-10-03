@@ -137,7 +137,7 @@ TEST(event_word_fields) {
     ASSERT(BUS_EV_IDX(BUS_EV_NONE) == 0x3FFF);   /* the empty-slot word would be $FFFF: never selected */
 }
 
-TEST(set_bank_stores_bus_bank) {
+TEST(host_stub_set_bank_stores_bus_bank) {   /* bus.c's host stub, not bus_engine.c */
     bus_init();
     bus_mem[0][0x20] = 0xB0; bus_mem[3][0x20] = 0xB3;
     bus_engine_set_bank(3);
@@ -271,7 +271,7 @@ int main(void) {
     RUN(trace_run_starts_fresh);
     RUN(event_runs_hooks_and_queues_writes);
     RUN(event_word_fields);
-    RUN(set_bank_stores_bus_bank);
+    RUN(host_stub_set_bank_stores_bus_bank);
     RUN(io_set_refuses_outside_the_io_entries);
     TEST_MAIN_END
 }

@@ -186,12 +186,14 @@ static void __no_inline_not_in_flash_func(engine_start)(void) {
      * after that is served from its start flag, late, as on a Pico 2. Bounded
      * by one bus cycle while the CoCo runs; no wait at all when it is idle. */
     const uint32_t oe = 1u << (PIN_OE_BUS - 32);
-    /* Capped (interrupts off, elock held, and the first call comes before the
-     * watchdog). Assumes OE_BUS is low for at most one E-high half (560 ns at
-     * 0.89 MHz, ~12 passes of ~7 clk), so 64 passes (~3 us) mean it is
-     * stuck: clear and enable anyway. */
+    /* Capped (interrupts off, elock held; the first start is the config
+     * replay's `bus drive on`, after watchdog_enable). Assumes OE_BUS is low
+     * for at most one E-high half (560 ns at 0.89 MHz, ~12 passes of ~7 clk),
+     * so 64 passes (~3 us) mean it is stuck: leave the read SM stopped (a
+     * start cleared under a low OE_BUS would leave its end flag pending, the
+     * case above) and let bus_engine_tick retry. */
     for (int n = 0;; n++) {
-        if (n == 64) { epio->irq = 5u; (void)epio->irq; bus_stats.start_wait_cap++; break; }
+        if (n == 64) { bus_stats.start_wait_cap++; spin_unlock(elock, irq); return; }
         if (!(sio_hw->gpio_hi_in & oe)) continue;
         busy_wait_at_least_cycles(16);
         if (!(sio_hw->gpio_hi_in & oe)) continue;
@@ -237,7 +239,9 @@ void bus_engine_tick(uint32_t now_ms) {
     if (now_ms == last) return;
     last = now_ms;
     bus_engine_check_drops();
-    bool s = esm >= 0 && (epio->ctrl & (1u << (PIO_CTRL_SM_ENABLE_LSB + esm)))   /* not with bus drive off */
+    bool on = esm >= 0 && (epio->ctrl & (1u << (PIO_CTRL_SM_ENABLE_LSB + esm)));
+    if (!on && esm >= 0 && bus_drive) engine_start();   /* a Plus-W start whose wait hit its cap left it stopped: retry */
+    bool s = on                                          /* not with bus drive off */
           && pio_sm_get_pc(epio, (uint)esm) == eoff + bus_read_offset_wbyte && !dma_channel_is_busy((uint)edma_b)
           && gpio_get(PIN_OE_BUS)
           && pio_sm_is_rx_fifo_empty(epio, (uint)esm);   /* a lost pointer only: one still in RX (DMA A dead or paused) would hang engine_start */

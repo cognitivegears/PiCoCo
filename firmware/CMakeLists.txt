@@ -57,9 +57,10 @@ if(NOT PICOCO_HOST)
   else()
     set(PICOCO_PIN_HEADER pico2_breadboard)
   endif()
-  # fake6809 (on-chip PIO selftest): pio1 drives A0-A13/R/W plus OE_BUS on a
-  # Pico 2, or A0-A13/R/W plus /CTS, /SCS, E on a Plus-W (fake6809.pio has one
-  # program per board; fake6809.c picks the right one on PICOCO_BOARD_PLUSW).
+  # fake6809 (on-chip PIO selftest, `bus selftest`): pio1 drives A0-A13/R/W
+  # plus OE_BUS on a Pico 2, or A0-A13/R/W plus /CTS, /SCS, E on a Plus-W.
+  # fake6809.pio holds both fast fakes, the Plus-W fake decode and its probe,
+  # and the write-data programs; fake6809.c picks per PICOCO_BOARD_PLUSW.
   target_sources(picoco PRIVATE src/bus/fake6809.c)
   target_compile_definitions(picoco PRIVATE PICOCO_HAVE_FAKE6809=1)
   pico_generate_pio_header(picoco ${CMAKE_CURRENT_LIST_DIR}/src/bus/fake6809.pio)
