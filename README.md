@@ -3,7 +3,8 @@
 A Raspberry Pi Pico 2 (or Waveshare RP2350B-Plus-W) carrier that plugs into
 the cartridge slot of a Tandy Color Computer (CoCo 1/2/3). It boots an
 HDB-DOS ROM, serves DriveWire disk images through a Becker port at
-$FF41/$FF42, and can drive the cartridge sound input. Licence: CERN-OHL-S-2.0
+$FF41/$FF42, and has an output stage for the cartridge sound input (the sound
+firmware is not written). Licence: CERN-OHL-S-2.0
 (hardware), MIT (firmware), CC-BY-SA-4.0 (docs); see `LICENSE`.
 
 Board revision: **v2.3.1** (98 x 77.2 mm, 2 layers, hard-gold fingers).
@@ -13,7 +14,7 @@ Design docs: `docs/hardware-design.md`, `docs/firmware-architecture.md`,
 ## If you have a bare board
 
 This is a **bare 98 x 77 mm board with no shell**. It fits no Program Pak
-case — the 53.34 x 44.45 mm outline mentioned in the roadmap docs is the
+case — the 53.34 x 44.45 mm outline mentioned in the v2.3 spec is the
 cased, future-variant footprint, not this board.
 
 1. **Orientation.** The board has no shell and no key. The component side is
@@ -29,7 +30,8 @@ cased, future-variant footprint, not this board.
    first, or use headers. Nothing else goes under the module.
 4. **Jumpers (solder bridges, defaults as shipped).**
    - `JP2` 1-2: U10 data-buffer /OE from the hardware decode (default).
-     2-3: /OE from firmware GP31 (Plus-W only).
+     2-3: /OE from firmware GP31 (Plus-W only). Today's firmware holds GP31
+     high, so leave JP2 at 1-2 on every build.
    - `JP3` 1-2: audio PWM to header pin 34 (default; sound works on a Pico 2).
      2-3: E clock to header pin 34 instead. Never bridge 2-3 and drive GP34 on
      a Plus-W at the same time.
@@ -62,9 +64,8 @@ cased, future-variant footprint, not this board.
    holding BOOTSEL and pressing the CoCo's own RESET button also enters the
    bootloader, because cart /RESET is tied to the module's RUN pin (R9).
 8. **Disk images.** The firmware keeps images in the module's flash and is
-   driven from the USB console (`firmware/README.md`, `docs/breadboard-plan.md`
-   §6 for the milestone commands). Wi-Fi DriveWire needs the Plus-W and later
-   firmware.
+   driven from the USB console (`firmware/README.md`). Wi-Fi DriveWire needs
+   the Plus-W (`becker net`, `firmware/README.md` "WiFi").
 9. **Multi-Pak Interface.** Select the PiCoCo slot for both /CTS and /SCS
    (`POKE &HFF7F` slot value) — the slot register ghosts at `$FF9F` as well
    as `$FF7F`; a CoCo 3 needs the upgraded MPI PAL. The 98 mm body may not

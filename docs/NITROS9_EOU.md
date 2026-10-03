@@ -5,7 +5,8 @@ NitrOS-9 disk straight from the Pico's flash, then the Ease of Use (EOU)
 desktop served from a computer over USB.
 
 Tested 2026-10-01 on PCB v2.3.1 with a Pico 2, a CoCo 3 with a 6309 and
-2 MB, macOS. The bench log is `firmware/TEST_PLAN.md` section H.
+2 MB, macOS, on the CPU read loop (before the PIO bus engine of tag
+`fw-1.5-pio-engine`). The bench log is `firmware/TEST_PLAN.md` section H.
 
 ## What works and what does not
 
@@ -161,8 +162,8 @@ and stop the relay and the server.
 | Pico missing from USB after a CoCo power cycle | seen once, cause unknown | unplug and replug the USB cable |
 
 `status` on the console has the counters that matter: `becker underrun` (52
-per EOU boot is the SDC probe and is normal), `bus addr_resample` and
-`bus oe_glitch` (both should be 0).
+per EOU boot is the SDC probe and is normal), and `bus engine_stall`,
+`event_drop` and `event_lap` (all should be 0).
 
 ## Other servers
 

@@ -6,8 +6,8 @@ soldered flat on the same carrier footprint, and presents two behaviors
 to the CoCo:
 
 1. **ROM emulation** over the `/CTS` window (`$C000–$FEFF`) — the Pico
-   serves a 16 KB HDB‑DOS + DriveWire boot image (or any ROM of your
-   choice) so the CoCo has a DriveWire client to run.
+   serves an 8 KB HDB‑DOS + DriveWire boot image (or any 8 KB, 16 KB or
+   `$FF40`-banked ROM) so the CoCo has a DriveWire client to run.
 2. **Becker port** peripheral at `$FF41` / `$FF42` (inside the `/SCS`
    decode range) — the Pico implements the DriveWire server protocol
    directly in firmware, turning the "virtual" Becker port used by
@@ -43,7 +43,7 @@ This document describes the **electrical design**. For firmware, see
   /SCS   ──── P1[36]      ──► [U13 ch1] → SCS_BUF ──► U15 gate 1
   E      ──── P1[6]       ──► [U13 ch2] → E_BUF   ──► U15 gate 2, JP3 pad 1
   /RESET ──── P1[5]       ──► [U13 ch7] → RESET_BUF──► R9 100Ω ──► Pico RUN (R10 10kΩ pull-up to +3V3, DNP)
-  Q, /SLENB ──────────────► [U13 input-only; outputs no-connect]
+  Q, /SLENB, A14, A15 ────► [U13] → Plus-W pad grid only (no Pico 2 header pin)
   /HALT, /NMI, /CART      ──► NOT buffered through U13 at all — they go straight to the
                               Q2/Q3/Q4 N-FET drive stages and their own R1/R2 pull-ups (§4.4, §9)
   SND    ──── P1[35]      ◄── R21/R22 ◄── 2-pole RC ◄── AUDIO_PWM (JP3: hdr34 on Pico 2 / GP34 on Plus-W)
@@ -53,7 +53,7 @@ This document describes the **electrical design**. For firmware, see
     SCS_BUF ─┴─NAND──► SEL_N ─┐
                      E_BUF ────┴─NAND──► OE_BUS_RAW ──► R11 33Ω ──► OE_BUS ──► JP2 pad 1 (→ U10 /OE), Pico header pin 31, TP1
 
-  Pico /HALT drive (hold-until-booted + DriveWire flow control):
+  Pico /HALT drive (hold-until-booted; `halt on`/`halt off` from the console):
     GP27 (HALT_GATE) ──► R8 100Ω ──► [Q2 2N7002] ──► /HALT_CART pin
                          R7 10kΩ to +3V3 pulls gate high during Pico boot
                          → Q2 ON → /HALT held low until firmware releases
@@ -171,12 +171,13 @@ Reference Manual.
 | 35  | SND     | cart → CoCo (audio)   | R21 1 kΩ / R22 1 kΩ divider ← 2-pole RC ← AUDIO_PWM (see §4.6); DC-coupled, inert when nothing drives AUDIO_PWM |
 | 36  | /SCS    | CoCo → cart           | U13 in → SCS_BUF → U15 gate 1 (NOT routed to Pico — firmware uses OE_BUS + A13) |
 | 37  | A13     | CoCo → cart           | U12 in → GP21 (serves double duty as address MSB and ROM/Becker selector) |
-| 38  | A14     | CoCo → cart           | P1 only; not routed to Pico or buffer |
-| 39  | A15     | CoCo → cart           | P1 only; not routed to Pico or buffer |
+| 38  | A14     | CoCo → cart           | U13 in → A14_BUF → Plus-W pad-grid GP29 only (not a Pico 2 header pin) |
+| 39  | A15     | CoCo → cart           | U13 in → A15_BUF → Plus-W pad-grid GP30 only (not a Pico 2 header pin) |
 | 40  | /SLENB  | cart → CoCo (v2.3.1: direction corrected — earlier drafts had this backwards) | U13 in + R23 10 kΩ pull‑up to +5 V (nothing on this board drives it, so it idles inactive); output left unconnected |
 
 A14 and A15 are not needed for the 16 KB `/CTS` window or the Becker
-port; they terminate at the cart edge fingers only. The
+port; they reach only the Plus-W pad grid, and no firmware reads them
+(32K paks need them, §9.1). The
 `OE_BUS + A13` decode scheme is the key simplification: firmware
 determines cart‑selection from OE_BUS (U15 output) and ROM‑vs‑Becker
 from A13 (which is 0 in the /CTS window, 1 in the /SCS window).
@@ -194,14 +195,15 @@ Plus-W column and the pad-grid table below.
 | GP0–GP7  | 1,2,4,5,6,7,9,10 | same | D0–D7 | Contiguous for `OUT PINS, 8` / `IN PINS, 8` |
 | GP8–GP15 | 11,12,14–20 | same | A0–A7 | — |
 | GP16–GP21| 21,22,24–27 | same | A8–A13 | — (GP8..GP21 contiguous = 14‑bit address) |
-| GP22     | 29 | same | /R/W   | 15th bit of the address IN word; `IN PINS, 15` at base 8 grabs A0–A13 + /R/W in one cycle |
+| GP22     | 29 | same | /R/W   | The read SM's `jmp pin`; the event SM takes D0–D7, A0–A13 and /R/W in one 23-pin `mov isr, pins` (`firmware-architecture.md` §4.1-4.2) |
 | GP23–GP25| — | same | *internal* | SMPS PS / VBUS sense / onboard LED (not header‑accessible) |
-| GP26     | 31 | GP26/GP40 | **OE_BUS** | Cart-selected signal from U15's NAND-NAND decode, through JP2 (default 1-2). `WAIT 0 PIN 18` (base 8) for cart-cycle gate. |
+| GP26     | 31 | GP26/GP40 | **OE_BUS** | Cart-selected signal from U15's NAND-NAND decode, through JP2 (default 1-2). The read SM's start trigger (`wait 0 gpio 26`). |
 | GP27     | 32 | GP27/GP41 | **HALT_GATE** | Firmware output; drives Q2 gate via R8 to sink /HALT_CART. HIGH = hold /HALT, LOW = release. |
 | GP28     | 34 | GP28/GP42 | `AUDIO_PWM` (default via JP3 1-2, v2.3.1) | Sound output stage (§4.6); firmware does not use E today. Cut JP3 1-2/bridge 2-3 to get E on this pin instead; the PIO bus engine as built (`docs/firmware-architecture.md` §3.3) does not need it on either board (a Pico 2 triggers on OE_BUS alone, a Plus-W reads E on its pad-grid GP26). This is also the header pin JP5 shares (pad 2, `PICO_P34`) for a firmware-driven /CART or /NMI — JP3 and JP5 both bridge onto the same pin, so bridge at most one of them. |
-| Pin 30   | 30 | same | RUN    | CoCo /RESET input via U13 + R9 series + R10 pull‑up |
+| Pin 30   | 30 | same | RUN    | CoCo /RESET input via U13 + R9 series (R10 pull‑up DNP) |
 
-Pico onboard LED (GP25) is used for heartbeat — no header GPIO spent.
+Pico onboard LED (GP25; LED2 on GP23 on a Plus-W) is used for heartbeat
+— no header GPIO spent.
 `/CTS` and `/SCS` are **not** separately routed to the Pico header pins;
 firmware uses `OE_BUS + A13` to distinguish ROM vs Becker cycles, which
 freed GP27 for the /HALT driver.
@@ -346,13 +348,15 @@ Firmware defaults to "asserted" at boot (via R7) and explicitly
 drives GP27 LOW after PIO programs are armed. This eliminates the
 cold‑start race where a user could type `DOS` before firmware is
 ready. After release, firmware can re‑assert by driving GP27 HIGH
-for DriveWire flow control of long host operations.
+(`halt on`); nothing uses that for DriveWire flow control yet
+(`docs/ADDITIONAL_ROADMAP.md` §5 item 2).
 
 **Decision 2026-09-17: Q2, R7 and R8 stay on the PCB.** The breadboard
 bring-up ran with the Pico on USB, so the cold-boot race was never
 exercised; the Pico reaches "core1 up, halt released" about 1.16 s after
 its own boot, and the CoCo's reset-to-first-$C000-read time was not
-measured (breadboard plan step 8, now optional). Keeping the hold costs
+measured. (The PCB's cold boot from edge power with the hold passed
+2026-09-30, `docs/pcb-bringup.md`.) Keeping the hold costs
 three parts on a pin that is already budgeted and doubles as DriveWire
 flow control, so it is kept without the measurement.
 
@@ -497,9 +501,10 @@ AUDIO_PWM ── R19 470R ── AUDIO_F1 ── C13 10nF to GND
   window (a PSG at unused `$FF5x` addresses, DriveWire-side sound
   commands, streamed audio). Emulating an *existing* sound cart by
   capturing its writes (Orchestra-90 `$FF7A`/`$FF7B`, Speech/Sound Pak
-  `$FF7D`/`$FF7E`) is **Plus-W only** — those addresses fall outside
-  `/CTS` and `/SCS`, so it needs JP2 in the firmware-/OE position plus
-  A14/A15 from the pad grid.
+  `$FF7D`/`$FF7E`) needs firmware-decoded addresses — those addresses
+  fall outside `/CTS` and `/SCS`, so it needs JP2 in the firmware-/OE
+  position plus A14/A15, which no build has until the respin (§9.1,
+  `docs/ADDITIONAL_ROADMAP.md` §8).
 
 ## 5. Power
 
@@ -513,7 +518,7 @@ AUDIO_PWM ── R19 470R ── AUDIO_F1 ── C13 10nF to GND
   - U15 VCC
   - Pico 3V3_EN pull‑up (R4)
   - Q2 gate pull‑up (R7)
-  - Pico RUN pull‑up (R10)
+  - Pico RUN pull‑up (R10, DNP)
 - **VSYS_PICO** — +5 V through Schottky D2 (SS14, ~0.3 V drop ≈ 4.7 V),
   feeding only the Pico's VSYS input. The Pico's internal buck‑boost
   then generates its own 3V3_OUT internally (left NC externally). C12
@@ -534,11 +539,10 @@ track, see §6) as of v2.3.1; everything else stays on Default (0.2 mm).
   high so the Pico's internal regulator enables. Tying EN to VSYS
   (not to +3V3) breaks the latch loop.
 - **3V3_OUT (Pico pin 36)** ← **NC**. Do not back‑feed.
-- **VBUS (Pico pin 40)** ← NC (no USB host; USB only used for flashing
-  firmware, during which the Pico is typically removed from the cart
-  or debugged via its own debug pads / USB CDC only — there is no
-  on-carrier SWD header, see §7).
-- **RUN (Pico pin 30)** ← CoCo /RESET via U13 + R9 + R10 (see §4.5).
+- **VBUS (Pico pin 40)** ← NC. USB carries flashing and the console,
+  with the board in the CoCo or not; it powers only the module, never
+  the cart side (there is no on-carrier SWD header, see §7).
+- **RUN (Pico pin 30)** ← CoCo /RESET via U13 + R9 (R10 DNP, see §4.5).
 
 ### 5.3 Decoupling policy
 
@@ -641,8 +645,8 @@ on this footprint either way. Bring‑up debug happens via:
   GP29/GP32/GP35 grid pads (1.4 mm, ~0.05 mm overlap): tape those three
   grid pads before soldering a Pico 2 flat, or use headers. The Plus-W
   uses the grid and has no such pads.
-- **Pico USB CDC** — firmware streams bus snapshots and diag logs
-  over USB serial during bring‑up (see firmware §10).
+- **Pico USB CDC** — the console: `trace dump`, `log dump` and `status`
+  on demand (`firmware/README.md`).
 - **Cart‑edge fingers** — clip directly onto the edge when a signal
   isn't on a test pad.
 
@@ -706,9 +710,9 @@ hand debug.
 - SMT assembly (optional): U10–U13 (SN74LVC245A) and U15 (SN74LVC00A)
   are JLC Extended; U14, Q2/Q4, D2 and all 0805 passives are Basic.
   Files: `fab/main/PiCoCo-BOM-jlc.csv`, `fab/main/PiCoCo-CPL-jlc.csv`.
-  Check JLC's placement preview against the rotation table in
-  `tools/jlc_post.py` before ordering (unverified as of this writing —
-  see `docs/kicad-workflow.md` §"JLCPCB files").
+  The rotation table in `tools/jlc_post.py` was checked against JLC's
+  placement preview on 2026-09-18; check the preview again after any
+  footprint change (`docs/kicad-workflow.md` §"JLCPCB files").
 
 ## 9. Known limitations / v2 ideas
 
@@ -721,17 +725,12 @@ hand debug.
 - Driving `/NMI` from firmware, and reading `Q`, stay provisioned in
   hardware (Q3 DNP stage, the full U13 channel set) but reachable only
   from the Plus-W pad grid — a Pico 2 build has no spare GPIO to use
-  them, and no firmware drives `/NMI` yet. Firmware support for the
-  rest of the Plus-W pad grid — `/OE` from firmware (`OE_FW`/JP2),
-  reading A14/A15/`/CTS`/`/SCS`/`E`/`Q` to decode `$FF60-$FF7F`
-  addresses outside `/CTS` and `/SCS`, write hooks, and banked ROM — was
-  out of scope for the v2.3 board spin itself but has since been built
-  as firmware (the bus-engine spec,
-  `docs/superpowers/specs/2026-09-27-plusw-bus-engine-design.md`). The
-  PIO bus engine that replaced it keeps the write hooks and banked ROM
-  but not firmware `/OE` or the `$FF60-$FF7F` decode, and reads no
-  A14/A15 (`docs/firmware-architecture.md` §3.2.2 Plus-W differences,
-  §3.2.3 write hooks, §3.2.4 table and banked ROM). **`/CART` is the
+  them, and no firmware drives `/NMI` yet. Of the rest of the Plus-W
+  pad grid the PIO bus engine reads only E (GP26) and drives only
+  `CART_DRV` (GP33) and `OE_FW` (held high): no firmware `/OE`, no
+  `$FF60-$FF7F` decode, no A14/A15 until the respin
+  (`docs/firmware-architecture.md` §3.2.2; write hooks and banked ROM,
+  which work on both boards, are §3.2.3-3.2.4). **`/CART` is the
   exception among the Pico-2-reachable pins as of v2.3.1 hardware**:
   JP5 1-2 plus the now-populated Q4/R16/R18 stage (§4.4a) lets a Pico 2
   pulse `/CART` from firmware over header pin 34 with no spare GPIO
@@ -762,7 +761,7 @@ hand debug.
 - **A14/A15 to the module on a Pico 2 build (required).** Today they reach
   only the Plus-W pad grid. Without A14 a 32K Program Pak cannot work
   (bench 2026-10-02: Silpheed, Super Pitfall). Options and what it breaks:
-  `docs/ADDITIONAL_ROADMAP.md` section 9. **Placement:** A14 and A15 go on
+  `docs/ADDITIONAL_ROADMAP.md` section 8. **Placement:** A14 and A15 go on
   the GPIOs directly above A13 (A0-A15 contiguous, R/W next to them), so
   the PIO bus engine captures the whole address with one `IN PINS`. The
   Plus-W pad-grid positions (GP29/GP30, with /CTS, /SCS, E and Q between

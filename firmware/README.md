@@ -293,7 +293,7 @@ and the Becker `reads` may miss a reset by a few percent. `engine_stall`,
 #### Plus-W limits (until the respin)
 
 The PIO engine gives the Plus-W the same bus as a Pico 2 until the next
-board revision (`docs/ADDITIONAL_ROADMAP.md` §9):
+board revision (`docs/ADDITIONAL_ROADMAP.md` §8):
 
 - JP2 must be at 1-2 (hardware `/OE`, the default). Firmware holds `OE_FW`
   high.
@@ -311,12 +311,12 @@ The on-flash FAT filesystem (`fs_flash.c`/`dw_store_fatfs.c`) lives at
 (`firmware/boards/*.h`): `0x180000..0x3FFFFF` on a Pico 2 (4 MB flash, 640
 FAT12 clusters), `0x180000..0xFFFFFF` on a Plus-W (16 MB flash, 3712
 clusters). Reset safety across a CoCo `/RESET` (the Pico reboots on every
-one, at any instant — see `docs/ADDITIONAL_ROADMAP.md` §6 item 1) comes
+one, at any instant) comes
 from `dw_server.c` syncing after every successful DriveWire write, and
 `fs_flash_write_blocks` skipping the erase/program cycle for any 4 KB block
 that didn't actually change (the common case for a resync of the root dir
 or FAT). `picoco.cfg` at the root holds the saved console config (see
-`dw save`/`console_run_config`); DriveWire disk images and `dw capture`
+`save`/`console_run_config`); DriveWire disk images and `dw capture`
 recordings also live at the root.
 
 ### Export
@@ -464,10 +464,10 @@ Servers abandon a half-finished op after 250 ms (`picoco-host`) or 200 ms
 until reset (accepted limitation; reset reboots the Pico, which reconnects).
 
 **`bus selftest net`** is not supported by the PIO engine: it answers
-`err bus selftest net: not supported by this engine`. It returns once it
-is rebuilt on the new self-test; the firmware 1.4 version (DWINIT and 20
-OP_TIME round trips through the fake 6809 and the socket) is at tag
-`fw-1.4-cpu-loop`.
+`err bus selftest net: not supported by this engine`. The WiFi transport is
+checked on a CoCo instead (TEST_PLAN G.2); the firmware 1.4 version of the
+test (DWINIT and 20 OP_TIME round trips through the fake 6809 and the
+socket) is at tag `fw-1.4-cpu-loop` if a bare-module check is ever wanted.
 
 ### DriveWire virtual-serial command channel
 
@@ -496,10 +496,10 @@ Firmware version is 1.4.
 
 ## Bring-up
 
-Breadboard milestones from `docs/breadboard-plan.md` section 6, mapped to
-console commands. Before anything else: on macOS, approve the Pico once
-under System Settings -> Privacy & Security -> "Allow accessories to
-connect", or it enumerates over USB but exposes no serial ports. The
+A new board follows `docs/pcb-bringup.md`; the bench checks are
+`TEST_PLAN.md` sections F-K. Before anything else: on macOS, approve the
+Pico once under System Settings -> Privacy & Security -> "Allow accessories
+to connect", or it enumerates over USB but exposes no serial ports. The
 console is the second `/dev/cu.usbmodem*` device, the Becker bridge port is
 the first. To reflash: send `bootsel` on the console (see `flash.sh` above,
 or `python3 firmware/tools/pconsole.py /dev/cu.usbmodemXXXX2 bootsel`), wait
@@ -510,32 +510,26 @@ Run commands with `pconsole.py` as shown in "Console checks" above. `fs
 export`/`fs import` are the "Export" steps above; use them to move ROM
 images and disk images on and off the board.
 
-| Step | Console | Expected console output | Expected CoCo-side result | Tag |
-|---|---|---|---|---|
-| 3 | `status` | `bus drive off`, `last reset power-on` | Pico powered from the CoCo rail: LED blinks 1 Hz. USB power and CoCo 5 V share only GND on the breadboard (`VBUS` is NC on the final board): don't back-power the CoCo from USB, use a cable with VBUS cut, or accept USB power during console sessions. | fw-0.1-blink |
-| 4 | `bus drive off`, `trace run`, on the CoCo `PEEK(&HC123)`, then `trace dump 8` | dump includes a line `<seq> 0123 R ff` (idx = $C123 - $C000); `status` bus reads count goes up by the number of PEEKs | `PEEK(&HFF41)` triggers a trace line ending `3f41 R`; the Pico still drives nothing back at the CoCo | fw-0.4-bus-capture |
-| 5 | (hardware only, no console) | - | LA: OE_BUS low only during the E-high half of cart cycles, never otherwise | - |
-| 6 | `rom pattern`, `bus drive on`, `save` | `ok` for each | `PEEK(&HC000)` = 0, `PEEK(&HC001)` = 1, `FOR I=0 TO 255: PRINT PEEK(&HC000+I);: NEXT` counts up. Slowest CoCo first; on CoCo 3 repeat after `POKE 65497,0`. | fw-0.5-rom-static |
-| 7 | `fs export`, drag `hdbdos_dw.rom` (8 KB) onto `PICOCO`, `fs import`, `rom load hdbdos_dw.rom`, `save` | `usb drive exported...`, then `ok` for import/load/save | Power-cycle: CoCo autostarts HDB-DOS (or `DOS` enters it); `DIR` fails cleanly (no server yet) | fw-0.6-rom-hdbdos |
-| 8 | `log main debug`; after a reboot, `log dump` (once the console reconnects) | `log dump` shows `core1 up, halt released` | LA on /RESET and $C000: compare Pico cold-boot time to that log line against CoCo reset to first $C000 read; decide Q2/R7/R8 per breadboard-plan section 2.3 | fw-0.3-halt-ctrl |
-| 9 | `becker loop`, `bus drive on` | `ok` | `POKE &HFF42,65: PRINT PEEK(&HFF41), PEEK(&HFF41), PEEK(&HFF42)` -> `0 2 65`, and `trace dump` shows `3f42 W 41` (the first `PEEK(&HFF41)` always returns the pre-POKE status: core1 refreshes the table only after a read, single-writer rule; the `W` byte is the bit-order check, a swapped pair still echoes 65) | fw-0.7-becker-loop |
-| 10 | *(deferred, see docs/ADDITIONAL_ROADMAP.md §5)* `becker bridge`; host: `pyDriveWire --port /dev/tty.usbmodemXXXX1 --speed 115200 <image>` (the first `/dev/cu.usbmodem*`, the bridge port) | `ok` | `DIR` in HDB-DOS lists the image; `LOADM` a small program | fw-0.8-bridge |
-| 11 | `fs export`, copy a DSK onto `PICOCO`, `fs import`, `dw mount 0 <dsk>`, `becker native`, `save` | `ok` for each; `dw stats` afterward | `DIR`, `LOADM`, `SAVE` a program, power-cycle, `DIR` still shows it; `dw stats` shows reads/writes with `crc_err 0` and `timeouts 0` | fw-1.0-native |
+The quickest check that a board answers, with no ROM needed: `becker loop`,
+`bus drive on`, then on the CoCo `POKE &HFF42,65: PRINT PEEK(&HFF41),
+PEEK(&HFF41), PEEK(&HFF42)` prints `0 2 65`, and `trace dump` shows
+`3f42 W 41` (the first `PEEK(&HFF41)` always returns the pre-POKE status:
+core1 refreshes the table only after a read, single-writer rule; the `W`
+byte is the bit-order check, a swapped pair still echoes 65).
 
-Three tools to reach for when a step doesn't pass:
+Three tools to reach for when a check doesn't pass:
 
 - `trace dump [n]` piped through `tools/tracedump.py` (see above): the ring
   freezes by itself at the first Becker underrun (that read is its last
   entry) or DriveWire CRC error; `trace run` thaws it. Reach for
   this when a CoCo-side PEEK/POKE doesn't show the address or data you
-  expect, mainly steps 4-7.
-- `dw capture on <file>` (see "dw capture" in the console commands) plus
-  `picoco-host --replay` (see "picoco-host" above): reach for this when the
-  bridge or native DriveWire session (steps 10-11) is flaky and you want to
-  replay the exact byte stream off the CoCo for debugging.
-- `status`, and `dw stats`/`stats reset`: reach for these for a quick health
-  check at any step, especially the halt-timing decision in step 8 and the
-  error counters in step 11.
+  expect.
+- `dw capture on <file>` (`dw capture off` stops it) plus
+  `picoco-host --replay` (see "picoco-host" above): reach for this when a
+  bridge or native DriveWire session is flaky and you want to replay the
+  exact byte stream off the CoCo for debugging.
+- `status`, and `dw stats`/`stats reset`: a quick health check at any
+  point (`engine_stall`, `event_drop`, `event_lap`, `crc_err`, `underrun`).
 
 ## Licensing
 

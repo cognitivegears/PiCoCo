@@ -1,8 +1,10 @@
 # PiCoCo — RP2350B feature ideas
 
-Status: brainstorm, 2026-09-06. Nothing here is committed to the MVP.
-The MVP remains DriveWire over the Becker port plus ROM emulation as
-described in `hardware-design.md` and `firmware-architecture.md`.
+Status: brainstorm, started 2026-09-06. One decision here is built: the
+v2.3.1 carrier takes a Pico 2 or a Waveshare RP2350B-Plus-W (§13), with
+the /NMI and /CART drive stages and the sound stage on the board. The rest
+is ideas beyond what `hardware-design.md` and `firmware-architecture.md`
+describe.
 
 The premise: swap the Pico 2 module (26 GPIO) for an RP2350B (48 GPIO).
 The cart bus, not the chip, sets the ceiling on what can be done. This
@@ -13,10 +15,10 @@ makes impossible, and a suggested order of attack.
 
 ## 1. What the RP2350B changes
 
-The current board spends its whole pin budget on D0..D7, A0..A13,
-/R/W, E, OE_BUS and HALT_GATE. That is why A14/A15, Q, /SLENB, /CTS and
-/SCS never reach the Pico and why U15 does the address decode in
-hardware. With 48 GPIO everything gets routed and the Pico decodes
+A Pico 2 build spends its whole pin budget on D0..D7, A0..A13, /R/W,
+header pin 34 (audio or E), OE_BUS and HALT_GATE. That is why A14/A15,
+Q, /SLENB, /CTS and /SCS never reach a Pico 2 and why U15 does the
+address decode in hardware. With 48 GPIO everything gets routed and the Pico decodes
 addresses itself.
 
 Rough pin budget:
@@ -58,10 +60,6 @@ Hardware notes:
   U10's DIR keeps following R/W, so it flips automatically when the
   Pico drives R/W. Lay out D0..D7 + A0..A15 as one contiguous 24-pin
   GPIO block so a single PIO `OUT PINS, 24` places a whole DMA cycle.
-- **Two more N-FETs** next to Q2 for /NMI and /CART drive. Both
-  already listed as v2 items in `hardware-design.md` §9.
-- **SND (cart pin 35)** gets a PWM output stage: RC low-pass, divider
-  to CoCo audio level, AC coupling cap.
 
 ---
 
@@ -77,7 +75,7 @@ it as each byte becomes ready. INTRQ at command completion asserts
 $FF4B and the next instruction's HALT sample. A PIO catching the $FF4B
 read plus a GPIO toggle covers it.
 
-Needs: the /NMI FET. Already have /HALT via Q2.
+Needs: the /NMI stage (Q3, DNP: fit it with R15/R17) and /HALT (Q2).
 
 **Lazier alternative: emulate the CoCo SDC register interface** rather
 than a bare 1793. SDC-DOS and NitrOS-9 drivers already exist, its
@@ -214,8 +212,8 @@ cart, and /HALT hides the page-copy time. The pointer-and-port variant
 in §14 needs neither /HALT nor the /CTS window and runs on the Pico 2
 build as it stands.
 
-**Open question — verify at the `fw-0.4-bus-capture` milestone:**
-whether /CTS asserts on write cycles. My recollection is the SAM routes
+**Open question (no bench record yet):** whether /CTS asserts on write
+cycles. My recollection is the SAM routes
 all writes to RAM in map type 0, making /CTS read-only. If so, the
 paged cart's write side goes through the 32-byte /SCS window as an
 address-register plus auto-increment data port, while reads stay
@@ -228,10 +226,11 @@ cart claim any address on both reads and writes. Also verify that
 ## 4. Graphics card — CoCo 1/2 via bus snooping; CoCo 3 not planned
 
 **Decision (2026-09-08):** build the VDG snoop for CoCo 1/2 only. The
-HSTX/HDMI hardware stays on the board for two reasons: the CoCo 1/2
-snoop below, and the WordPak-RS 80-column renderer (§12), which is the
-only HDMI feature that applies to a CoCo 3. Full GIME video emulation
-is dropped, not deferred.
+board's HDMI corner stays reserved (a keepout; HSTX shares GP12-GP19
+with the address bus, so it is not wirable on v2.3, `hardware-design.md`
+§1) for two reasons: the CoCo 1/2 snoop below, and the WordPak-RS
+80-column renderer (§12), which is the only HDMI feature that applies to
+a CoCo 3. Full GIME video emulation is dropped, not deferred.
 
 **Why CoCo 1/2 and not 3.** A stock CoCo 1/2 has RF out only; composite
 needs a soldering mod before any cheap dongle helps. A cart that gives
@@ -284,8 +283,7 @@ https://colorcomputerarchive.com/repo/Documents/Manuals/Hardware/Color%20Compute
 https://colorcomputerarchive.com/repo/Documents/Manuals/Hardware/Color%20Computer%202%20Schematic%20(Tandy).pdf
 https://colorcomputerarchive.com/repo/Documents/Manuals/Hardware/Color%20Computer%202%20Schematic%20(Rev.%20A)%20(Tandy).pdf
 Our U10 is therefore the only thing between the CoCo bus and the Pico,
-and the §1 enable rule is sufficient as written. The breadboard bus
-watcher confirms it for free during bring-up. The Pico shadows the 64 KB RAM,
+and the §1 enable rule is sufficient as written. The Pico shadows the 64 KB RAM,
 mirrors the mode registers, and renders the way the real VDG does,
 either whole-frame into an RGB565 buffer or scanline-by-scanline into a
 line buffer ahead of HSTX. Either fits SRAM. HSTX encodes TMDS in
@@ -481,16 +479,18 @@ decode those addresses itself. That is exactly what Pico-controlled
 
 ## 6. Other things the same hardware buys
 
-- **Multi-Pak emulation and a ROM library.** Emulate the $FF7F slot
-  register and present several virtual carts at once. Load any .ccc or
-  .rom from SD, including 32 KB bank-switched titles that write $FF40.
+- **Multi-Pak emulation.** Emulate the $FF7F slot register and present
+  several virtual carts at once. The ROM library side exists: the ROM
+  manager loads any .rom from flash, including `$FF40`-banked images up
+  to 128 KB (`coco/README.md`); loading from SD does not.
 - **RS-232 Pak, and with it a WiFi modem.** A 6551 ACIA at
-  $FF68..$FF6B is a handful of registers. The RP2350B has no radio;
-  pair it with an ESP32-C3 over UART or a W5500 over SPI. Also lets
-  DriveWire run over TCP to a networked server instead of USB.
-- **Real-time clock.** RP2350 has an always-on timer. Emulate the
-  DS1315 (SmartWatch) or Disto RTC register interface; NitrOS-9
-  already has drivers. Add a backup cell or sync time from DriveWire.
+  $FF68..$FF6B is a handful of registers. The Plus-W's radio already
+  carries DriveWire over TCP (`becker net`); the same link could back
+  the ACIA as a WiFi modem.
+- **Real-time clock.** The firmware keeps time already (`time`, the
+  always-on timer, DriveWire OP_TIME, SNTP on a Plus-W). Left: emulating
+  the DS1315 (SmartWatch) or Disto RTC register interface, for which
+  NitrOS-9 already has drivers.
 - **Bus analyzer and in-circuit debugger.** The snoop path streams a
   full 6809 bus trace over USB. /HALT plus /NMI give address
   breakpoints. Nothing like it exists for the CoCo.
@@ -508,20 +508,16 @@ keyboard/joystick injection, capturing the real video signal.
 
 ## 7. Suggested order
 
-1. Build the main carrier so it takes either a Pico 2 or a Waveshare
-   RP2350B-Plus-W (§13). With the Plus-W fitted, every cart signal
-   reaches the chip and a solder jumper hands U10 /OE to firmware with
-   the cart-selected-OR-write rule. One board, no second spin.
-2. Add the /NMI and /CART FETs next to Q2.
-3. Wire SND with a PWM output stage; put SD on the board.
-4. Firmware, in order of value: DriveWire as planned → SDC-style disk
-   emulation → sound → DMA on CoCo 1/2 (RAM expansion, fast load,
-   debugger) → RAM cart fallback → CoCo 1/2 HDMI snoop → WordPak-RS
-   HDMI renderer → CoCo 3 DMA writes.
+The carrier (§13), the /NMI and /CART stages and the SND stage are on
+the v2.3.1 board, and DriveWire is built. What is left, in order of value:
 
-Early verification items (bus-capture milestone): /CTS on write
-cycles; /SLENB behaviour on CoCo 3 writes. Both decide how the RAM
-cart's write side works.
+1. SD on the board (J1 on a Plus-W, PIO-SPI: `hardware-design.md` §3.2).
+2. Firmware: SDC-style disk emulation → sound → DMA on CoCo 1/2 (RAM
+   expansion, fast load, debugger) → RAM cart fallback → CoCo 1/2 HDMI
+   snoop → WordPak-RS HDMI renderer → CoCo 3 DMA writes.
+
+Open verification items: /CTS on write cycles; /SLENB behaviour on CoCo
+3 writes. Both decide how the RAM cart's write side works.
 
 ---
 
@@ -784,7 +780,6 @@ MPI-aware software.
 | Device | Why | Output |
 |---|---|---|
 | FD-50x WD1793 + CoCo SDC (§2) | RS-DOS, HDB-DOS, SDC-DOS, NitrOS-9 | SD/USB images |
-| Becker / DriveWire | MVP | USB/TCP |
 | Rulaford MIDI Pak (§11) | Lyra, UltiMusE III, Coco MIDI Pro | MIDI DIN + USB MIDI |
 | Orchestra-90 | Orch-90CC, Soviet Bloc, Gems, OS-9 Play, NitrOS-9 patches | stereo jack |
 | Speech/Sound Cartridge | Card King and many "SSC" titles; OS-9 L2 driver. Emulate TMS7040 protocol + SP0256 + AY-3-8913 | SND pin |
@@ -866,18 +861,16 @@ beyond unused pads and a jumper left in its default position.
 - The 2x20 header is the Pico 2 pinout for GP0..GP22, RUN, 3V3_EN,
   3V3(OUT), VSYS, VBUS and all grounds. The three ADC positions
   differ: **pins 31, 32, 34 are GP40, GP41, GP42** instead of
-  GP26, GP27, GP28. Those are OE_BUS, HALT_GATE and E, so the firmware
-  needs a second board header and the core1 wait loop reads the high
-  GPIO register for them (bits above 31).
+  GP26, GP27, GP28. Those are OE_BUS, HALT_GATE and header pin 34
+  (audio or E), so the firmware has a second board header
+  (`firmware/boards/plusw.h`) and the bus engine watches OE_BUS on GP40
+  through a PIO2 helper (`firmware-architecture.md` §3.2.2).
 - **15 underside SMD pads** in a 3 x 5 grid under the middle of the
   module carry GP24..GP35 and GP43..GP45. GP23, GP36..GP39, GP46 and
-  GP47 are not brought out (radio module and PSRAM CS). The pad pitch
-  and coordinates are not published as text; measure a physical
-  board or get Waveshare's drawing before laying out the grid.
-- The underside pads are only reachable if the module is soldered
-  down flat (castellations + hidden pads, paste and hot air), or if a
-  3 x 5 header can be soldered to them and the carrier gets matching
-  through-holes. Which one depends on the measured pitch.
+  GP47 are not brought out (radio module and PSRAM CS). Measured in
+  §13.4.
+- The carrier takes the module soldered down flat (castellations +
+  hidden pads; `fab/main/stencil-module` pastes the 15 grid pads).
 
 ### 13.2 Power budget
 
@@ -906,25 +899,24 @@ rating was not checked.
   300 mA is Tandy's allocation, not a trip point, but do not lean on
   the headroom.
 
-Mitigations, in order: bulk capacitance (13.3), lower transmit power
-(the cyw43 driver exposes a tx-power setting; verify the exact call
-before relying on it), and Wi-Fi off by default in `picoco.cfg`.
-D2 (1 A Schottky), the main board's 0.20 mm power traces (no separate
-power netclass as of v2.3 — margin at 1 oz copper is fine at this
-current) and the breakout's 0.5 A polyfuse all clear the Plus-W case.
+Mitigations, in order: bulk capacitance (the C12 footprint on
+`VSYS_PICO`, `hardware-design.md` §5.1), lower transmit power (the cyw43
+driver exposes a tx-power setting; verify the exact call before relying
+on it), and Wi-Fi off by default in `picoco.cfg`. D2 (1 A Schottky),
+the main board's 0.5 mm Power netclass (v2.3.1) and the breakout's 0.5 A
+polyfuse all clear the Plus-W case.
 
-### 13.3 What the carrier gets, and what the Pico 2 build sees
+### 13.3 What the carrier got
 
-| Provision | Plus-W | Pico 2 build |
-|---|---|---|
-| Bulk capacitor footprint on `VSYS_PICO` after D2, sized for 1000 uF 6.3 V polymer. On VSYS_PICO, not +5V, so U14 and the buffers never see the burst. Rides a 2 ms transmit burst with ~0.35 V droop. Power-on inrush is a ms spike inside D2's surge rating and too short for the polyfuse. | populated | DNP |
-| Antenna keepout: no copper under or beside the 4.92 mm overhang, and clearance for it at that end of the module. | needed | free |
-| 3 x 5 underside pad grid (or through-holes, per 13.1). | used | empty |
-| Three-pad solder jumper on U10 /OE. Default: U15 output (`OE_BUS`) as today. Alternate: an underside-pad GPIO. Firmware then implements `(cart-selected OR write) AND E` (§1) when it wants to snoop or self-decode. U15 stays on the board because the Pico 2 build has no pins to replace it. | either | default |
-| Route existing nets to pads: `CTS_BUF`, `SCS_BUF`, `E_B` (U15's inputs), plus U13's already-buffered `Q_DBG` and `SLENB_DBG` outputs, currently no-connect. | captured | unused |
-| A14 and A15 have no buffer channel. U13 spends three channels buffering /HALT, /NMI and /CART as inputs, which `breadboard-plan.md` §2.3 calls pointless. Reassign two of them to A14/A15 in `gen_schematic.py` (a breadboard-plan §8 decision). | full address visible | no change |
-| Pin plan: the seven captured inputs (/CTS, /SCS, E, Q, /SLENB, A14, A15) on GP24..GP30 so one 32-bit `gpio_in` read catches them. /OE, /NMI and /CART drives on the remaining pads (GP31..GP35, GP43..GP45). | 10 of 15 pads | n/a |
-| Firmware: `boards/` header for the Plus-W with PIN_OE_BUS 40, PIN_HALT 41, PIN_E 42 and the extra pins; core1 wait loop reads `gpio_hi_in` for OE_BUS. | needed | untouched |
+Built in v2.3/v2.3.1: the C12 bulk footprint on `VSYS_PICO` (DNP by
+default; 1000 uF rides a 2 ms transmit burst with ~0.35 V droop), the
+antenna keepout, the 15-pad grid with /CTS, /SCS, E, Q, /SLENB, A14 and
+A15 on GP24..GP30 and `OE_FW`, `NMI_DRV`, `CART_DRV`, `AUDIO_PWM` on
+GP31..GP34, J1 on GP35/43-45, and JP2
+handing U10 /OE to `OE_FW` (GP31). `hardware-design.md` §3.2 has the pad
+table, §4.1 JP2; `firmware/boards/plusw.h` the pin map. U15 stays on the
+board because the Pico 2 build has no pins to replace it, and the PIO
+engine keeps JP2 at 1-2 until the respin (`ADDITIONAL_ROADMAP.md` §8).
 
 HSTX video stays off this path: it needs GP12..GP19, which is the
 address block (§1).
@@ -959,20 +951,11 @@ Photos: IMG_8547.jpg (full underside), IMG_8548.jpg (close-up), taken
 2026-09-17; measurement script in the session scratchpad
 (`measure2.py`, OpenCV, castellation-hole homography/similarity fit).
 
-### 13.5 Open before layout
+### 13.5 Open
 
 - Whether the Plus-W can be soldered flat with the hidden pads reliably
-  by hand, or whether the header route is needed.
+  by hand (`docs/pcb-bringup.md` phase 3 has no Plus-W result).
 - The cyw43 tx-power call.
-- ~~Underside pad pitch~~ — **closed by the v2.3 spec**: 2.54 mm pitch,
-  1.5 mm pads (measured §13.4), carried into the `Pico-Carrier`
-  footprint as 1.8 mm pads on the same grid (1.4 mm at GP29/GP32/GP35
-  to clear the Pico 2's own debug rings).
-- ~~Which end of the module faces the board edge~~ — **closed by the
-  v2.3 spec**: USB-C end flush with the left side edge, antenna end
-  pointing right/inward, fixed this way specifically so a future HDMI
-  variant's reserved corner and module orientation don't need to move
-  (spec §5, §10).
 
 Sources: Waveshare wiki `RP2350B-Plus-W` (pinout and dimension
 images); RM2 datasheet RP-008943; Pico 2 datasheet RP-008299; Pico 2 W
@@ -1006,12 +989,13 @@ increments). The only free neighbour is $FF43, which the CoCo SDC
 profile uses as its flash bank register, so the two-port variant is a
 profile decision, not a blocker.
 
-**Capacity and speed**, from the current firmware image (2026-09-27):
+**Capacity and speed** (SRAM figures from the PIO engine build,
+`firmware-architecture.md` §5.1):
 
 | Item | Figure |
 |---|---|
-| SRAM used by the current build | 142 KB static (151 KB on the coco-manager branch) |
-| Cart RAM available | ~256 KB safely; ~320 KB if SD/FatFS buffers stay small |
+| SRAM left free by the current build | 212.6 KB (Pico 2), 164.4 KB (Plus-W), after the 128 KB `bus_mem` table |
+| Cart RAM available | most of that, less whatever SD/FatFS buffers need |
 | `LDA $FF47 / STA ,X+` loop, 0.89 MHz | ~80 KB/s (11 cycles/byte) |
 | Same loop, CoCo 3 fast clock | ~160 KB/s |
 | LDD/STD with two ports | roughly double |
@@ -1020,9 +1004,12 @@ profile decision, not a blocker.
 **What it buys**
 
 - **A big RAM disk on a 64 KB machine.** A NitrOS-9 or DECB driver
-  treats it as a ~256 KB drive with no DriveWire round trip. Survives
-  CoCo resets via a magic word + CRC in SRAM (§4.5 pattern); flush to
-  Pico flash at idle for power-off persistence. Core0 can write flash
+  treats it as a ~150-200 KB drive with no DriveWire round trip. A magic
+  word + CRC in SRAM (§4.5 pattern) carries it across a Pico watchdog or
+  software reset, but not a CoCo RESET: that reboots the Pico through RUN
+  and SRAM does not survive it on this board (`firmware/TEST_PLAN.md`
+  J.3.3). Flush to Pico flash at idle for reset and power-off
+  persistence. Core0 can write flash
   freely because core1 never touches flash.
 - **Asset streaming for games and demos.** Levels, music and sprite
   sheets live in cart RAM and stream into CoCo RAM on demand, faster
@@ -1042,17 +1029,21 @@ profile decision, not a blocker.
 does not know it exists. On a 512 KB CoCo 3 the RAM-disk case is weak;
 value shifts to the mailbox, persistence and asset streaming.
 
-**The one firmware change beyond the device.** Device writes today land
-on core0 through the write ring (`bus_on_write` → `wev`). A program that
-does `STD $FF44` then `LDA $FF47` would race that ring. The pointer and
-data writes need a **core1 write hook**, next to the existing read
-hooks in `bus.c`, so the handler runs before the next bus cycle
-(~20 CPU cycles of work against a ~560 ns cycle budget at 1.79 MHz).
-It stays `BUS_HOT` and flash-free because cart RAM is SRAM, and core1
-then owns the port's table entries, which keeps the single-writer rule
-intact.
+**Firmware.** Device writes land on core0 through the write ring, so a
+program that does `STD $FF44` then `LDA $FF47` would race it. The pointer
+and data writes go in **core1 write hooks** (`bus_add_write_hook`,
+`firmware-architecture.md` §3.2.3), which run when the write's event
+arrives, before the ring. They stay `BUS_HOT` and flash-free because cart
+RAM is SRAM, and core1 then owns the port's table entries (through
+`bus_io_set`), which keeps the single-writer rule intact. The hook
+deadline (§3.4 there) applies: hooks run after their cycle, so two
+accesses to the port on consecutive cycles see the table as it was before
+the first one's hook ran. The single-port `LDA $FF47 / STA ,X+` loop
+leaves several cycles between port reads; the two-port LDD variant reads
+on consecutive cycles, so both bytes must already be in the table before
+the pair.
 
-## 15. Serving Extended BASIC at $8000 — Plus-W only (idea, 2026-10-01)
+## 15. Serving Extended BASIC at $8000 — needs the A14/A15 respin (idea, 2026-10-01)
 
 Prompted by the CoCo 2 bench run (TEST_PLAN section I): a 26-3026 with
 Color BASIC 1.2 and an empty Extended BASIC socket cannot start HDB-DOS,
@@ -1062,23 +1053,25 @@ The cart can supply the missing ROM itself.
 **How.** Color BASIC looks for `EX` at `$8000` on a cold start and jumps
 to `$8002`. With the socket empty nothing inside the CoCo answers
 `$8000-$9FFF`, and on a CoCo 1/2 the CPU data bus runs straight to the
-cart port. A Plus-W build sees A14 (GP29) and A15 (GP30) and, with JP2 at
-2-3, drives U10 `/OE` from firmware, so it can decode `A15..A13 = 100`
-and answer with a stock `extbas11.rom` from the flash filesystem. ECB then
+cart port. A board whose firmware sees A14 and A15 and drives U10 `/OE`
+(JP2 at 2-3) can decode `A15..A13 = 100` and answer with a stock
+`extbas11.rom` from the flash filesystem. ECB then
 finds the HDB-DOS `DK` in the normal `/CTS` window and the machine boots
 to a DOS prompt with no keystroke. The boot hold on /HALT already
 guarantees the table is filled before the CPU's first fetch.
 
-**Not on a Pico 2.** U10 `/OE` is the U15 hardware decode (`/CTS` or
-`/SCS`, qualified by E) and A14/A15 never reach the module, so `$8000`
-cannot be told apart from RAM at `$0000`.
+**Not on today's boards.** On a Pico 2, U10 `/OE` is the U15 hardware
+decode (`/CTS` or `/SCS`, qualified by E) and A14/A15 never reach the
+module, so `$8000` cannot be told apart from RAM at `$0000`. A Plus-W
+receives A14/A15 on GP29/GP30, but the PIO engine cannot take them (not
+next to A13) and holds JP2 at 1-2.
 
 **Firmware work.**
 - Firmware-decoded addresses went with the CPU loop (tag
   `fw-1.4-cpu-loop`); the PIO bus engine serves only `/CTS` and `/SCS`
   cycles and reads no A14/A15. This needs A14/A15 contiguous with A13 and
   a decode of `$8000-$9FFF` in front of the engine, inside the same
-  latency budget as the ROM window (`docs/ADDITIONAL_ROADMAP.md` §9).
+  latency budget as the ROM window (`docs/ADDITIONAL_ROADMAP.md` §8).
 - A second 8 KB bank in the bus table and a console command to load it
   (`rom ext <file>`), saved in `picoco.cfg`.
 - Reads only. Writes to `$8000-$9FFF` are ignored.
@@ -1096,7 +1089,8 @@ cannot be told apart from RAM at `$0000`.
 
 **What it buys.** Stock HDB-DOS on the cheapest CoCo 2s and on a CoCo 1
 with plain Color BASIC, with no chip to source. 16K RAM still limits
-them: the manager loads at `$3800-$7B80` and needs 32K.
+them: the ROM manager runs on 16K, but the disk manager (`PICOCO.BIN`)
+loads at `$3800-$7B80` and needs 32K.
 
 **Until then.** `coco/carttest.asm` is the no-ECB test path: an 8 KB ROM
 started with `EXEC 49152` that runs from the cart and reads the whole of

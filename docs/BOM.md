@@ -87,14 +87,16 @@ including the JP5-reachable /CART stage (Q4/R16/R18), is populated.
 
 ## Non-board parts
 
-- **Assembled HDB-DOS ROM image (16 KB)**: for MVP firmware (Phase 1),
-  users must supply their own binary. Sources: Cloud9 `HDB-DOS-DW`
-  build (commercial), or extract from a physical Disk BASIC cart if
-  owned.
-- **USB-C to USB-A cable**: for DriveWire host connection (Phase 1
-  bridge) or for flashing (BOOTSEL, or the module's own debug pads).
-- **DriveWire host software**: `pyDriveWire` (open source) or
-  DriveWire4 (Java, Cloud9). Runs on any PC/Mac/Linux with a USB port.
+- **HDB-DOS ROM image (8 KB, Becker build)**: users supply their own
+  binary (`hdbdw3bck.rom`, or `hdbdw3bc3.rom` for a CoCo 3). Sources:
+  Cloud-9, or build it from ToolShed's `hdbdos/` tree
+  (`docs/ADDITIONAL_ROADMAP.md` §3). The firmware's built-in ROM manager
+  needs no file.
+- **USB cable for the module's port**: for the console, bridge mode and
+  flashing (BOOTSEL).
+- **DriveWire host software**: optional; the firmware serves disk images
+  from flash itself (`becker native`). For bridge or WiFi mode:
+  DriveWire 4 (Java, Cloud-9), `picoco-host` (this repo) or FujiNet-PC.
 
 ## Ordering
 

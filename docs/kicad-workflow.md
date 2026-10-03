@@ -45,7 +45,7 @@ antenna keepout widened to x 151.3..158.0, y 32.7..55.7. See
 
 | File | State |
 |------|-------|
-| `PiCoCo/PiCoCo.kicad_sch` | **v2.3.1 schematic** — generated from `tools/gen_schematic.py`. v2.3 added JP2/JP3, Q3/Q4 (DNP), R15–R22, C12–C15, TP7, FID1/FID2; U10–U13 become `SN74LVC245A`; U15 becomes `74LVC00` (NAND-NAND); removed J_SWD, R6, JP1, C5, C11. v2.3.1 adds JP4, R23–R25, TP8, FID3, and rewires C15/R24 for AC coupling; flips JP3's default to audio; R7 100k->10k, R10 DNP, R3 populated. v2.3.1 adds JP5 (open), J1 (DNP "EXP (Plus-W)" header), C16 (local +3V3 bulk), populates Q4/R16/R18, and drops R19/R20 to 470 Ω and R21 to 1 kΩ. ERC-clean except the one known cosmetic warning (COCO-CART symbol library quirk). |
+| `PiCoCo/PiCoCo.kicad_sch` | **v2.3.1 schematic** — generated from `tools/gen_schematic.py`. v2.3 added JP2/JP3, Q3/Q4 (DNP), R15–R22, C12–C15, TP7, FID1/FID2; U10–U13 become `SN74LVC245A`; U15 becomes `74LVC00` (NAND-NAND); removed J_SWD, R6, JP1, C5, C11. v2.3.1 adds JP4, R23–R25, TP8, FID3, and rewires C15/R24 for AC coupling; flips JP3's default to audio; R7 100k->10k, R10 DNP, R3 populated. v2.3.1 adds JP5 (open), J1 (DNP "EXP (Plus-W)" header), C16 (local +3V3 bulk), populates Q4/R16/R18, and drops R19/R20 to 470 Ω and R21 to 1 kΩ. ERC-clean except the one known cosmetic `pin_to_pin` error (COCO-CART symbol library quirk, §2.2). |
 | `PiCoCo/PiCoCo.kicad_sch.v1-backup` | Old schematic — preserved for reference. |
 | `PiCoCo/PiCoCo.kicad_pcb` | **Fully routed and hand-finished** — GND pours on both layers, 0 DRC errors, 0 unconnected. Authoritative; KiCad GUI edits take precedence over any regenerator once you touch it directly. |
 | `PiCoCo/PiCoCo.kicad_pcb.v1-backup` | PCB backup (original v1). |
@@ -66,7 +66,7 @@ antenna keepout widened to x 151.3..158.0, y 32.7..55.7. See
 | `tools/gen_fab.sh [pcb] [outdir]` | kicad-cli wrapper → Gerbers/drill/pos/BOM(+zip); defaults to the main board, output dir `fab/main/`. Also runs the JLCPCB BOM/CPL export + `tools/jlc_post.py` post-processing and the module-stencil Gerber export. |
 | `tools/jlc_post.py` | Post-processes kicad-cli's raw BOM/CPL/paste-Gerber output into JLCPCB's expected formats; holds the per-footprint rotation-offset table. |
 | `docs/hardware-design.md` | Full hardware design reference. |
-| `docs/firmware-architecture.md` | Firmware architecture and bring-up plan. |
+| `docs/firmware-architecture.md` | Firmware architecture. |
 | `fab/main/` | Main board fab package: Gerbers + drill (`PiCoCo-gerbers.zip`), JLC BOM/CPL (`PiCoCo-BOM-jlc.csv`, `PiCoCo-CPL-jlc.csv`), module stencil (`stencil-module/PiCoCo-stencil-module-F_Paste.gbr`), `READ-BEFORE-ORDERING.txt`. |
 | `fab/` | `breakout/`, `cobbler/` — Gerber zips for the two breadboard boards. |
 
@@ -242,12 +242,11 @@ header-mounted Pico 2 doesn't need it at all).
   Rotation comes from `kicad-cli pcb export pos` plus a per-footprint
   offset table in `tools/jlc_post.py` (keyed by package substring:
   `SOIC-20W`, `SOIC-14`, `SOT-23`, `SOT-223`, `D_SMA`, `0805`,
-  `CP_Elec`), meant to be checked once against JLCPCB's placement
-  preview and then fixed with the date it was verified. **As of this
-  writing every offset is still 0 — the rotation table has not yet
-  been checked against JLCPCB's preview.** Don't assume placements are
-  correct without that check; fix the table and rerun `gen_fab.sh` if
-  the preview shows a part rotated wrong, then re-upload.
+  `CP_Elec`), checked against JLCPCB's placement preview on 2026-09-18
+  for the v2.3.1 order (SOIC +270, SOT-23/SOT-223 +180, the rest 0; the
+  comment above the table says why). After a footprint change, check the
+  preview again; fix the table and rerun `gen_fab.sh` if it shows a part
+  rotated wrong, then re-upload.
 - Fiducials (`FID1`, `FID2`, `FID3`) currently still appear in the CPL —
   `kicad-cli`'s `--smd-only` flag treats the fiducial footprint as SMD
   at the PCB level. JLC's assembly process typically ignores fiducial
@@ -337,6 +336,6 @@ breakout boards (pass their path explicitly).
 
 ## 5. Bring-up plan
 
-See `docs/firmware-architecture.md` §9 — the firmware bring-up plan.
-For the hardware alone, steps 1–2 (board fab visual + power) are the
-first sanity checks before flashing the module.
+See `docs/pcb-bringup.md`: its phases 1-2 (visual, DMM, bench power with
+no module) are the first sanity checks before fitting and flashing the
+module. The firmware-side checks are `firmware/TEST_PLAN.md` sections F-K.

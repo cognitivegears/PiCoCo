@@ -5,10 +5,8 @@ with Claude: you do the wiring and meter readings, Claude drives the
 console over USB and records results. Each step says what to do, what
 Claude will run, and what "pass" looks like.
 
-State (updated 2026-09-08 evening): firmware `0.3-pico` from `main`
-78fb594 (includes the DriveWire conformance fixes) is on the Pico 2, saved config is `bus drive off`,
-no ROM, `becker native`, drives unmounted. Console port is the second
-`/dev/cu.usbmodem*` (was `/dev/cu.usbmodem103`).
+The console port is the second `/dev/cu.usbmodem*`. The bench board is
+PCB v2.3.1 #1 (Pico 2); the Plus-W PCB has not run in a CoCo.
 
 ## Already verified on this Pico 2 (no CoCo)
 
@@ -16,91 +14,15 @@ no ROM, `becker native`, drives unmounted. Console port is the second
 |---|---|
 | USB enumerates: two serial ports + storage interface | pass (after allowing the accessory in macOS Privacy & Security) |
 | `version`, `status`, `log dump`, `help` | pass |
-| `smoke` (GP0..GP7 + LED), `halt on` / `halt off` accepted | pass (electrical check of GP27 still pending, step B) |
+| `smoke` (GP0..GP7 + LED), `halt on` / `halt off` accepted | pass (GP27's electrical check: PCB phase 4, pcb-bringup) |
 | `fs format`, `fs ls`, `save`, reboot, config replay | pass |
 | `dw selftest` (create, mount, READ, WRITE, READEX, eject) | pass |
 | `fs export` mounts as `PICOCO` on the Mac, copy a `.dsk`, eject, `fs import`, file persists across reboot | pass |
 | Guards: export/format refused with a drive mounted or capture open; fs/dw commands refused while exporting; import refused before host eject | pass |
 | `crash` and `crash panic` leave a record that `status` shows after reboot | pass |
 | `reboot` reports `last reset reboot`, hard fault reports `hardfault pc=...` | pass |
-| core1 running: `log dump` shows `core1 up, halt released`; GP26 to GND logs read cycles at index 0x3FFF (714 cycles) | pass |
-| Address decode: GP8 low moves the index to 0x3FFE | pass |
-| Pattern byte on the data pins | not yet (step A) |
-
-## Pin reference (Pico 2 header, physical pin numbers)
-
-| Signal | GPIO | Pin |
-|---|---|---|
-| D0 | GP0 | 1 |
-| D1 | GP1 | 2 |
-| A0 | GP8 | 11 |
-| A13 | GP21 | 27 |
-| OE_BUS | GP26 | 31 |
-| HALT_GATE | GP27 | 32 |
-| E | GP28 | 34 |
-| GND | | 3, 8, 13, 18, 23, 28, 33, 38 |
-
-Notes that matter for the jumper tests:
-- core1 logs a cycle only on a new falling edge of GP26. Holding GP26
-  on GND continuously logs one cycle and then drives that cycle's byte
-  until you lift the jumper. To log a fresh cycle after changing other
-  jumpers, lift GP26 and touch it down again.
-- `rom pattern` fills only indices 0x0000..0x1FFF. With every address
-  pin high the index is 0x3FFF, outside the pattern, and the table byte
-  is 0xFF. To land inside the pattern, A13 (GP21) must be low.
-
-## A. Pattern byte on the data pins (needs jumpers + meter)
-
-1. You: nothing connected to GP0..GP7. Tell Claude "ready A".
-2. Claude runs: `rom pattern`, `bus drive on`, `stats reset`.
-3. You: jumper GP21 (pin 27) to GND and GP8 (pin 11) to GND. Then touch
-   GP26 (pin 31) to GND and hold it.
-4. Claude runs: `trace dump 2`. Pass: a line ending `1ffe R fe`.
-5. You, while still holding GP26: meter GP0 (pin 1) to GND reads about
-   0 V; GP1 (pin 2) reads about 3.3 V. Pass if both.
-6. You: remove all three jumpers. Claude runs: `bus drive off`, `rom off`.
-
-## B. HALT drive (needs meter)
-
-1. You: meter between GP27 (pin 32) and GND. Tell Claude "probe on".
-2. Claude runs: `halt on`. Pass: about 3.3 V.
-3. Claude runs: `halt off`. Pass: about 0 V.
-4. Optional: power-cycle the Pico with the meter still on GP27. Pass:
-   it reads high for the first few hundred milliseconds after power-on
-   and drops to 0 V once `core1 up, halt released` (Claude can confirm
-   with `log dump`). This is the boot hold that keeps the CoCo halted
-   until the bus loop is armed.
-
-## C. Write capture (needs jumpers)
-
-Shows that a CoCo write cycle is captured with its data byte.
-
-1. Claude runs: `bus drive off`, `stats reset`.
-2. You: jumper GP22 (R/W, pin 29) to GND (write cycle), GP0 (pin 1) to
-   GND (data bit 0 low). Touch GP26 to GND briefly and release.
-3. Claude runs: `status` and `trace dump 2`. Pass: `writes` is at
-   least 1 and a trace line ends `3fff W fe`.
-4. You: remove the jumpers.
-
-## D. Becker loopback through the real table (needs jumpers)
-
-Exercises the single-writer rule end to end without a CoCo. Address
-0x3F42 needs A0 high, A1..A5 = 1,0,0,0,0... this is 14 address pins, so
-it is impractical with jumpers. Skip on the bench; it is covered by
-`test_stack` on the host and by the CoCo test (runbook row 9).
-
-## E. When the breakout boards arrive
-
-Follow `firmware/README.md` section "Bring-up" (also
-`docs/breadboard-plan.md` section 6), rows 3 to 11, in order. Each row
-names the console commands, the expected console output, the expected
-CoCo behaviour and the git tag to make when it passes. Before the first
-CoCo test:
-
-- `bus drive off` and `rom off` saved in config, so the Pico only
-  listens on the first power-up in the cartridge slot.
-- Have the logic analyzer on E, /CTS, /SCS, OE_BUS for row 5.
-- Have the HDB-DOS DriveWire 8 KB ROM ready to copy via `fs export`.
+| core1 running: `log dump` shows `core1 up, halt released` | pass |
+| Address decode, data byte on the pins, /HALT drive | `bus selftest` (K.1) and the PCB rows (F) cover them |
 
 ## F. PCB bring-up (v2.3.1): two boards, real CoCo hardware
 
@@ -114,11 +36,9 @@ through a Multi-Pak Interface (MPI).
   (no autostart tie), JP5 open (no firmware /CART or /NMI drive yet).
 - R7 = 10 kΩ (the v2.3.1 value; 100 kΩ loses to the RP2350's own reset
   pull-down and never releases /HALT).
-- Plus-W builds only, before first power: confirm on the physical module
-  (Waveshare schematic or a continuity check) that its radio uses GP36-GP39,
-  not pad-grid GP24/GP25/GP29 (CTS_BUF/SCS_BUF/A14_BUF): Zephyr's board port
-  and arduino-pico issue #3297 both say GP36-39. Firmware blinks LED2 on
-  GP23 (same sources); after flashing, check the LED blinks. Also confirm 16 MB flash on the module (no
+- Plus-W builds only: the radio's GP36-GP39 are verified (2026-09-29,
+  `firmware/README.md` "WiFi"). Firmware blinks LED2 on GP23; after
+  flashing, check the LED blinks. Also confirm 16 MB flash on the module (no
   runtime JEDEC ID check exists; `PICO_FLASH_SIZE_BYTES` in
   `firmware/boards/picoco_plusw.h` is a build-time assumption, not verified
   against the part actually on the board).
@@ -161,7 +81,7 @@ through a Multi-Pak Interface (MPI).
 - An unmodified Tandy 26-3024 MPI needs the CoCo 3 upgrade to work with a
   CoCo 3; a 26-3124 works as shipped.
 - The MPI's own buffers add delay, so the CoCo 3 fast-mode (bc3) row through
-  the MPI is the timing-margin test for roadmap item 6 (read-path margin).
+  the MPI is the read path's timing-margin test.
 - A working MPI row is also the first data point for the unverified /SLENB
   item in `docs/hardware-design.md` §9 (deferred to v2.4).
 - Also try a second cart in another MPI slot, and switch PiCoCo between
@@ -185,14 +105,9 @@ Firmware 1.3, Plus-W build. Server: `picoco-host` on the Mac unless noted.
 
 ### G.1 Bare module over USB (no CoCo)
 
-1. `net scan` lists networks.
-2. `net join <ssid>`, `net psk <psk>`, `net server <mac-ip> 65504`, `becker net`: `net status` reaches `net state up`.
-3. `bus selftest net`: not supported by the PIO engine; returns with a
-   rebuilt self-test. Until then it answers `err bus selftest net: not
-   supported by this engine`.
-4. Error reasons: wrong SSID, closed port, bad DNS name.
-5. Server down at boot with `becker net` saved: fallback after 10 s; `becker net` re-arms once the server is back.
-6. Cold-boot SNTP seeding (power cycle, then `time` shows the clock set).
+Run 2026-09-30, results in G.3 (scan, join, errors, fallback, SNTP).
+`bus selftest net` is not supported by the PIO engine: it answers `err
+bus selftest net: not supported by this engine`.
 
 ### G.2 On the PCB with a CoCo
 
@@ -209,13 +124,13 @@ Firmware 1.3, Plus-W build. Server: `picoco-host` on the Mac unless noted.
 |---|---|---|
 | G.1 join + DHCP + connect at boot | 5.3 s (`net up in 5327 ms`) | 2026-09-30 |
 | G.1 OP_TIME round trip | 8-13 ms typical, worst 23-30 ms over 20 | 2026-09-30 |
-| G.1 `bus selftest net` | pass (CPU loop, firmware 1.3). Not supported by the PIO engine; returns with a rebuilt self-test | 2026-09-30 |
+| G.1 `bus selftest net` | pass (CPU loop, firmware 1.3). Not supported by the PIO engine (G.2 on a CoCo covers the transport) | 2026-09-30 |
 | G.1 bad SSID / closed port / bad DNS name | `no such network` / `refused` / `dns failed`, ~10 retries in 22 s each | 2026-09-30 |
 | G.1 server down at boot | `net failed (refused), native fallback` after 10 s; `becker net` re-arms | 2026-09-30 |
 | G.1 `net scan` | 21 networks | 2026-09-30 |
 | G.1 cold-boot SNTP seeding | pass 2026-09-30: after a USB power cycle the boot log shows `net: sntp seeded 1790778946`, `time` reports it with `clock kept`, `net up in 8329 ms` | |
 | G.1 `net tz` (firmware 1.3, 25517de) | pass 2026-09-30: `net tz -240` + `save` + reboot logs `net: sntp set 1790765675 (utc 1790780075 tz -240)`, exactly Mac UTC minus 14400; `net tz 0` then `net tz -240` move `time` at once, no hourly wait | |
-| G.1 reconnect after a Pico reboot with picoco-host (af12f4d) | pass 2026-09-30: the server replaces the stale client on the new accept; `bus selftest net` passes right after the reboot (dwinit 5 ms, worst 19 ms) without restarting the server. `bus selftest net` is not supported by the PIO engine; returns with a rebuilt self-test | |
+| G.1 reconnect after a Pico reboot with picoco-host (af12f4d) | pass 2026-09-30: the server replaces the stale client on the new accept; `bus selftest net` passes right after the reboot (dwinit 5 ms, worst 19 ms) without restarting the server. `bus selftest net` is not supported by the PIO engine | |
 | G.2 boot hold with CoCo | | |
 | G.2 DIR/LOADM from DW4 | | |
 | G.2 DIR/LOADM from FujiNet-PC | | |
@@ -223,7 +138,7 @@ Firmware 1.3, Plus-W build. Server: `picoco-host` on the Mac unless noted.
 | G.2 manager WiFi screen | | |
 | G.2 VSYS scope trace | | |
 
-## H. NitrOS-9 over Becker (roadmap item 4)
+## H. NitrOS-9 over Becker
 
 CoCo 3 only (Level 2). Two disks, easiest first: a stock NitrOS-9 Becker
 boot floppy served from flash, then Ease of Use (EOU) from a server.
@@ -235,7 +150,7 @@ fast-mode Becker test whichever HDB-DOS ROM started it.
 - **CPU match.** The EOU zip in the repo root is the 6309-only build. On a
   stock 68B09E CoCo 3 it will not boot; that needs the 6809
   build (`68SDC.VHD`) instead. Same rule for the stock disk (`6809l2` vs
-  `6309l2`). Record the bench CoCo's CPU and RAM in H.5 before H.3.
+  `6309l2`).
 - **512 K RAM** for EOU. The stock disk runs in 128 K.
 - **Stock disk:** a `*coco3_becker.dsk` from a NitrOS-9 release (here
   `nos96309l2v030300coco3_becker.dsk`; the `_headless` variant puts the
@@ -252,7 +167,7 @@ fast-mode Becker test whichever HDB-DOS ROM started it.
   `becker bridge` + `tools/becker_relay.py` (either board) or `becker net`
   (Plus-W). Round trip must stay under 200 ms.
 
-### H.1 Prep: EOU Becker image (done 2026-10-01)
+### H.1 Prep: EOU Becker image
 
 `python3 firmware/tools/eou_becker.py 63SDC.VHD 63BECKER.VHD` (needs
 toolshed `os9`). It copies the image, then:
@@ -302,7 +217,7 @@ XRoar runs above predate that and stopped at EOU's `Time ?` prompt).
    writes count moves, no error; file survives a reboot if left in place.
 5. `dw disk show` inside NitrOS-9 lists the mounts (virtual channel,
    `dw_vser.c`); `dw disk insert 1 <file>` then `dir /x1`.
-6. Tick loss (roadmap item 7): note `date -t`, run
+6. Tick loss (`docs/ADDITIONAL_ROADMAP.md` §5 item 2): note `date -t`, run
    `dir -e -r /dd >/nil` in a loop for 10 minutes, compare with the Pico's
    `time`. Record the drift in seconds.
 7. CoCo RESET returns to HDB-DOS and `DOS` boots again; same after a
@@ -521,49 +436,19 @@ the Pico. Never swap the ROM from the USB console while the stub is running.
 
 ### J.1 16K CoCo 2, no Extended BASIC
 
-1. Power on, `EXEC 49154`: screen shows `PICOCO  16K NO ECB`, `ROMS`, the
-   `.ROM` files sorted, the first highlighted.
-2. Down / up arrows move the highlight; it stops at both ends.
-3. ENTER on `HDBDW3BCK.ROM`: `NEEDS EXTENDED BASIC`, still in the manager.
-4. ENTER on `CARTTEST.ROM`: the cart test starts by itself and prints
-   `PASS` lines (TEST_PLAN I.5). `status`: `rom now load carttest.rom`,
-   `rom next load manager`.
-5. Power-cycle: `EXEC 49154` is the manager again (launch is one-shot).
-6. BREAK in the manager: back to `OK`. `EXEC 49154` enters it again.
-7. Pull USB, power-cycle, `EXEC 49154`: works on cart power alone.
-8. `status` after all of it: `underrun 0`, `engine_stall 0`, `event_drop 0`.
-9. With the manager on screen, unplug and replug nothing, just wait 5
-   minutes, then press down: the highlight still moves (idle session).
+Run 2026-10-01, every row passed (J.2): first screen, arrows, the DOS ROM
+refused (`NEEDS EXTENDED BASIC`), carttest launch, one-shot launch, BREAK,
+cart power alone, counters, idle session.
 
 ### J.3 CoCo 3 (6309, 2 MB) and double RESET
 
-Read-path regression first (the 2026-10-01 core1 change, I.5):
+Steps 1-9 run 2026-10-02, every row passed (J.2); the PIO engine re-ran
+the HDB-DOS and manager rows in K.2. Open on the 16K CoCo 2 (no Extended
+BASIC):
 
-1. `hdbdw3bck.rom` saved: power on, HDB-DOS banner, `DIR`,
-   `LOADM"DINORUN":EXEC`. `status`: `engine_stall 0`, `event_drop 0`,
-   `crc_err 0`, `underrun 0`.
-2. `rom load hdbdw3bc3.rom`, `save`, power-cycle: same checks at 1.79 MHz,
-   four `LOADM`s and a `SAVE`.
-
-Manager (no key has reached the stub on a CoCo 3 in any emulator, so keys
-come first, launches after):
-
-3. RESET twice within 2 s: the manager autostarts, header
-   `PICOCO  COCO 3` plus the fitted RAM (`128K`, `512K`, `1M` or `2M`). Boot log: `double reset: manager for this boot`.
-4. Arrows move the highlight.
-5. BREAK: record what happens (expected: the manager again, since a CoCo 3
-   restart re-enters a `DK` cart; `rom now` still the manager).
-6. RESET once: back to the saved default (HDB-DOS), not the manager.
-7. RESET twice, ENTER on the saved HDB-DOS ROM: the CoCo 3 restarts into
-   HDB-DOS; `DIR` works. `status`: `rom now load <that rom>`.
-8. RESET twice, ENTER on `CARTTEST.ROM`: the cart test runs and prints
-   `PASS` lines with `ERR 0000` (a pak started in ROM mode).
-9. RESET once, 10 s later RESET once: HDB-DOS both times (outside the
-   window). A plain power-on is also HDB-DOS, never the manager.
-
-On the 16K CoCo 2 (no Extended BASIC):
-
-10. RESET twice, `EXEC 49154`: the manager.
+10. RESET twice, `EXEC 49154`: the manager. Passed once on the first
+    flash-marker build (3 s window); not re-run with the final 2 s window
+    and debounce.
 
 ### J.2 Results
 
@@ -736,8 +621,9 @@ Plus-W (0696783), last lines before each pass:
 - `bus selftest net`: `err bus selftest net: not supported by this engine`.
 - `reboot` with `becker net` saved (server `picoco-host` on the Mac): `net up in 4949 ms`, `core1 up, halt released, bus cycles 0`; `status` `cycles 0`, `event_lap 0`.
 
-### K.2 Bench on the PCB (Pico 2 build)
+### K.2 Bench on the PCB
 
+Every row passed on the Pico 2 PCB (K.3); the Plus-W PCB has not run them.
 Never run `bus selftest` with the board in a CoCo. Start each session with
 `stats reset`; read `status` and `dw stats` after each row.
 
@@ -776,16 +662,16 @@ CoCo 2 (16K, no Extended BASIC):
 
 ## How to resume with Claude
 
-Plug the Pico in, then say "resume the bench test plan at step A" (or
-B, C, E). Claude will check the console port, print `status`, and walk
+Plug the Pico in, then say "resume the bench test plan at section K.2" (or
+any open row). Claude will check the console port, print `status`, and walk
 the steps.
 
-Step 0 on resume (done 2026-09-08 for 78fb594; repeat whenever `main`
-moves): reflash from current `main`: `bootsel` on the console, wait for `/Volumes/RP2350`, then
-`cp -X build-pico/picoco.uf2 /Volumes/RP2350/` (rebuild with
-`ninja -C build-pico` if the UF2 is older than the last commit). Then
-`version` still reads `0.3-pico`; `status` now shows `dw hdbdos`. Results get appended to this file under a dated "Results"
-heading.
+Step 0 on resume: check what is running (`version`, `status`) before
+flashing anything. To reflash: `bootsel` on the console, wait for
+`/Volumes/RP2350`, then `cp -X build-pico/picoco.uf2 /Volumes/RP2350/`
+(rebuild with `ninja -C build-pico` if the UF2 is older than the last
+commit; `picotool load -x` if the drive won't mount). Results get appended
+to this file under a dated "Results" heading.
 
 ## Results
 

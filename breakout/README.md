@@ -2,8 +2,8 @@
 
 A dumb adapter: the 40 fingers of a Tandy Color Computer cartridge slot
 brought out 1:1 to a 2x20 0.1" header, so the PiCoCo bus interface can
-be breadboarded before the real board is routed. See
-`docs/breadboard-plan.md` for why and for the bring-up sequence.
+be breadboarded. It carried the breadboard phase before the main board
+existed; `docs/breadboard-plan.md` points to the results.
 
 ```
 CoCo slot ──[this board]──40-way IDC ribbon──[2x20-to-breadboard adapter]──breadboard
@@ -58,8 +58,7 @@ that sits on the chamfer and gets ground off, leaving bare copper at
 the finger tips. 1.30 mm keeps every finger fully on the flat. The
 contact wipe zone is millimetres further in, so mating is unaffected.
 The +5V finger (9) was already short at the leading edge (mates last)
-and is unchanged. The main board's footprint still has the 0.44 mm
-figure and should get the same trim before it is fabbed.
+and is unchanged. The main board's footprint has the same trim.
 
 ## Bill of materials
 
@@ -242,12 +241,14 @@ headers, soldered with the pin headers on the bottom.
    cobbler pin labelled +5V, and from finger 33 to the cobbler GND pin.
    If +5V lands on /CTS, a ribbon end is reversed.
 
-## Bring-up checks (from docs/breadboard-plan.md, steps 1-2)
+## Bring-up checks
 
 1. Board alone in the slot, ribbon unplugged: CoCo boots to BASIC, D1
    lights, +5V reads about 5 V at header pin 9.
 2. Logic analyzer on E, Q, R/W, /CTS, /SCS at the breadboard:
-   `PEEK(&HC000)` pulses /CTS, `PEEK(&HFF41)` pulses /SCS.
+   `PEEK(&HC000)` pulses /CTS, `PEEK(&HFF41)` pulses /SCS. On a CoCo 3
+   BASIC runs from RAM and a `$C000` PEEK never reaches the cart; use the
+   `$FF41` PEEK.
 
 Power the CoCo off before inserting or removing the board. The fuse
 protects the CoCo's rail from shorts, not the CoCo from hot-plugging.

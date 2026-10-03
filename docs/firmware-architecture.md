@@ -12,8 +12,8 @@ hardware it runs on, see [`hardware-design.md`](hardware-design.md).
 ## 1. Goals
 
 1. Respond to every `/CTS` read cycle (the $C000–$FEFF window; `rom.c`
-   currently serves a 16 KB HDB‑DOS image out of idx `0x0000-0x3EFF` of
-   it) in ≤ 1 bus cycle — data on D0–D7 before E falls.
+   serves an 8 KB or 16 KB image, or a banked one, out of idx
+   `0x0000-0x3EFF` of it) in ≤ 1 bus cycle — data on D0–D7 before E falls.
 2. Respond to Becker‑port reads on $FF41 (status) and $FF42 (data),
    and accept Becker‑port writes to $FF42 (data), implementing the
    DriveWire protocol.
@@ -32,32 +32,30 @@ hardware it runs on, see [`hardware-design.md`](hardware-design.md).
 - **SDK**: Raspberry Pi Pico SDK ≥ 2.1.0 (Pico 2 support).
 - **Compiler**: `arm-none-eabi-gcc` ≥ 13.
 - **Build**: CMake + Ninja.
-- **Flash**: picotool (USB MSC) or picoprobe + `openocd` (SWD).
-- **Language**: C11 for performance‑critical paths; the DriveWire
-  protocol layer can be C11 too, or ported from pyDriveWire piece by
-  piece.
+- **Flash**: UF2 over BOOTSEL (`bootsel` on the console), or
+  `picotool load -x`. The board has no SWD header.
+- **Language**: C11 throughout, the DriveWire protocol layer included.
 
-Repo layout, as built by the Plan A host-testable core
-(`docs/superpowers/plans/2026-09-07-firmware-host-core.md`). Everything
-under `host/` and most of `src/` is implemented and covered by `ctest`.
-Entries marked **Plan B** do not exist yet; they land with the Pico
-target (core1 bus loop, USB, flash storage):
+Repo layout. `host/` and the platform-independent parts of `src/` are
+covered by `ctest` (14 suites):
 
 ```
 firmware/
 ├── CMakeLists.txt          # -DPICOCO_HOST=ON builds host lib + tests + picoco-host
 ├── pico_sdk_import.cmake
-├── boards/                 # Plan B: pico2_breadboard.h GPIO map
+├── boards/                 # pico2_breadboard.h (Pico 2), plusw.h + picoco_plusw.h (Plus-W)
+├── ld/                     # linker additions: bus_events + bus_mem region (section 5.1)
 ├── src/
-│   ├── main.c              # Plan B target only today: Pico LED blink stub
+│   ├── main.c              # Pico target: init, /HALT release, main loop
 │   ├── plat.h              # platform functions, resolved at link time
-│   ├── plat_pico.c         # Plan B: RP2350 implementation of plat.h
+│   ├── plat_pico.c         # RP2350 implementation of plat.h
 │   ├── ring.h              # SPSC byte ring, shared by bus and becker
 │   ├── log.h / log.c       # ring-buffered leveled logging
 │   ├── bus/
 │   │   ├── bus.h / bus.c   # response table, write ring, read hooks, trace ring, stats
 │   │   ├── bus_engine.pio / bus_engine.c   # PIO + DMA bus engine (section 3.3)
-│   │   └── bus_core1.c     # core1 event loop (section 3.4)
+│   │   ├── bus_core1.c     # core1 event loop (section 3.4)
+│   │   └── fake6809.pio / fake6809.c       # `bus selftest` (section 3.2.5)
 │   ├── dev/
 │   │   ├── device.h / device.c   # device registry, write-event dispatch
 │   │   ├── rom.h / rom.c         # ROM device
@@ -66,26 +64,31 @@ firmware/
 │   │   ├── dw_util.h / dw_util.c       # checksum, LSN pack/unpack
 │   │   ├── dw_store.h                  # storage ops struct
 │   │   ├── dw_store_posix.c            # host implementation (also used by picoco-host)
-│   │   ├── dw_store_fatfs.c            # Plan B: Pico implementation
+│   │   ├── dw_store_fatfs.c            # Pico implementation (flash FAT volume)
 │   │   ├── dw_disk.h / dw_disk.c       # image format detection, LSN mapping
+│   │   ├── dw_vser.h / dw_vser.c       # virtual-serial command channel (section 7.3)
 │   │   └── dw.h / dw_server.c          # DriveWire protocol state machine
 │   ├── console/
 │   │   ├── console.h / console.c  # line parser + commands
-│   │   └── mode.h / mode.c        # mode switch (diag/loop/bridge/native) + pump
-│   ├── fs_flash.c          # Plan B: FatFS diskio over the flash partition; USB MSC glue
-│   ├── crash.c             # Plan B: hard fault + panic record in noinit RAM
-│   └── usb_descriptors.c, tusb_config.h   # Plan B
+│   │   └── mode.h / mode.c        # mode switch (diag/loop/bridge/native/net) + pump
+│   ├── net/                # WiFi transport, Plus-W only; net_stub.c elsewhere (section 7.3.1)
+│   ├── ui/                 # ROM manager screens; manager_rom.h is the built-in stub
+│   ├── fs_flash.c          # FatFS diskio over the flash partition; USB MSC glue
+│   ├── crash.c             # hard fault + panic record in noinit RAM
+│   └── usb/                # usb_descriptors.c, tusb_config.h
 ├── host/
 │   ├── plat_host.c         # POSIX implementation of plat.h
 │   ├── picoco_host.c       # TCP 65504 server + stdin console around dw_server
 │   └── sim_bus.h / sim_bus.c   # virtual CoCo for host-side tests
 ├── tests/
 │   ├── test.h              # ~30-line TEST/ASSERT macros
-│   ├── test_*.c            # one file per module, see section 10
+│   ├── test_*.c            # one file per module
 │   └── fixtures/           # synthetic images, captured byte streams, trace dumps
 ├── tools/
 │   ├── dwtest.py           # DriveWire client exerciser (TCP)
-│   └── tracedump.py        # decodes `trace dump` output
+│   ├── tracedump.py        # decodes `trace dump` output
+│   └── ...                 # check_core1_flash_free.py, bench.py, pconsole.py, flash.sh,
+│                           # becker_relay.py, eou_becker.py (see firmware/README.md)
 └── roms/                   # user-supplied ROM images, gitignored
 ```
 
@@ -93,7 +96,7 @@ firmware/
 
 ### 3.1 Core split
 
-Reversed from the original proposal above: the bus service is the
+Reversed from the original proposal: the bus service is the
 time-critical job, so it gets its own core with nothing else running
 on it.
 
@@ -125,7 +128,7 @@ load`'s unbank/publish and the engine's start/stop.
 | GP22      | 29               | /R/W (input from U12; also drives U10 DIR) |
 | GP26      | 31               | **OE_BUS** — cart‑selected (U15 output) |
 | GP27      | 32               | **HALT_GATE** — output; drives Q2 → /HALT |
-| GP28      | 34               | AUDIO_PWM by default (JP3 1-2, v2.3.1); E (input from U13) if JP3 is cut to 2-3. Firmware does not initialise this pin (no sound firmware yet, `docs/ADDITIONAL_ROADMAP.md` §6 item 11) — neither driven nor pulled. |
+| GP28      | 34               | AUDIO_PWM by default (JP3 1-2, v2.3.1); E (input from U13) if JP3 is cut to 2-3. Firmware does not initialise this pin (no sound firmware yet, `docs/ADDITIONAL_ROADMAP.md` §5 item 4) — neither driven nor pulled. |
 | RUN       | 30               | CoCo /RESET (via R9 series; R10 pull‑up footprint is DNP by default) |
 | VSYS      | 39               | +5V via D2 Schottky |
 
@@ -134,8 +137,7 @@ load`'s unbank/publish and the engine's start/stop.
 address‑valid window). Firmware disambiguates by **A13**:
 
 - `OE_BUS` low with `A13=0` ⇒ ROM read in the full $C000–$FEFF `/CTS`
-  window (`rom.c` covers idx `0x0000-0x3EFF`) — not $C000–$DFFF, a
-  stale range this section used to claim.
+  window (`rom.c` covers idx `0x0000-0x3EFF`).
 - `OE_BUS` low with `A13=1` ⇒ Becker access in $FF40–$FF5F window.
 
 ### 3.2.1 Plus-W pin plan (board v2.3, implemented)
@@ -167,7 +169,7 @@ on a Plus-W the same physical header pins are `GP40`/`GP41`/`GP42`.
 | GP28 | SLENB_BUF | capture |
 | GP29 | A14_BUF | capture |
 | GP30 | A15_BUF | capture |
-| GP31 | OE_FW | Firmware U10 `/OE`, reached only with JP2 at 2-3. The PIO engine holds it high, so **JP2 must stay at 1-2** (hardware `/OE`) until the respin (`docs/ADDITIONAL_ROADMAP.md` §9) |
+| GP31 | OE_FW | Firmware U10 `/OE`, reached only with JP2 at 2-3. The PIO engine holds it high, so **JP2 must stay at 1-2** (hardware `/OE`) until the respin (`docs/ADDITIONAL_ROADMAP.md` §8) |
 | GP32 | NMI_DRV | Q3 gate (DNP stage — R15/R17 also DNP); also reachable from a Pico 2 via JP5 2-3 (shares header pin 34, see below); no firmware drives this pin yet |
 | GP33 | CART_DRV | Firmware-driven `/CART` pulse (bus-engine spec, §4.5-equivalent in `main.c`): toggled ~500 Hz for 500 ms after `/HALT` release when `rom_cart_wanted()` is true; also reachable from a Pico 2 via JP5 1-2, but no Pico 2 board header defines `PIN_CART_DRV` today, so the pulse is Plus-W only |
 | GP34 | AUDIO_PWM | sound output stage |
@@ -185,17 +187,17 @@ jumper for the Q3/Q4 drive stages above: pad 1 = `CART_DRV`, pad 2 =
 and mutually exclusive with JP3 (both bridge onto header pin 34) — a
 Pico 2 build picks at most one of audio (JP3), a firmware `/CART` pulse
 (JP5 1-2), or a firmware `/NMI` drive (JP5 2-3, needs R15/R17 fitted).
-No firmware for either JP5 position exists yet (item 12 in the roadmap
-backlog, `docs/ADDITIONAL_ROADMAP.md` §6).
+No firmware for either JP5 position exists yet (item 5 of the firmware
+backlog, `docs/ADDITIONAL_ROADMAP.md` §5).
 
 **Plus-W board header trap, avoided:** `PICO_DEFAULT_LED_PIN` is `GP25` on
 a Pico 2. On a Plus-W, pad-grid `GP25` is `SCS_BUF` — a U13 **output**,
 not an LED. The Plus-W has two user LEDs: LED1 on the radio's `WL_GPIO0`
 (needs the CYW43 driver) and LED2 on `GP23`, which the module does not bring
 out. `firmware/boards/plusw.h` uses LED2 (`PIN_LED 23`). The radio itself
-uses GP36-GP39 (REG_ON, DATA/IRQ, CS, CLK), clear of the pad grid. Sources:
-Zephyr `boards/waveshare/rp2350b_plus_w` (PR #119523) and arduino-pico
-issue #3297 (quotes the Waveshare schematic); not yet checked on a module.
+uses GP36-GP39 (REG_ON, DATA/IRQ, CS, CLK), clear of the pad grid,
+verified 2026-09-29 from the Waveshare schematic and a live scan
+(`firmware/README.md` "WiFi").
 
 ### 3.2.2 Plus-W differences
 
@@ -225,7 +227,7 @@ retries the start on its next millisecond while `bus drive` is on.
 
 The radio holds DMA channels 0-1; the engine claims its channels and state
 machines through the SDK allocators, never by number (`bus engine` prints
-who holds what). Until the respin (`docs/ADDITIONAL_ROADMAP.md` §9) a
+who holds what). Until the respin (`docs/ADDITIONAL_ROADMAP.md` §8) a
 Plus-W has the Pico 2's limits: `OE_FW` (GP31) is held high and JP2 must
 be at 1-2, A14/A15 are not used, and there are no firmware-decoded
 addresses (`$FF60-$FF7F` went with the CPU loop, tag `fw-1.4-cpu-loop`).
@@ -297,7 +299,7 @@ a `STA $FF40` comes from the old bank and every later one from the new:
 at 0.89 MHz the hook sits on the boundary and 1-95 of 512 switches land
 at `+0`. No read is ever served from a wrong address. The later fix, if a
 real pak needs it, is a PIO decode of `$FF40`
-(`docs/ADDITIONAL_ROADMAP.md` §6 item 14).
+(`docs/ADDITIONAL_ROADMAP.md` §5 item 7).
 
 `rom_is_dos()` (loaded and the first two bytes are `DK`) feeds
 `rom_cart_wanted()`'s AUTO mode (the `/CART` pulse in `main.c`).
@@ -594,18 +596,16 @@ and 164.4 KB on a Plus-W (from the ELF when the event stream went in,
 ### 5.2 Flash layout
 
 - Bootloader at the reset vector (Pico SDK stage2).
-- Application code + constant ROM images in flash (XIP).
-- Optional: a small settings page at the end of flash for config
-  (selected ROM slot, DriveWire server URL, etc.).
+- Application code + constant ROM images (the manager stub) in flash (XIP).
+- The FAT filesystem from `PICOCO_FS_OFFSET` (`0x180000`) to the end of
+  flash, and one sector just below it for the double-RESET marker
+  (`firmware/README.md` "Filesystem").
 
-**Config, as built:** not a settings page of key/value fields.
-`picoco.cfg` is a plain list of console commands (the same commands
-from section 9's bring-up table), replayed line by line at boot by
-`console_run_config()`; `save` writes the current state back out as
-that command list. Same information, no separate config parser. On
-the host it lives at `<dir>/picoco.cfg` next to the disk images; on
-the Pico it's Plan B (a small file on the flash-backed filesystem in
-section 7).
+**Config:** `picoco.cfg` is a plain list of console commands, replayed
+line by line at boot by `console_run_config()`; `save` writes the current
+state back out as that command list. Same information, no separate config
+parser. On the host it lives at `<dir>/picoco.cfg` next to the disk
+images; on the Pico at the root of the flash FAT volume.
 
 ## 6. Becker port protocol
 
@@ -692,15 +692,17 @@ them into `becker_write` as space frees up across calls, one
 
 ### 7.1 Transport
 
-MVP: **USB CDC** — the Pico appears as a virtual serial port over
-USB‑C. A host machine runs a standard DriveWire server (pyDriveWire,
-DriveWire4 Java) that thinks it's talking to a real CoCo over a
-serial cable. PiCoCo relays bytes between the CoCo (via Becker port)
-and the host (via CDC).
+Three Becker modes carry DriveWire (`becker native|bridge|net`):
 
-Later: run the DriveWire server *on the Pico itself* (no host
-needed) and back virtual disks with FatFS on an SD card over SPI, or
-with files served from the Pico flash.
+- **native**: the DriveWire server (section 7.2) runs on the Pico, with
+  disk images on the flash FAT volume. No host needed.
+- **bridge**: the Pico relays Becker bytes over USB CDC0 to a host
+  DriveWire server (DriveWire 4, `picoco-host` through
+  `tools/becker_relay.py`, FujiNet-PC) that thinks it's talking to a real
+  CoCo over a serial cable.
+- **net** (Plus-W): the same relay over one TCP connection (section 7.3.1).
+
+An SD card backing store is not built.
 
 ### 7.2 Protocol state machine
 
@@ -719,15 +721,15 @@ Opcode coverage, byte-for-byte against pyDriveWire (`dwconstants.py`,
 
 - **Implemented with full request/response semantics:** READ, REREAD,
   READEX, REREADEX (checksum handshake with a `DW_READEX_CKSUM` state),
-  WRITE, REWRITE, TIME, INIT, DWINIT, NOP, RESET1/2/3, TERM.
+  WRITE, REWRITE, TIME, SETTIME, TIMER, INIT, DWINIT, NOP, RESET1/2/3,
+  TERM, and the virtual-serial set of section 7.3 (SERINIT, SERTERM,
+  SERREAD, SERREADM, SERWRITE, SERWRITEM, SERSETSTAT with the 26-byte
+  COMST extension, FASTWRITE).
 - **Consumed as stubs** (payload read and discarded, correct reply
-  shape sent where pyDriveWire sends one, no real behaviour): SERREAD,
-  SERGETSTAT, SERINIT, SERTERM, SERWRITE, SERWRITEM, SERREADM,
-  SERSETSTAT (including the 26-byte COMST extension), FASTWRITE,
-  PRINT, PRINTFLUSH, NAMEOBJ_MOUNT/CREATE. These exist so a real CoCo
-  client doesn't desync waiting for bytes that never come; they carry
-  no virtual-serial or named-object behaviour yet (`// ponytail:` in
-  `dw_server.c` names that ceiling — real replies wait on networking).
+  shape sent where pyDriveWire sends one, no real behaviour):
+  SERGETSTAT, GETSTAT, SETSTAT, PRINT, PRINTFLUSH,
+  NAMEOBJ_MOUNT/CREATE/TYPE (reply 0). These exist so a real CoCo client
+  doesn't desync waiting for bytes that never come.
 - Unknown opcodes are counted (`stats.unknown_op`) and otherwise
   ignored; a stalled payload wait past 250 ms resets to `DW_IDLE` and
   counts `stats.timeouts`, matching pyDriveWire.
@@ -743,8 +745,8 @@ regardless of what's backing the file.
 
 Storage (`dw_store.h`) is a small vtable — `open/read/write/size/
 sync/close` — with a POSIX implementation (`dw_store_posix.c`, used by
-both `ctest` and `picoco-host`) today and a FatFS implementation
-(`dw_store_fatfs.c`) as Plan B for the Pico's flash partition.
+both `ctest` and `picoco-host`) and a FatFS implementation
+(`dw_store_fatfs.c`) for the Pico's flash partition.
 
 ### 7.3 Virtual-serial command channel (v1.2)
 
@@ -806,8 +808,8 @@ verified on the Mac before it ever touches hardware.
 
 The same build carries the full debuggability set from the design
 spec (`docs/superpowers/specs/2026-09-07-firmware-design.md` section
-9), all exercised by the host tests before Plan B puts them on real
-hardware: the always-on bus trace ring (section 6.1's `bus.c`, frozen
+9), all exercised by the host tests before they run on hardware: the
+always-on bus trace ring (section 6.1's `bus.c`, frozen
 for a consistent `trace dump`); per-module stats structs (`bus_stats`,
 `becker_stats`, `dw_stats`) printed by the console's `status`/`dw
 stats`; `dw capture on <file>` / `off`, which appends one
@@ -895,38 +897,25 @@ Power‑on sequence:
 
 After boot, `halt on` / `halt off` on the console assert and release
 /HALT by hand; nothing in the firmware uses it for flow control yet
-(`docs/ADDITIONAL_ROADMAP.md` §6 item 7 bounds such holds to a few
+(`docs/ADDITIONAL_ROADMAP.md` §5 item 2 bounds such holds to a few
 hundred µs).
 
 Boundary: if firmware crashes before step 5, the CoCo will hang at
 reset instead of running with a broken cart. That's the safer failure
 mode.
 
-## 9. Bring‑up plan (firmware side)
+## 9. Bring‑up (firmware side)
 
-Milestones `fw-0.1` onward are driven from the console commands listed
-in spec section 8 (`help`, `smoke`, `halt on/off`, `trace dump`, `rom
-pattern/load`, `becker loop/bridge/native`, `dw mount`, etc.), not from
-bespoke test firmware per milestone. The host-side stack each of these
-commands exercises — bus tables, devices, DriveWire server, console —
-is already verified by `ctest`'s `test_stack`, `test_replay`, and
-`firmware/tools/dwtest.py` before any of it runs on a Pico. Each
-milestone is a firmware git tag. The tags were made on the CPU loop
-(the last is `fw-1.4-cpu-loop`); the console checks are the same on the
-PIO engine, whose own gate is `bus selftest` (§3.2.5).
-
-| Tag | Description |
-|-----|-------------|
-| `fw-0.1-blink` | Toggle Pico LED. Verify SDK + flash path. |
-| `fw-0.2-gpio-smoke` | Toggle all 26 GPIO at 10 Hz. Verify shifter directions and power budget on the board before plugging into a CoCo. |
-| `fw-0.3-halt-ctrl` | /HALT held low through Pico boot and released by `main.c` (§8.1); `halt on`/`halt off`. Verify on a CoCo (oscilloscope TP + CoCo doesn't run until released). |
-| `fw-0.4-bus-capture` | Capture only: `bus drive off`, `trace run`, `trace dump`. Plug into a CoCo, verify cart cycles show on $C000/$FF4x reads. |
-| `fw-0.5-rom-static` | `rom pattern`, `bus drive on`: serve a repeating pattern over /CTS. `PEEK` from BASIC returns the pattern. |
-| `fw-0.6-rom-hdbdos` | `rom load` a real HDB‑DOS+DW ROM. Power‑cycle → `DOS` from BASIC should enter HDB‑DOS. |
-| `fw-0.7-becker-loop` | `becker loop`: $FF42 writes echo back, $FF41 shows `$02` once a byte is queued. Verify from BASIC. |
-| `fw-0.8-bridge` | CDC ↔ Becker bridge. Run pyDriveWire on host; `DW DIR` from HDB‑DOS shows virtual drive. |
-| `fw-0.9-boot` | `BOOT` from HDB‑DOS starts loading a DECB / NitrOS‑9 image over DriveWire. |
-| `fw-1.0-native`  | Optional: DriveWire server runs on Pico, SD card backing store. |
+Bring-up is driven from the console commands listed in spec section 8
+(`help`, `smoke`, `halt on/off`, `trace dump`, `rom pattern/load`,
+`becker loop/bridge/native`, `dw mount`, etc.), not from bespoke test
+firmware. The host-side stack each of these commands exercises — bus
+tables, devices, DriveWire server, console — is verified by `ctest`'s
+`test_stack`, `test_replay`, and `firmware/tools/dwtest.py` before any of
+it runs on a Pico. The engine's own gate is `bus selftest` (§3.2.5); the
+bench checks on a board are `firmware/TEST_PLAN.md` sections F-K. The
+milestone tags `fw-0.1-blink` to `fw-1.0-native` were made on the CPU
+loop; the current engine is `fw-1.5-pio-engine`.
 
 ## 9.1 v2 roadmap
 
@@ -943,9 +932,9 @@ These are not MVP blockers but tracked as next‑board items:
   gate (74LVC1G332 or two LVC1G11s) to let GIME RAM/ROM toggle work
   without cart contention.
 - **Pico → CoCo /CART FIRQ**: enables async events (e.g., "data
-  ready" interrupts for Becker). Needs another freed GPIO — only
-  feasible by adding an I/O expander or a small CPLD for address
-  decoding.
+  ready" interrupts for Becker). The drive stage exists (Q4, GP33 on a
+  Plus-W, JP5 1-2 on a Pico 2, `docs/hardware-design.md` §4.4a); the
+  firmware uses it only for the autostart pulse after `/HALT` release.
 - **Hardware‑latched ROM response table**: a 2 KB SRAM dual‑ported
   to both Pico SPI and a CoCo‑facing PIO could serve ROM with zero
   Pico CPU or DMA involvement, freeing all three cores for the
@@ -953,16 +942,16 @@ These are not MVP blockers but tracked as next‑board items:
 
 ## 10. Development workflow
 
-- Keep the Pico in the cart for normal dev; flash over SWD with
-  picoprobe so you don't have to unplug.
-- USB exposes two CDC interfaces (Plan B, `usb_descriptors.c`): CDC0
+- Keep the Pico in the cart for normal dev; reflash over USB with
+  `bootsel` on the console and a UF2 copy, so you don't have to unplug.
+- USB exposes two CDC interfaces (`src/usb/usb_descriptors.c`): CDC0
   carries raw DriveWire bytes in bridge mode (the host's DriveWire
   server talks to CDC0 as if it were a serial cable); CDC1 is the
   console (`console_feed`/`console_exec`, section 9's commands and the
   boot-time `picoco.cfg` replay). No in-band escape sequences share a
   channel between the two.
-- `core0` keeps a stream of bus‑snapshot lines open on USB CDC for
-  `picocom /dev/ttyACM1` debugging.
+- Bus activity is read on demand from the console (`trace dump`,
+  `status`, `log dump`); nothing streams on its own.
 - Add a `#define BUS_TRACE 1` gate around the diag ring so it can be
   compiled out for production.
 - Run `cmake -DCMAKE_BUILD_TYPE=Release` for final ROM builds — the

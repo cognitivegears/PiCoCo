@@ -1,8 +1,11 @@
 # PiCoCo — additional roadmap ideas
 
-Status: brainstorm, 2026-09-08. Companion to `RP2350B_IDEAS.md`; that doc
-covers what extra GPIO unlocks, this one collects everything else. Nothing
-here is committed to the MVP (DriveWire over Becker + ROM emulation).
+Open work beyond what is built and bench-passed (DriveWire native and bridge
+modes, WiFi transport on a Plus-W, NitrOS-9/EOU, the ROM manager, the PIO bus
+engine on CoCo 2 and CoCo 3). Companion to `RP2350B_IDEAS.md`, which covers
+what the Plus-W's extra GPIO unlocks; this doc collects everything else.
+Done items are removed, not marked; `firmware/TEST_PLAN.md` holds the record.
+Last pruned 2026-10-03.
 
 ---
 
@@ -45,8 +48,6 @@ no DMA, no CoCo 3 ROM-in-RAM tricks.
 - `SAVE`, `SAVEM`, `KILL`, `RENAME`, `DSKI$`/`DSKO$`, `FREE`.
 - Sequential file I/O (`OPEN "I"/"O"`, `INPUT#`, `PRINT#`, `LINE INPUT#`,
   `EOF`, `CLOSE`). This is where the size and effort start to climb.
-- A one-screen boot menu (pick image, drive mapping) driven by the same
-  console commands `picoco.cfg` uses.
 - DriveWire virtual-channel bits (`DWLOAD`-style loader) if trivial.
 
 ### Non-goals, stated so nobody re-argues them
@@ -79,8 +80,10 @@ map are functional interfaces, same footing as the SDC register map in
   vector table).
 - Effort: weeks part-time for must-haves. Sequential I/O roughly
   doubles it.
-- Depends on: Becker/DriveWire path (done). SD image backend is a v2
-  item.
+- The ROM manager (`coco/stub/manager.asm`, `firmware/src/ui/`) already
+  covers image selection and launching; PiCoCo-DOS is the piece that makes
+  `DIR`/`LOADM` work without a Microsoft-derived ROM. SD image backend is a
+  v2 item.
 
 ---
 
@@ -150,143 +153,73 @@ which is where SDC-DOS's ROM-bank features come from.
 
 ## 4. Suggested order
 
-1. Ship MVP with "bring your own HDB-DOS".
+1. A14/A15 on every build (§8): the only item that is a correction, not a
+   feature.
 2. PiCoCo-DOS must-haves (§1). Unblocks "works out of the box".
 3. SDC interface (§2) once SD storage exists, since its whole value is
    mounting images from a card.
 4. PiCoCo-DOS sequential file I/O only if people ask.
-5. Bridge mode (§5) when a host-side DW4 feature is actually wanted.
 
-## 5. Bridge mode: Becker port to a host DriveWire server (DONE 2026-09-29)
+## 5. Firmware backlog and deferred hardware
 
-Passed on the breadboard against picoco-host (via `firmware/tools/becker_relay.py`)
-and DriveWire 4.3.6p on the CDC0 serial device; see `firmware/TEST_PLAN.md`
-results. Limit found: the server-side op timeout (250 ms here, DW4's
-`ReadByteWait` 200 ms) means a remote server must answer within ~200 ms round
-trip or the CoCo hangs waiting for the READEX status byte. Relevant to any
-future WiFi (Plus-W) transport. Original notes follow.
-
-
-Breadboard plan step 10. The firmware already has `becker bridge`, which
-forwards Becker bytes to CDC0 so a DriveWire server on the Mac
-(pyDriveWire or DW4) serves the CoCo. It was skipped on the bench
-because native mode (step 11) passed first: DIR, LOADM+EXEC, SAVE across
-a power-cycle, at both 0.89 and 1.79 MHz, crc_err 0.
-
-Why it is still worth finishing later:
-- Access to everything a full DW4 server does that the Pico does not:
-  virtual serial ports, printer capture, network drives, the DW4 UI.
-- A fallback when a disk image or a client (NitrOS-9, HDB-DOS variants)
-  trips a gap in the native server: same cart, no reflash.
-
-What it needs: `becker bridge` + `save`, a CDC0 session from
-pyDriveWire (`--port /dev/tty.usbmodemXXXX1 --speed 115200 <image>`),
-then the step 10 checks (`DIR`, `LOADM`). Tag `fw-0.8-bridge` when it
-passes. Watch for the host-side latency: the CoCo's Becker read loop has
-no timeout, so a slow reply hangs the CoCo until the server answers.
-
-
-## 6. Backlog from the 2026-09-19 quality reviews (firmware + docs, no hardware impact)
-
-Sources: `.superpowers/sdd/2026-09-17-main-board-v2.3/quality-ee.md`, `quality-coco.md`,
-`quality-fw.md`. Hardware items from those reviews were folded into v2.3.1 before the
-first order (ground stitching, 0.5 mm power trunks, C16, sound values, JP5, J1,
-wider antenna keepout) or deferred to v2.4 (see hardware-design §9).
+Started from the 2026-09-19 quality reviews (`.superpowers/sdd/2026-09-17-main-board-v2.3/
+quality-*.md`); hardware items from those went into v2.3.1 or v2.4 (hardware-design §9).
 
 ### Firmware, ordered by value
-1. **DONE (2026-09-22).** FAT safety across CoCo resets: `dw_server.c`'s `do_write()`
-   calls `ops->sync` after a successful DriveWire write (and reports the write as failed
-   if the sync itself fails), and `fs_flash_write_blocks` skips the erase/program cycle
-   for any 4 KB block that's unchanged (the common case: a sync after every write
-   re-touches the same root-dir/FAT block). `n_fat` stays 1 — on this flash both FAT
-   copies would share one 4 KB erase block and FatFS never reads FAT2 on mount, so a
-   second FAT would only double FAT erases with no real protection.
-2. **Auto-save mounts.** `dw mount` reaches flash only on `save`; the community workflow is
+1. **Auto-save mounts.** `dw mount` reaches flash only on `save`; the community workflow is
    mount-then-reset-to-boot, so the mount is lost. Write `picoco.cfg` on mount/eject.
-3. **DONE (2026-09-23).** DriveWire virtual-channel command shell: `firmware/src/dw/dw_vser.c`
-   implements DW4 command mode (channels 1-13) with a deny-by-default allowlist
-   (`console_exec_remote`), and `dw disk show|insert|eject` plus `fs new`/`rom boot` give disk
-   selection and image creation from any DW4 client, including the new `coco/` manager
-   program. See `docs/superpowers/specs/2026-09-23-coco-manager-design.md`.
-4. **DONE (2026-10-01).** NitrOS-9 over Becker: stock NitrOS-9 L2 boots from flash and
-   EOU 1.0.1 boots through bridge mode on PCB v2.3.1 (Pico 2, 6309 CoCo 3). The NitrOS-9
-   Boot module sends no DWINIT, so a hard-disk image needs `hdbdos off` before `DOS`.
-   Guide: `docs/NITROS9_EOU.md`; bench log: `firmware/TEST_PLAN.md` section H.
-5. **DONE (2026-09-22).** Write-cycle sampling: `bus_core1.c`'s write path now keeps the
-   last `gpio_in` sample taken while OE_BUS was still low (`prev`) and uses its data bits,
-   instead of the first sample with OE_BUS high.
-6. **CLOSED (2026-10-02) by the PIO bus engine.** Reads are served by PIO + DMA with no CPU in the path: 22 clk (146 ns) from OE_BUS on a bare Pico 2, 14 clk of margin to the 36 clk sample point at 1.79 MHz; 24 clk on a bare Plus-W, margin 12; 4,096 back-to-back reads clean at both speeds (firmware-architecture §8; PCB not yet measured). Lever (b) below was taken; (c) stays last. Earlier step (2026-09-30, first PCB, CPU loop): `addr_resample` read 0 on the PCB, so the nops went; the Pico 2 loop precomputed the response while OE_BUS was high and drove ~100 ns after it fell, and D0-D7 idle pulled down (a late $FF41 poll used to read 0xFF = Becker ready); see docs/pcb-bringup.md. Original text kept for the lever order: Ten nops (67 ns at 150 MHz) before the address read; real
-   OE-to-data ~180-200 ns, not the documented 70 ns. Levers in order (decided
-   2026-09-28, see §7): (a) on the first PCB read `bus addr_resample`; if zero, drop
-   the nops (~130 ns serve path); (b) if CoCo 3 at 1.79 MHz behind an MPI still fails,
-   the PIO/DMA engine in firmware-architecture §3.3 (~100 ns, no CPU in the path);
-   (c) only then raise `clk_sys`. The clock is last, not next: the sound PWM carrier
-   maths, USB and flash dividers all assume 150 MHz and the RP2350 is rated for 150.
-7. **/HALT flow-control holds** longer than a GIME tick (16.7 ms) cost NitrOS-9 clock ticks;
+2. **/HALT flow-control holds** longer than a GIME tick (16.7 ms) cost NitrOS-9 clock ticks;
    bound runtime holds to a few hundred us (the 1.2 s boot hold is fine).
-8. **DONE (2026-09-22).** Flash-free core1 build check: `firmware/tools/check_core1_flash_free.py`
-   runs as a POST_BUILD step on the `picoco` target, following every direct branch from
-   `bus_core1_main` and the Becker read hooks, and fails the build if any lands outside SRAM.
-   `bus_core1.c` still has no test coverage; see TEST_PLAN.md.
-9. **DONE (2026-09-22).** `PICOCO_FS_OFFSET`/`PICOCO_FS_SIZE` moved to the board headers
-   (`fs_flash.h` includes `PICOCO_BOARD_H`); the Plus-W gets the rest of its 16 MB flash
-   (3712 FAT12 clusters). The Plus-W board header trap avoided: `firmware/boards/plusw.h`
-   defines no `PIN_LED` (its LED pin is unverified), so LED code compiles out on that board.
-10. SPDX headers on every firmware source; `console_exec` should reject >6 tokens / >135
-    chars instead of truncating silently; note that `bus_stats` counters are non-atomic.
-11. Sound firmware (PWM on GP34/header 34) does not exist yet; the analog stage is populated.
-12. **DONE (2026-09-27), built and reviewed, not yet bench-verified.** A firmware-pulsed
-    /CART on a Plus-W's `CART_DRV` pad (GP33): toggled ~500 Hz for 500 ms after `/HALT`
-    release when `rom_cart_wanted()` is true. `cart auto` (the default) wants the pulse
-    when a loaded ROM's first two bytes are not `DK` (i.e. not a DOS ROM); `cart on`/`cart
-    off` override it and are the only two settings `save` writes to `picoco.cfg` (`auto`
-    is the unwritten default, so a saved config with no `cart` line means auto). The
-    JP5-on-a-Pico-2 path from the original item text is still unbuilt — no Pico 2 board
-    header defines `PIN_CART_DRV`, so `cart on`/`cart off` are refused there (`auto` and
-    the bare query still work everywhere). No
-    real-CoCo bench check has run yet, and the fake-6809 self-test does not exercise
-    `/CART` at all (it drives only the bus pins, not this GPIO). Bench check still open:
-    a GMC image autostarts on a CoCo 3 with `cart auto`, and HDB-DOS still reaches BASIC
-    normally (the pulse must not itself disturb a DOS boot).
-13. **TODO: make EOU easy for a newcomer** (follow-up to item 4). Two pieces:
-    (a) prebuilt `picoco-host` binaries for macOS, Linux and Windows, so nobody needs
-    CMake and a compiler to serve an image (a Windows build has never been tried);
-    (b) one launcher command that starts the server and `becker_relay.py --reconnect`
-    together and finds the bridge port by itself. Before announcing either: build and boot
-    the 6809 EOU image (only the 6309 one has run), and ship `eou_becker.py`, not a
-    remastered image, unless the EOU project's terms allow redistributing one.
-14. **PIO decode of `$FF40`** (from the PIO bus engine, 2026-10-02). A bank switch is
-    core1's `$FF40` write hook, which lands 82-93 clk after the write ends, after the next
-    cycle has taken its bank: the first cart fetch after a `STA $FF40` comes from the old
-    bank at both speeds (firmware-architecture §3.2.4). Harmless unless a banked pak
-    switches from code in the switched window. If one needs it, decode `$FF40` writes in
-    PIO and set the bank register there, with no core1 in the path (and a sequence bit,
-    §7, so two identical writes are two switches).
-
-### Docs
-- README: on a CoCo 3 a BASIC `PEEK(&HC000)` never reaches the cart, use $FF41/$FF42; the
-  MPI slot register ghosts at $FF9F as well as $FF7F; JP4 bridged breaks HDB-DOS (it jumps
-  to $C000 as code); a dead or blank module holds /HALT and looks like a dead CoCo; the
-  DNP stages are Plus-W provisions, not indecision; one-line ToolShed build for HDB-DOS;
-  credit the DriveWire and HDB-DOS authors; the bare 98 x 77 board fits no Program Pak
-  shell (the 53.34 x 44.45 mm roadmap outline is the cased version).
-- firmware-architecture: the macro is `PICO_FLASH_ASSUME_CORE1_SAFE` (not `PICOCO_`); the
-  ROM window is $C000-$FEFF (rom.c covers idx 0x0000-0x3EFF), not $C000-$DFFF; the "70 ns"
-  latency claim is stale; the GP25 trap above.
-- hardware-design: §3.1 must not list /HALT, /NMI, /CART as U13 inputs; §4.6 sound numbers
-  recomputed for the loaded network; JP3 1-2 ties Plus-W GP34 to GP42 (keep one an input);
-  §1: the HDMI corner is not wirable on v2.3 (HSTX = GP12-19 = A4-A11), it is reserved for a
-  variant that moves the address bus.
+3. SPDX headers on every firmware source; `console_exec` should reject >6 tokens / >135
+   chars instead of truncating silently; note that `bus_stats` counters are non-atomic
+   (`stats reset` races core1's own counters, firmware/README.md).
+4. Sound firmware (PWM on GP34/header 34) does not exist yet; the analog stage is populated.
+   Specs: `docs/superpowers/specs/2026-09-27-*` (bus-engine spec first, now done).
+5. **Firmware-pulsed /CART, bench check.** Built for a Plus-W's `CART_DRV` pad (GP33):
+   toggled ~500 Hz for 500 ms after the `/HALT` release when `rom_cart_wanted()` (`cart
+   auto`: a loaded ROM whose first two bytes are not `DK`; `cart on`/`off` override and are
+   what `save` writes). No Pico 2 board header defines `PIN_CART_DRV`, so `cart on`/`off`
+   are refused there; the JP5-on-a-Pico-2 path is unbuilt. Still open: a GMC image
+   autostarts on a CoCo 3 with `cart auto`, and HDB-DOS still reaches BASIC normally (the
+   pulse must not disturb a DOS boot). The self-test does not exercise `/CART`.
+6. **Make EOU easy for a newcomer.** (a) prebuilt `picoco-host` binaries for macOS, Linux
+   and Windows, so nobody needs CMake and a compiler to serve an image (a Windows build has
+   never been tried); (b) one launcher command that starts the server and
+   `becker_relay.py --reconnect` together and finds the bridge port by itself. Before
+   announcing either: build and boot the 6809 EOU image (only the 6309 one has run), and
+   ship `eou_becker.py`, not a remastered image, unless the EOU project's terms allow
+   redistributing one.
+7. **PIO decode of `$FF40`.** A bank switch is core1's `$FF40` write hook, which lands
+   82-93 clk after the write ends, after the next cycle has taken its bank: the first cart
+   fetch after a `STA $FF40` comes from the old bank at both speeds
+   (firmware-architecture §3.2.4; convention for banked images in `coco/README.md`).
+   Harmless unless a banked pak switches from code in the switched window. If one needs
+   it, decode `$FF40` writes in PIO and set the bank register there, with no core1 in the
+   path, and a sequence bit (§6) so two identical writes are two switches. Note PIO has no
+   register transfer between state machines, so the bank's route into the read SM's X is
+   the design problem; spike first.
+8. **CoCo 2 OE_BUS blips** (bench 2026-10-03, TEST_PLAN K). On the bench CoCo 2 (26-3026)
+   ~9 % of reads show an OE_BUS high blip inside the cycle, always the first selected cycle
+   after a 6809 internal cycle; the CoCo 3 shows none. The engine survives them (the stall
+   guard needs a parked SM; a blip only splits the event, `status` `event_dup`), but each
+   one re-serves the byte ~25 clk after the blip. Scope OE_BUS on the cycle after a `CLRA`
+   before choosing: an end-of-cycle filter in the event SM (cheap), a PIO1 helper
+   debouncing the read SM's end like the Plus-W's (~3 clk of Pico 2 margin), or an RC on
+   OE_BUS at the respin (100 pF behind R11's 33 R is nothing; ~470 pF costs 5-7 clk).
+9. **Plus-W PCB on a CoCo.** The engine has only run on a bare Plus-W (self-test). TEST_PLAN
+   G.2 and K.2 rows for the Plus-W board are open.
+10. `version` still prints 1.4; bump with the next firmware tag.
 
 ### Hardware deferred to v2.4
-- **CoCo /RESET drive** (from §7): one more 2N7002 + gate resistor on cart pin 5, like
+- **CoCo /RESET drive** (from §6): one more 2N7002 + gate resistor on cart pin 5, like
   Q2 on /HALT, so firmware can cold-boot the CoCo into a newly selected ROM. Today the
   Pico can only *be* reset by /RESET (RESET_BUF -> RUN); it cannot assert it. Pairs with
-  the JP5 /CART pulse (backlog item 12) to give "pick a ROM, machine reboots into it".
+  the JP5 /CART pulse (§5 item 5) to give "pick a ROM, machine reboots into it". Double
+  RESET into the manager covers "back to the menu" already.
 
 ### Long term (v3)
 - **Evaluate dropping U11, U12 and U13** (the three input-only LVC245s on address and
-  control). §7: RP2350 GP0-25 are 5 V tolerant with IOVDD powered, and LVC00 inputs
+  control). §6: RP2350 GP0-25 are 5 V tolerant with IOVDD powered, and LVC00 inputs
   are 5 V tolerant, so A0-A13, R/W, CTS, SCS, E and RESET could go straight to the
   Pico and U15. Before deciding, check: (a) what a powered CoCo does to an unpowered
   Pico (VSYS is diode-fed from cart 5 V, so IOVDD rises with the bus; the window is
@@ -302,7 +235,7 @@ wider antenna keepout) or deferred to v2.4 (see hardware-design §9).
 - C3 as a 10 V 1206 (a 22 uF 6.3 V X5R 0805 at 3.3 V bias delivers about half its value).
 - Real 2.4 GHz clearance (5 mm) around the Plus-W antenna, not a 1-2 mm rule area.
 
-## 7. Learnings from sbelectronics multicart/videocart (reviewed 2026-09-28)
+## 6. Learnings from sbelectronics multicart/videocart (reviewed 2026-09-28)
 
 Scott Baker's <https://github.com/sbelectronics/coco/tree/master/multicart-videocart>:
 a Pico 2 W ROM multicart (OLED + encoder menu, WiFi web UI/OTA, banked ROMs to 128 KB,
@@ -324,8 +257,9 @@ touching `bus_core1.c` again; the timing census there is the best public one.
 - **No overclock by default.** He needs 250 MHz because his loop is continuous-refresh
   polling: worst-case detect latency is a full lap (374 ns at 150 MHz vs a ~318 ns
   budget, 85 % hit rate, exposed behind an MPI). Ours spins on the OE_BUS edge, so
-  detect latency is tens of ns and the serve path is ~200 ns straight-line. See
-  backlog item 6 for the lever order.
+  detect latency is tens of ns. The PIO engine serves in 22 clk (146 ns) at 150 MHz
+  with 14 clk of margin at 1.79 MHz; the clock stays the last lever (sound PWM, USB and
+  flash dividers assume 150 MHz and the RP2350 is rated for 150).
 
 ### Numbers to design against (his measurements, CoCo 1/2, 1117 ns cycle)
 - CoCo latches read data ~478 ns after !CTS asserts; his loop drives ~160 ns after
@@ -336,17 +270,15 @@ touching `bus_core1.c` again; the timing census there is the best public one.
 - 6809E data setup before E falls: ~80 ns at 0.89 MHz; the write data is valid from
   ~E-rise + 225 ns.
 
-### Rules to carry into the bus-engine and Plus-W radio work
-- **Nothing on core1 touches the APB per lap.** His banked ROMs glitched whenever the
-  radio was on: the hot loop polled a PIO RX FIFO (an APB read), CYW43 DMA bursts
-  stalled it, and the CoCo latched mid-transition. Fix was a DREQ-paced DMA draining
-  the FIFO into SRAM, with the DMA as the FIFO's *only* consumer. SIO GPIO reads are
-  fine; PIO FIFO polls are not. Add to the bus-engine spec invariants before the
-  Plus-W radio comes up.
-- Erratum E9 (reset pull-down on every pad) bit him too; he `gpio_disable_pulls()`
-  every bus pin. Same lesson as our R7 100 k -> 10 k.
+### Rules applied in the PIO bus engine
+- **Nothing on core1 touches the APB per event.** His banked ROMs glitched whenever the
+  radio was on: the hot loop polled a PIO RX FIFO, CYW43 DMA bursts stalled it, and the
+  CoCo latched mid-transition. Our engine serves reads with no core in the path and
+  core1 reads events from an SRAM ring that DMA C fills as the FIFO's only consumer.
+- Erratum E9 (reset pull-down on every pad): the read SM drives D0-D7 low before every
+  release; R7 went 100 k -> 10 k.
 - A change-driven consumer needs a sequence bit: two identical back-to-back writes
-  are otherwise one. Relevant if the $FF40 bank hook ever moves to a PIO capture.
+  are otherwise one. Relevant to item 7 of §5.
 
 ### Worth adopting
 - `tools/bas2rom.py` (Apache 2.0, stdlib Python): .cas/.bas/.bin -> autostart ROM,
@@ -364,7 +296,7 @@ touching `bus_core1.c` again; the timing census there is the best public one.
 - OLED + encoder: PICOCO.BIN on the CoCo and the USB console cover selection; WiFi
   (Plus-W) is the eventual remote UI.
 
-## 8. ROM manager follow-ups (from the 2026-10-01 design)
+## 7. ROM manager follow-ups (from the 2026-10-01 design)
 
 Spec: `docs/superpowers/specs/2026-10-01-rom-manager-design.md` section 10.
 
@@ -376,7 +308,7 @@ Spec: `docs/superpowers/specs/2026-10-01-rom-manager-design.md` section 10.
 - Loading `.BIN` and BASIC programs from a disk image without a DOS.
 - Extended BASIC served at `$8000` from a Plus-W (`RP2350B_IDEAS.md` §15).
 
-## 9. A14 (and A15) must reach the module on every build (hardware, required)
+## 8. A14 (and A15) must reach the module on every build (hardware, required)
 
 **Limitation today.** A Pico 2 build sees A0-A13 only. All 26 header GPIOs
 are spent (`CLAUDE.md` "Pico 2 (module) only exposes 26 GPIO"), so A14 and

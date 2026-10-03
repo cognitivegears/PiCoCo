@@ -42,9 +42,8 @@ OE_BUS high (TP1), so U10 stays disabled while the other cart inputs float.
 
 ## Phase 3: fit the module
 
-Start with a Pico 2 on the first board: that firmware path is proven on
-the breadboard, so a failure here is a board fault, not a new-code fault.
-Put the Plus-W on the second board.
+Board #1 carries a Pico 2 (results below). Put the Plus-W on the second
+board.
 
 - Pico 2 flat mount: Kapton over the carrier grid pads under the Pico's
   three SWD/debug pads (GP29/GP32/GP35) first. See
@@ -63,11 +62,10 @@ Do not run `bus selftest` on the PCB: U11-U13 outputs would fight PIO1.
    `log dump` shows `core1 up, halt released`.
 2. Add bench 5 V: total edge current at idle (expect < 100 mA for a
    Pico 2). This is the number the 300 mA cart budget starts from.
-3. /HALT electrical check (closes TEST_PLAN "step B"): finger 3 is high
-   after boot (R1 to +5 V), `halt on` pulls it to 0 V, `halt off` releases.
+3. /HALT electrical check: finger 3 is high after boot (R1 to +5 V),
+   `halt on` pulls it to 0 V, `halt off` releases.
 4. RUN path: short finger 5 to GND for a second. The console drops and
-   comes back, `status` shows a fresh boot. This is the "RUN-pin path is a
-   PCB check" item from 2026-09-29.
+   comes back, `status` shows a fresh boot.
 5. Cold boot from the edge, no USB: power-cycle the bench 5 V with USB
    unplugged, watch finger 3 on a scope or DMM. It must be low from t=0 and
    go high once (firmware release, ~1.2 s). Never high before that.
@@ -79,22 +77,20 @@ Do not run `bus selftest` on the PCB: U11-U13 outputs would fight PIO1.
 ## Phase 5: in the CoCo 3
 
 Remove the E clip. CoCo off, insert the board, USB to the Mac for the
-console, then power the CoCo on. Boot the saved config from the breadboard
-(native, HDB-DOS).
+console, then power the CoCo on. Boot a saved native HDB-DOS config
+(`rom load hdbdw3bck.rom`, `becker native`, `bus drive on`, `save`).
 
 1. HDB-DOS banner on the CoCo screen; `status` shows read cycles and
    `engine_stall 0`, `event_drop 0`. Any garbage or no banner: `status` counters first,
    then TP1/TP5 on a scope (OE_BUS low only inside E high).
-2. Breadboard gates on the PCB: DIR, LOADM+EXEC DINORUN, SAVE,
-   `DRIVE 3:RUN"PICOCO"` manager.
+2. DIR, LOADM+EXEC DINORUN, SAVE, `DRIVE 3:RUN"PICOCO"` manager.
 3. CoCo RESET button: Pico reboots (console reconnects) and HDB-DOS comes
    back. Then a full CoCo power cycle with USB unplugged: the cold-boot
    race for real.
 4. Audio: JP3 1-2 default puts AUDIO_PWM on the CoCo speaker; play a
    sound from the console or a game and check TP7.
 5. Plus-W: TEST_PLAN G.2 rows (WiFi boot hold, DW4/FujiNet-PC over WiFi,
-   fallback, manager WiFi screen).
-6. Case: fit check against case/ once the board works electrically. (passed 2026-10-01)
+   fallback, manager WiFi screen) and the K.2 rows.
 
 ## Read-path timing: PIO engine (2026-10-02)
 
@@ -104,7 +100,9 @@ boards. Measured on bare modules: OE_BUS falls to the byte on D0-D7 in
 point at 1.79 MHz; on a Plus-W 24 clk (corrected for the self-test's fake
 decode), 12 clk of margin. The full table is in
 `docs/firmware-architecture.md` §8 and the expected self-test lines in
-`firmware/TEST_PLAN.md` section K; PCB figures are not measured yet.
+`firmware/TEST_PLAN.md` section K. They are bare-module figures: the
+self-test is not run on a PCB (phase 4), so the PCB results are the
+TEST_PLAN K.2 bench rows.
 
 The "1.79 MHz fault" section below and items 1 and 4 of "NitrOS-9
 bring-up" (with the bare-module follow-ups after them) describe the core1
