@@ -669,9 +669,8 @@ Pico 2 `bus selftest restarts` (4a55c93), last line before the pass:
 `bus selftest switches` (5672ff5, the bank-switch rework), summary line:
 `fast switches: 1820 in 40 bursts (S=36), 0 bursts bad; bad 0, wrong bank 0; next cycle old 0`.
 
-Plus-W, build 7ca0ad1 (the same engine and test code as 4a55c93 before
-the CPU-loop deletions), 2026-10-02, shown the same way. Builds before
-4a55c93 spelled the command `bus selftest fast`; the lines are the same:
+Plus-W, final build 0696783, 2026-10-02, shown the same way (the sweep
+rows read `4096` below the response point and `0` from it on):
 
 ```
 fast dma 8-bit write of a7 reaches the TX FIFO as a7a7a7a7
@@ -685,7 +684,7 @@ pio2 gpio_base 16 claimed sm 0 1 2
 dma claimed 0 1 2 3 4 5 6
 fast timing: cycle 84 clk (E low 42, E high 42), address+selects setup 25 clk to E rise, 4096 cycles back to back
 fast drop flag: push noblock into a full RX FIFO sets FDEBUG.RXSTALL yes (set before the drop: no)
-fast fake decode delay: E rise -> OE_BUS low 5..5 clk (6 cycles); late /SCS fall -> OE_BUS low 4..4 clk (7 cycles)
+fast fake decode delay: E rise -> OE_BUS low 5..5 clk (6 cycles); late /SCS fall -> OE_BUS low 4..4 clk (6 cycles)
 fast realistic point: S=40 after E rose = 35 after the fake OE_BUS fell
 fast 1.79MHz S=40 (266 ns): mismatches 0/4096 (zero 0 stale 0 spurious 0 wrong 0) rel_nonzero 4096 lost 0   (x5)
 fast event rate 1.79MHz: counted 20480 of 20480, lag max 0, drop 0, lap 0
@@ -694,13 +693,13 @@ fast 1.79MHz gaps r/w/unsel S=40 (266 ns): mismatches 0/4096 (zero 0 stale 0 spu
 fast 1.79MHz writes r/w/io/unsel S=40 (266 ns): mismatches 0/4096 (zero 0 stale 0 spurious 0 wrong 0) rel_nonzero 3414 lost 0
 fast writes: 0 lost, 0 out of order, 0 wrong data of 1366
 fast events: 0 mismatches of 512 (the last 512 of 3414 selected cycles); counted 3414 of 3414
-fast 1.79MHz restarts 45 under a gaps burst: spurious 0 wrong 0 (zero 53 = cycles lost to a restart); events 3072 of 3072
+fast 1.79MHz restarts 45 under a gaps burst: spurious 0 wrong 0 (zero 62 = cycles lost to a restart); events 3072 of 3072
 fast 1.79MHz gaps after restarts S=40 (266 ns): mismatches 0/4096 (zero 0 stale 0 spurious 0 wrong 0) rel_nonzero 2048 lost 0
 fast events: 0 mismatches of 512 (the last 512 of 4096 selected cycles); counted 4096 of 4096
 fast lap: resync 1, next burst events 4096 of 4096
 fast stall: detected 1, pins never driven during the stall, next burst 0 mismatches
-fast 1.79MHz bank switches 45 under a reads burst S=40: bad 0, wrong bank 0, lost 0; old-bank reads 13, next cycle old 0
-fast 1.79MHz bank switches 45 under a gaps burst S=40: bad 0, wrong bank 0, lost 0; old-bank reads 5, next cycle old 0
+fast 1.79MHz bank switches 45 under a reads burst S=40: bad 0, wrong bank 0, lost 0; old-bank reads 0, next cycle old 0
+fast 1.79MHz bank switches 45 under a gaps burst S=40: bad 0, wrong bank 0, lost 0; old-bank reads 1, next cycle old 0
 fast drive off: 0 driven, events 3414 of 3414, writes 0 lost
 fast banks: 8/8 banks read their own pattern, 0 mismatches
 fast io page: same in 8 banks
@@ -728,9 +727,14 @@ selftest rom cleared; reload with rom load
 selftest fast pass
 ```
 
-Plus-W `restarts` (13cb1bf):
-`fast restarts: 40 bursts, 1800 restarts, spurious 0 wrong 0 zero 2103, events missing 0`.
-`switches` (5672ff5): 1800 switches, bad 0, wrong bank 0, next cycle old 0.
+Plus-W (0696783), last lines before each pass:
+- `restarts`: `fast restarts: 40 bursts, 1800 restarts, spurious 0 wrong 0 zero 2294, events missing 0`; `status` after it: `start_wait_cap 0`.
+- `switches`: `fast switches: 1800 in 40 bursts (S=40), 0 bursts bad; bad 0, wrong bank 0; next cycle old 0`.
+- `radio`: `fast 0.89MHz radio: scan active, 2 scans started so far (0 refused, last rc 0), 32 scan results so far, net up`; `net status` after it: `net state up`.
+- `stress`: `selftest fast pass` (timing line ends `core0 memcpy stress`), no nonzero mismatch, lost or bad count.
+- `bus engine` before and after the runs: identical. pio2 keeps `claimed sm 0 1`, pio0 `0 1`, pio1 none; DMA `0 1 2 3 4`.
+- `bus selftest net`: `err bus selftest net: not supported by this engine`.
+- `reboot` with `becker net` saved (server `picoco-host` on the Mac): `net up in 4949 ms`, `core1 up, halt released, bus cycles 0`; `status` `cycles 0`, `event_lap 0`.
 
 ### K.2 Bench on the PCB (Pico 2 build)
 
