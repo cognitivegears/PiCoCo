@@ -113,12 +113,9 @@ files) and the budget variant for bare boards.
   subtract roughly $30–$50 from the above — fine for a lightly used
   cart, but the fingers will wear faster in a well-used CoCo slot.
 
-C45783 (C3, 22 µF ≥6.3 V) was re-verified on 2026-09-17 and is no longer on
-the unverified list. Five LCSC numbers remain unverified: C17710 (R19/R20,
-470 Ω, v2.3.1 — replaces the no-longer-used 2.2 kΩ C17520), C1710, C17513,
-C17477 (R24, 0 Ω), and C28323 (C15, 1 µF) — confirm them in JLCPCB's parts
-step. The 100 kΩ LCSC number changed from C17407 (discontinued 2026-09) to
-C149504. Prices drift; check DigiKey/Mouser/LCSC and JLCPCB's
+The LCSC numbers were used for the first JLCPCB-assembled board (v2.3.1
+#1, 2026-09-30), which works. The 100 kΩ LCSC number changed from C17407
+(discontinued 2026-09) to C149504. Prices drift; check DigiKey/Mouser/LCSC and JLCPCB's
 current quote before ordering. Substitute equivalents freely on the
 generics (0805 passives, SOIC logic) — the part numbers above are one
 known-good source each.
