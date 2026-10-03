@@ -227,10 +227,12 @@ Plus-W), `fast becker data then status` (`02` at both speeds, see
 `docs/firmware-architecture.md` §3.4) and, on a Plus-W, `fast fake decode
 delay` and `fast realistic point` lines.
 
-**`status` after a self-test** shows `engine_stall 1`, `event_lap 1` and
-Becker `underrun` up by 5. The test causes all three on purpose (a forced
-stall, a forced lap, and the empty-port back-to-back reads); `stats reset`
-clears them.
+**`status` after a full self-test** shows `engine_stall 1`, `event_lap 1`
+and Becker `underrun` up by 5. The test causes all three on purpose (a
+forced stall, a forced lap, and the empty-port back-to-back reads);
+`stats reset` clears them. `restarts` stops before all three checks;
+`switches` stops after the lap and stall but before the Becker checks, so
+it leaves `underrun` alone.
 
 ```
 python3 firmware/tools/bench.py [--port /dev/cu.usbmodemXXXX2] [--skip-if-absent]

@@ -303,7 +303,8 @@ cycle-exact timestamp, which stage 2 (§4.3, §4.4) needs and which costs
 nothing to record now. A frame is 14934 words, about 60 KB; a
 double-buffered ring is 120 KB and walking it is about 6% of one core.
 About 80 CPU cycles per bus cycle at 1.79 MHz, fine in tight code.
-Shares the capture path with `bus_watcher`. Rendering a PMODE 4 frame
+Shares the capture path with the bus engine's event stream
+(`docs/firmware-architecture.md` §3.3-3.4). Rendering a PMODE 4 frame
 from a 6 KB shadow is under 1 ms at 60 Hz.
 
 Bonus: writes to the $FF20 DAC are on the bus too, so the HDMI stream
@@ -436,8 +437,9 @@ no new code:
 1. **The CoCo freezes for the duration.** HALT_GATE defaults to held at
    boot (R7 pull-up on the Q2 gate), so the moment the Pico resets and
    GP27 floats, /HALT goes low and the 6809 stops at the end of its
-   current instruction. `halt_release()` runs only after `bus_watcher`
-   is up. No write can be missed because no write happens. The SAM
+   current instruction. `main.c` releases /HALT only after the bus
+   engine and core1 are up (`docs/firmware-architecture.md` §3.3, §8.1).
+   No write can be missed because no write happens. The SAM
    keeps refreshing DRAM and the VDG keeps displaying the frozen
    screen.
 2. **The shadow survives in SRAM.** Put the 64 KB shadow and the
@@ -1072,9 +1074,11 @@ guarantees the table is filled before the CPU's first fetch.
 cannot be told apart from RAM at `$0000`.
 
 **Firmware work.**
-- `bus_fw_mask` / `bus_fw_enable` cover `$FF60-$FF7F` only. This needs a
-  second firmware-decoded range (8 KB at `$8000`) in the Plus-W core1
-  loop, inside the same latency budget as the ROM window.
+- Firmware-decoded addresses went with the CPU loop (tag
+  `fw-1.4-cpu-loop`); the PIO bus engine serves only `/CTS` and `/SCS`
+  cycles and reads no A14/A15. This needs A14/A15 contiguous with A13 and
+  a decode of `$8000-$9FFF` in front of the engine, inside the same
+  latency budget as the ROM window (`docs/ADDITIONAL_ROADMAP.md` §9).
 - A second 8 KB bank in the bus table and a console command to load it
   (`rom ext <file>`), saved in `picoco.cfg`.
 - Reads only. Writes to `$8000-$9FFF` are ignored.

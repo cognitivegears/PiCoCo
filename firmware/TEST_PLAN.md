@@ -354,6 +354,8 @@ Firmware fixes that came out of this section (2026-10-01), details in
 - Open: Plus-W on a PCB with a CoCo (section G.2 and F.5), including a
   scope look at JP2 2-3; a second `bus selftest` in one boot fails
   `read_bank0_marker` on the Plus-W (old loop too).
+  Closed 2026-10-02: the JP2 2-3 scope look is moot (the PIO engine needs
+  JP2 at 1-2), and `read_bank0_marker` went with the old self-test.
 
 
 Bench CoCo 3 CPU: 6309  RAM: 2 MB
@@ -602,8 +604,11 @@ Reads are served by PIO and DMA on both boards; the CPU loop is at tag
 1. `bus selftest` five times: every run ends `selftest fast pass`.
 2. `bus selftest restarts` and `bus selftest switches`; Plus-W also
    `bus selftest radio`.
-3. `status`: `engine_stall 1`, `event_lap 1` and Becker `underrun 5` are
-   the test's own (a forced stall, a forced lap, the empty-port reads).
+3. `status` after a full run: `engine_stall 1`, `event_lap 1` and Becker
+   `underrun` up by 5 are the test's own (a forced stall, a forced lap,
+   the empty-port reads). `restarts` stops before all three checks, so
+   after it they stay put; `switches` stops after the lap and stall
+   checks but before the Becker ones, so `underrun` stays put.
    `stats reset`, then `reboot` to get the saved ROM back.
 4. `python3 firmware/tools/bench.py --port <console>` exits 0.
 

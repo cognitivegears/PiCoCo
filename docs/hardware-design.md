@@ -198,7 +198,7 @@ Plus-W column and the pad-grid table below.
 | GP23–GP25| — | same | *internal* | SMPS PS / VBUS sense / onboard LED (not header‑accessible) |
 | GP26     | 31 | GP26/GP40 | **OE_BUS** | Cart-selected signal from U15's NAND-NAND decode, through JP2 (default 1-2). `WAIT 0 PIN 18` (base 8) for cart-cycle gate. |
 | GP27     | 32 | GP27/GP41 | **HALT_GATE** | Firmware output; drives Q2 gate via R8 to sink /HALT_CART. HIGH = hold /HALT, LOW = release. |
-| GP28     | 34 | GP28/GP42 | `AUDIO_PWM` (default via JP3 1-2, v2.3.1) | Sound output stage (§4.6); firmware does not use E today. Cut JP3 1-2/bridge 2-3 to get E on this pin instead for `WAIT 1/0 PIN 20` (base 8) bus-phase sync, needed only by the v2 PIO engine (`docs/firmware-architecture.md` §3.3). This is also the header pin JP5 shares (pad 2, `PICO_P34`) for a firmware-driven /CART or /NMI — JP3 and JP5 both bridge onto the same pin, so bridge at most one of them. |
+| GP28     | 34 | GP28/GP42 | `AUDIO_PWM` (default via JP3 1-2, v2.3.1) | Sound output stage (§4.6); firmware does not use E today. Cut JP3 1-2/bridge 2-3 to get E on this pin instead; the PIO bus engine as built (`docs/firmware-architecture.md` §3.3) does not need it on either board (a Pico 2 triggers on OE_BUS alone, a Plus-W reads E on its pad-grid GP26). This is also the header pin JP5 shares (pad 2, `PICO_P34`) for a firmware-driven /CART or /NMI — JP3 and JP5 both bridge onto the same pin, so bridge at most one of them. |
 | Pin 30   | 30 | same | RUN    | CoCo /RESET input via U13 + R9 series + R10 pull‑up |
 
 Pico onboard LED (GP25) is used for heartbeat — no header GPIO spent.
@@ -221,9 +221,9 @@ captures all seven at once.
 | GP28 | SLENB_BUF | capture |
 | GP29 | A14_BUF | capture |
 | GP30 | A15_BUF | capture |
-| GP31 | OE_FW | Firmware-driven U10 /OE, every selected cycle (bus-engine spec, `firmware-architecture.md` §3.2.2); JP2 2-3 needed only for `$FF60-$FF7F` |
+| GP31 | OE_FW | Firmware U10 /OE via JP2 2-3. The PIO bus engine holds it high, so JP2 stays at 1-2 until the respin (`firmware-architecture.md` §3.2.2) |
 | GP32 | NMI_DRV | Q3 gate (DNP stage — needs R15/R17 fitted too); also reachable from a Pico 2 via JP5 2-3; no firmware drive yet |
-| GP33 | CART_DRV | Firmware-driven /CART pulse, ~500 Hz for 500 ms after /HALT release (bus-engine spec, `firmware-architecture.md` §3.2.4); Q4 gate (populated); also reachable from a Pico 2 via JP5 1-2 but not driven there today |
+| GP33 | CART_DRV | Firmware-driven /CART pulse, ~500 Hz for 500 ms after /HALT release (`firmware-architecture.md` §3.2.1 table); Q4 gate (populated); also reachable from a Pico 2 via JP5 1-2 but not driven there today |
 | GP34 | AUDIO_PWM | sound output stage (§4.6) |
 | GP35 | EXP_GP35 → J1 pin 1 | Only meaningful on a Plus-W; a flat-mounted Pico 2 lands its SWDIO pad here instead (see §7) |
 | GP43 | EXP_GP43 → J1 pin 2 | Plus-W only |
@@ -261,13 +261,12 @@ module through its own castellations/pads, or the test points in §7.
   unprogrammed or not-yet-booted module, an undriven GPIO could
   otherwise float `U10_OE` low and drive the CoCo bus; R25 keeps it
   tri-stated until firmware actively asserts it.
-- **As built (bus-engine spec), the Plus-W firmware drives `OE_FW` for
-  every selected cycle regardless of which JP2 position is fitted** — it
-  is not conditional on 2-3, it just doesn't matter in 1-2 because U15
-  is already enabling U10 for the same hardware-selected cycles. JP2 2-3
-  only becomes necessary for `$FF60-$FF7F` firmware-decoded addresses,
-  which assert neither `/CTS` nor `/SCS` and so are never enabled by
-  U15 at all; see `docs/firmware-architecture.md` §3.2.2/§3.2.3.
+- **As built (PIO bus engine, 2026-10-02), the firmware holds `OE_FW`
+  high**, so JP2 must stay at 1-2 on every build until the respin. JP2
+  2-3 was for `$FF60-$FF7F` firmware-decoded addresses, which assert
+  neither `/CTS` nor `/SCS` and so are never enabled by U15; that path
+  went with the CPU loop (tag `fw-1.4-cpu-loop`); see
+  `docs/firmware-architecture.md` §3.2.2.
 
 Because direction is hardwired to the buffered `/R/W`, the Pico never
 has to drive a DIR pin. It only controls its own pindirs to decide when
@@ -463,9 +462,9 @@ AUDIO_PWM ── R19 470R ── AUDIO_F1 ── C13 10nF to GND
   34, pad 3 = `E_BUF`) is bridged 1-2 by default as of **v2.3.1**, so
   header pin 34 carries `AUDIO_PWM` out of the box — a Pico 2 build gets
   sound without cutting a jumper. Cut 1-2 and bridge 2-3 to put E on
-  header pin 34 instead (needed only by the v2 PIO engine, a
-  Plus-W-only path — `OE_BUS` is already E‑qualified in hardware, so
-  firmware does not need E today). **On a Plus-W, JP3 1-2 ties pad-grid
+  header pin 34 instead (the PIO bus engine as built does not need it:
+  `OE_BUS` is already E‑qualified in hardware, and a Plus-W reads E on
+  its pad-grid GP26). **On a Plus-W, JP3 1-2 ties pad-grid
   `GP34` to `GP42`** (the same header pin 34, wired to a different GPIO
   number on that module) — bridging it shorts two GPIOs of the same die
   together unless one of them is left as an input. Keep one of GP34/GP42
@@ -728,8 +727,11 @@ hand debug.
   addresses outside `/CTS` and `/SCS`, write hooks, and banked ROM — was
   out of scope for the v2.3 board spin itself but has since been built
   as firmware (the bus-engine spec,
-  `docs/superpowers/specs/2026-09-27-plusw-bus-engine-design.md`); see
-  `docs/firmware-architecture.md` §3.2.2-§3.2.5. **`/CART` is the
+  `docs/superpowers/specs/2026-09-27-plusw-bus-engine-design.md`). The
+  PIO bus engine that replaced it keeps the write hooks and banked ROM
+  but not firmware `/OE` or the `$FF60-$FF7F` decode, and reads no
+  A14/A15 (`docs/firmware-architecture.md` §3.2.2 Plus-W differences,
+  §3.2.3 write hooks, §3.2.4 table and banked ROM). **`/CART` is the
   exception among the Pico-2-reachable pins as of v2.3.1 hardware**:
   JP5 1-2 plus the now-populated Q4/R16/R18 stage (§4.4a) lets a Pico 2
   pulse `/CART` from firmware over header pin 34 with no spare GPIO

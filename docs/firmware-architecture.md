@@ -18,8 +18,9 @@ hardware it runs on, see [`hardware-design.md`](hardware-design.md).
    and accept Becker‑port writes to $FF42 (data), implementing the
    DriveWire protocol.
 3. Never drive the data bus when the cart is not selected — enforced
-   by the hardware 3‑input AND gate (`U15`: `/OE = /CTS ∧ /SCS ∧ /E`)
-   and asserted again in firmware for belt‑and‑suspenders.
+   by U15, a 74LVC00 wired NAND-NAND (`OE_BUS` low only while `/CTS` or
+   `/SCS` is low and E is high), which enables U10. The engine never
+   re-checks the select; it drives only inside an `OE_BUS`-low cycle.
 4. Hold the CoCo's `/HALT` low during Pico boot until the PIO
    state machines are armed, so the CoCo's first HDB‑DOS `DOS`
    command can't race the Pico.
@@ -111,7 +112,9 @@ on it.
 
 Communication is the response table, write ring and read hooks in
 `src/bus/bus.h` (SPSC, no locks) — not the Pico SDK `queue_t` mentioned
-in the original proposal.
+in the original proposal. The one lock is the engine's spin lock
+(`elock`, `bus_engine_lock()`), which serialises bank switches, `rom
+load`'s unbank/publish and the engine's start/stop.
 
 ### 3.2 Pin map (Pico 2 header numbering)
 
@@ -145,7 +148,8 @@ instead of a Pico 2 — NC on a Pico 2 build. `firmware/boards/plusw.h`
 GP40 on this board, outside PIO0's GPIO window, so the bus engine watches
 it from a helper state machine in PIO2 (section 3.2.2), and `main.c`'s
 `gpio_setup()` inits exactly the pins below plus D0-7/A0-13//R/W/OE_BUS,
-from a board-header pin mask. The engine reads none of GP24-GP30.
+from a board-header pin mask. Of GP24-GP30 the engine reads only GP26
+(E), the Plus-W event state machine's end-of-cycle pin.
 
 Header pins 31/32/34 carry the same nets on both modules, but the
 GPIO number differs: on a Pico 2 those pins are `GP26`/`GP27`/`GP28`;
@@ -195,9 +199,10 @@ issue #3297 (quotes the Waveshare schematic); not yet checked on a module.
 
 ### 3.2.2 Plus-W differences
 
-The read and event state machines are the same programs as on a Pico 2,
-in PIO0 (GPIO base 0), with their waits patched at load (section 4.1).
-OE_BUS (GP40) is outside PIO0's window, so a helper, `bus_sel_pw`
+Both state machines sit in PIO0 (GPIO base 0), as on a Pico 2. The read
+program is the same, with its three waits patched at load (§4.1); the
+event state machine runs its own program, `bus_event_pw` (§4.2), which
+starts on helper flag 1 and ends when E falls. OE_BUS (GP40) is outside PIO0's window, so a helper, `bus_sel_pw`
 (section 4.3), runs in PIO2 with GPIO base 16. The cyw43 driver puts its
 own state machine in PIO2 sm0 and sets that base; `bus_engine_init()`
 runs after `net_init()` and sets the base itself only if the driver has
@@ -463,7 +468,8 @@ event-rate line.
 
 **Lag and laps.** Every 256 events core1 counts the unread slots ahead,
 up to 256 (`event_lag_max`, which saturates there). At the cap it checks
-for a lap: DMA C's next slot, read twice, still holds an unread event. On
+for a lap: DMA C's write position, read twice and unchanged, points at a
+slot that still holds an unread event. On
 a lap it empties every slot forward from the writer, then the ones DMA C
 wrote meanwhile, jumps to DMA C's position and counts `event_lap`. A real
 lap costs about 12k clk, about 146 events dropped with no hooks run for
@@ -831,7 +837,8 @@ ROM‑serve timing is actually easier on the older machines.
 The byte has to be on D0-D7 before the 6809E latches it. The self-test's
 realistic sample point is 36 clk (240 ns) after OE_BUS falls at
 1.79 MHz and 72 clk (480 ns) at 0.89 MHz. The engine's latency in clk is
-the same at both speeds, so 0.89 MHz has twice the margin. Q is not
+the same at both speeds, so 0.89 MHz has twice the window (on a Pico 2
+the margin goes from 14 to 50 clk). Q is not
 routed to the Pico; OE_BUS (U15, qualified by E) is the trigger.
 
 Measured on bare modules, 2026-10-02, `bus selftest` at 150 MHz (the
@@ -871,37 +878,25 @@ Power‑on sequence:
 2. Pico 2 boot ROM starts executing; GP27 is tri‑state until SDK runtime
    configures it. R7 holds the gate at ≈ 3.3 V → Q2 ON → **/HALT = low**.
    The CoCo's 6809E is held in HALT before it can fetch its first vector.
-3. Pico boots (~30–50 ms typical), PIO programs load, DMA channels arm.
-4. `rom_armed()` is called at the end of bus setup. It explicitly
-   configures GP27 as an output and drives it LOW. Q2 turns OFF,
-   R1 pulls /HALT high on the CoCo side, and the CPU runs.
+3. `main.c`'s `gpio_setup()`, the first thing `main()` runs, latches
+   `PIN_HALT` high and makes it an output, so /HALT never glitches
+   released.
+4. `bus_engine_init()` arms the PIO state machines and DMA channels,
+   core1 is launched, `picoco.cfg` is replayed (its `rom load` and `bus
+   drive on`), and with `becker net` saved the board waits up to 10 s for
+   the server socket.
+5. `main()` then calls `gpio_put(PIN_HALT, 0)` and logs `core1 up, halt
+   released`. Q2 turns OFF, R1 pulls /HALT high on the CoCo side, and
+   the CPU runs.
 
-```c
-void halt_init(void) {
-    gpio_init(27);
-    gpio_set_dir(27, GPIO_OUT);
-    gpio_put(27, 1);              // keep /HALT asserted
-}
+After boot, `halt on` / `halt off` on the console assert and release
+/HALT by hand; nothing in the firmware uses it for flow control yet
+(`docs/ADDITIONAL_ROADMAP.md` §6 item 7 bounds such holds to a few
+hundred µs).
 
-void halt_release(void) {
-    gpio_put(27, 0);              // release /HALT
-}
-
-void halt_assert(void) {
-    gpio_put(27, 1);              // reassert /HALT (flow control)
-}
-```
-
-Call `halt_init()` in the earliest reachable C code (before SDK
-runtime init if practical), then `halt_release()` once the bus engine
-and core1 are running. After that, firmware can use
-`halt_assert()` / `halt_release()` as a DriveWire flow‑control tool —
-e.g., to pause the CoCo during a long SD‑card sector fetch in
-Phase 3.
-
-Boundary: if firmware crashes with `halt_release()` not yet called,
-the CoCo will hang at reset instead of running with a broken cart.
-That's the safer failure mode.
+Boundary: if firmware crashes before step 5, the CoCo will hang at
+reset instead of running with a broken cart. That's the safer failure
+mode.
 
 ## 9. Bring‑up plan (firmware side)
 
@@ -912,17 +907,19 @@ bespoke test firmware per milestone. The host-side stack each of these
 commands exercises — bus tables, devices, DriveWire server, console —
 is already verified by `ctest`'s `test_stack`, `test_replay`, and
 `firmware/tools/dwtest.py` before any of it runs on a Pico. Each
-milestone is a firmware git tag.
+milestone is a firmware git tag. The tags were made on the CPU loop
+(the last is `fw-1.4-cpu-loop`); the console checks are the same on the
+PIO engine, whose own gate is `bus selftest` (§3.2.5).
 
 | Tag | Description |
 |-----|-------------|
 | `fw-0.1-blink` | Toggle Pico LED. Verify SDK + flash path. |
 | `fw-0.2-gpio-smoke` | Toggle all 26 GPIO at 10 Hz. Verify shifter directions and power budget on the board before plugging into a CoCo. |
-| `fw-0.3-halt-ctrl` | Implement `halt_init()` + `halt_release()`. Verify on a CoCo that /HALT is held low during Pico boot (oscilloscope TP + CoCo doesn't run until released). |
-| `fw-0.4-bus-capture` | SM0 only. Capture bus snapshots to `bus_snapshot_ring` gated on OE_BUS and dump to USB CDC. Plug into a CoCo, verify cart cycles fire on $C000/$FF4x reads. |
-| `fw-0.5-rom-static` | Add SM1 + DMA1/DMA2 ROM chain. Serve a 16 KB repeating pattern over /CTS. `PEEK` from BASIC returns the pattern. |
-| `fw-0.6-rom-hdbdos` | Flash a real HDB‑DOS+DW ROM as `rom_image[]`. Power‑cycle → `DOS` from BASIC should enter HDB‑DOS. |
-| `fw-0.7-becker-loop` | Add SM2 + Becker register. $FF41 always returns `$02`; $FF42 echoes back. Verify from BASIC. |
+| `fw-0.3-halt-ctrl` | /HALT held low through Pico boot and released by `main.c` (§8.1); `halt on`/`halt off`. Verify on a CoCo (oscilloscope TP + CoCo doesn't run until released). |
+| `fw-0.4-bus-capture` | Capture only: `bus drive off`, `trace run`, `trace dump`. Plug into a CoCo, verify cart cycles show on $C000/$FF4x reads. |
+| `fw-0.5-rom-static` | `rom pattern`, `bus drive on`: serve a repeating pattern over /CTS. `PEEK` from BASIC returns the pattern. |
+| `fw-0.6-rom-hdbdos` | `rom load` a real HDB‑DOS+DW ROM. Power‑cycle → `DOS` from BASIC should enter HDB‑DOS. |
+| `fw-0.7-becker-loop` | `becker loop`: $FF42 writes echo back, $FF41 shows `$02` once a byte is queued. Verify from BASIC. |
 | `fw-0.8-bridge` | CDC ↔ Becker bridge. Run pyDriveWire on host; `DW DIR` from HDB‑DOS shows virtual drive. |
 | `fw-0.9-boot` | `BOOT` from HDB‑DOS starts loading a DECB / NitrOS‑9 image over DriveWire. |
 | `fw-1.0-native`  | Optional: DriveWire server runs on Pico, SD card backing store. |
