@@ -44,6 +44,7 @@ typedef struct {
     uint32_t event_lag_max;  /* core1: most ring entries waiting, sampled every 256 events, capped at BUS_EV_LAG_CAP */
     uint32_t event_drop;     /* core0: checks that found the event SM had dropped a push (RX FIFO full) */
     uint32_t event_lap;      /* core1: laps found (events overwritten unread) and resynced */
+    uint32_t event_dup;      /* core1: a read event identical to the one before it (OE_BUS blip proxy, bus.c) */
     uint32_t start_wait_cap; /* core0, Plus-W: engine starts whose wait for OE_BUS high hit its cap */
 } bus_stats_t;
 

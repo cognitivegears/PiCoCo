@@ -203,5 +203,12 @@ BUS_HOT void bus_event(uint32_t w) {
     trace_store(w);
     bus_stats.cycles++;
     bus_stats.reads++;
+    /* Blip proxy (2026-10-03): the same read twice in a row is the event SM's
+     * signature of an OE_BUS high blip inside one cycle (~7 % on a bench
+     * CoCo 2, 0 on the CoCo 3); the count makes a hardware A/B test take
+     * seconds. ponytail: 3 clk on the read path; drop it when the blips are understood. */
+    static uint32_t last_rd;
+    if (w == last_rd) bus_stats.event_dup++;
+    last_rd = w;
     run_read_hooks(idx);
 }

@@ -233,7 +233,20 @@ void bus_engine_check_drops(void) {
  * reads burst, measured), so without it a busy bus restarted the engine on a
  * few % of tick pairs (25 restarts in one `bus selftest` stall burst); a
  * served read is past `pull` long before OE_BUS rises.
+ * Dwell (2026-10-03, CoCo 2 bench): a short OE_BUS high blip near the end of a
+ * cycle makes the SM re-push and pass through `pull` after the cycle is over,
+ * which met every term above on two ticks in a row while 486 cycles were
+ * served correctly in between (the restart then crashed the CoCo). A lost
+ * pointer parks the SM at `pull` for good; a served read leaves within ~22
+ * clk. So a tick counts only if the PC reads `pull` on 32 consecutive reads
+ * (well over a bus cycle, ~1.5 us per tick).
  * Registers only (PIO, DMA, SIO), never the ring. */
+static bool read_sm_parked_at_pull(void) {
+    for (int i = 0; i < 32; i++)
+        if (pio_sm_get_pc(epio, (uint)esm) != eoff + bus_read_offset_wbyte) return false;
+    return true;
+}
+
 void bus_engine_tick(uint32_t now_ms) {
     static uint32_t last;
     static bool stalled;
@@ -244,7 +257,7 @@ void bus_engine_tick(uint32_t now_ms) {
     if (!on && esm >= 0 && bus_drive) engine_start();   /* a Plus-W start whose wait hit its cap left it stopped: retry */
     uint pc = on ? pio_sm_get_pc(epio, (uint)esm) : 0;
     bool s = on                                          /* not with bus drive off */
-          && pc == eoff + bus_read_offset_wbyte && !dma_channel_is_busy((uint)edma_b)
+          && pc == eoff + bus_read_offset_wbyte && read_sm_parked_at_pull() && !dma_channel_is_busy((uint)edma_b)
           && gpio_get(PIN_OE_BUS)
           && pio_sm_is_rx_fifo_empty(epio, (uint)esm);   /* a lost pointer only: one still in RX (DMA A dead or paused) would hang engine_start */
     static uint32_t cyc1;   /* events seen at the first stalled tick: did the bus keep cycling? */
