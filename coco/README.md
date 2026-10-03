@@ -28,6 +28,17 @@ HDB-DOS's becker-port ROMs (`hdbdw3bck.rom` for CoCo 2, `hdbdw3bc3.rom` for
 CoCo 3) live in `firmware/roms/` (gitignored) and also need copying into
 `~/.xroar/roms/`.
 
+### Banked images and `$FF40`
+
+A 32K, 64K or 128K image loads as 2, 4 or 8 banks of 16K; a write to `$FF40`
+selects the bank (bits 2-0). The switch takes effect one fetch late at both
+CPU speeds: the instruction fetch right after `STA $FF40` still comes from
+the old bank, every fetch after that from the new one (firmware
+`docs/firmware-architecture.md` §3.2.4). So bank-switching code that runs
+from the cart must keep the instruction after the `STA` identical in every
+bank — put the switch routine's tail at the same address in each bank, the
+usual practice for self-switching paks. Switching from RAM needs nothing.
+
 ## Emulate
 
 ```
