@@ -227,9 +227,10 @@ Plus-W), `fast becker data then status` (`02` at both speeds, see
 `docs/firmware-architecture.md` §3.4) and, on a Plus-W, `fast fake decode
 delay` and `fast realistic point` lines.
 
-**`status` after a full self-test** shows `engine_stall 1`, `event_lap 1`
-and Becker `underrun` up by 5. The test causes all three on purpose (a
-forced stall, a forced lap, and the empty-port back-to-back reads);
+**`status` after a full self-test** shows `engine_stall 1`, `event_lap 1`,
+`event_dup` around 1000-1100 and Becker `underrun` up by 5. The test causes
+all of them on purpose (a forced stall, a forced lap, bursts that re-read an
+address back to back, and the empty-port back-to-back reads);
 `stats reset` clears them. `restarts` stops before all three checks;
 `switches` stops after the lap and stall but before the Becker checks, so
 it leaves `underrun` alone.
@@ -255,7 +256,7 @@ clears whatever ROM was loaded (`rom off`) as part of running, so
 
 ```
 bus cycles <n> reads <n> writes <n> write_overrun <n>
-bus engine_stall <n> event_lag_max <n> event_drop <n> event_lap <n> start_wait_cap <n>
+bus engine_stall <n> event_lag_max <n> event_drop <n> event_lap <n> event_dup <n> start_wait_cap <n>
 bus whooks <n>
 bus drive on|off
 becker reads <n> writes <n> underrun <n> overrun <n>
@@ -272,6 +273,12 @@ becker reads <n> writes <n> underrun <n> overrun <n>
   dropped a cycle (its FIFO was full).
 - `event_lap`: times core1 fell a whole ring (2048 events) behind and
   resynced; the events in between are lost.
+- `event_dup`: read events identical to the one before them (same
+  address, same data). A 6809 never issues the same read twice in a row,
+  so on a CoCo each one is an OE_BUS high blip inside a cycle, which splits
+  the cycle into two events (a bench CoCo 2 shows ~9 % of reads, a CoCo 3
+  none; TEST_PLAN K). The self-test's synthetic bursts do re-read addresses
+  back to back, so a full run leaves it at ~1000-1100 by design.
 - `start_wait_cap`: Plus-W only, engine starts whose wait for OE_BUS high
   hit its cap. Such a start leaves the read SM stopped, and the next
   millisecond tick retries it.
