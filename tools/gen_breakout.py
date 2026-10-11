@@ -597,6 +597,7 @@ def main() -> None:
     for name, sch_fn, pcb_fn in ((NAME, build_schematic, build_pcb),
                                  (COBBLER, build_cobbler_schematic, build_cobbler_pcb)):
         g.PROJECT_NAME = name
+        g.PINNED_FROM = OUT / f"{name}.kicad_sch"
         (OUT / f"{name}.kicad_sch").write_text(sch_fn())
         pcbnew.SaveBoard(str(OUT / f"{name}.kicad_pcb"), pcb_fn())
         write_project(name)

@@ -31,8 +31,52 @@ SCH_OUT = PROJECT_ROOT / "PiCoCo" / "PiCoCo.kicad_sch"
 LOCAL_SYMS = PROJECT_ROOT / "libraries" / "PiCoCo.kicad_sym"
 
 
+# Deterministic UUIDs so regenerating is byte-identical. A placed symbol's
+# UUID is what its PCB footprint links to ((path "/<uuid>")), so a symbol
+# keeps the UUID it already has in PINNED_FROM (the previous output), as does
+# the sheet; only a new symbol gets a fresh one. Everything else (labels,
+# no-connects, power ports) is numbered per project in emission order.
+PINNED_FROM: Path | None = SCH_OUT  # gen_breakout.py points this at its own output
+_UUID_NS = uuid.UUID("6f1c3a52-9d4e-4b8a-a1f0-5c0c0c0c2024")
+_COUNTERS: dict[str, int] = {}
+_PINNED: dict[Path, dict[tuple[str, int], str]] = {}
+
+
 def u() -> str:
-    return str(uuid.uuid4())
+    n = _COUNTERS.get(PROJECT_NAME, 0) + 1
+    _COUNTERS[PROJECT_NAME] = n
+    return str(uuid.uuid5(_UUID_NS, f"{PROJECT_NAME}:item:{n}"))
+
+
+def sheet_uuid() -> str:
+    return _pinned_symbol_uuids().get(("", 0)) or str(
+        uuid.uuid5(_UUID_NS, f"{PROJECT_NAME}:sheet"))
+
+
+def _pinned_symbol_uuids() -> dict[tuple[str, int], str]:
+    """(reference, unit) -> symbol UUID, read from the previous output;
+    ("", 0) holds the sheet UUID."""
+    if PINNED_FROM is None:
+        return {}
+    if PINNED_FROM not in _PINNED:
+        found = {}
+        if PINNED_FROM.exists():
+            text = PINNED_FROM.read_text()
+            ms = re.match(r'\(kicad_sch [^\n]*\n  \(uuid ([0-9a-f-]{36})\)', text)
+            if ms:
+                found[("", 0)] = ms.group(1)  # the sheet's own UUID
+            for blk in re.findall(r'\n  \(symbol \(lib_id .*?\n  \)', text, re.S):
+                mu = re.search(r'\n    \(uuid ([0-9a-f-]{36})\)', blk)
+                mr = re.search(r'\(reference "([^"]+)"\) \(unit (\d+)\)', blk)
+                if mu and mr and not mr.group(1).startswith("#"):
+                    found[(mr.group(1), int(mr.group(2)))] = mu.group(1)
+        _PINNED[PINNED_FROM] = found
+    return _PINNED[PINNED_FROM]
+
+
+def symbol_uuid(ref: str, unit: int) -> str:
+    return _pinned_symbol_uuids().get((ref, unit)) or str(
+        uuid.uuid5(_UUID_NS, f"{PROJECT_NAME}:symbol:{ref}:{unit}"))
 
 
 # ---------------------------------------------------------------------------
@@ -534,7 +578,6 @@ def label_orientation_for_pin(pin_angle: int) -> tuple[int, str]:
     return 0, "left"
 
 
-SHEET_UUID = str(uuid.uuid4())
 PROJECT_NAME = "PiCoCo"   # gen_breakout.py overrides this
 
 
@@ -549,7 +592,7 @@ def symbol_instance(
     in_bom: str = "yes", on_board: str = "yes",
     dnp: bool = False, lcsc: str = "", mpn: str = "",
 ) -> str:
-    sym_uuid = u()
+    sym_uuid = symbol_uuid(ref, unit)
     mir = f"(mirror {mirror}) " if mirror else ""
     props = []
     props.append(
@@ -589,7 +632,7 @@ def symbol_instance(
         + "\n".join(props) + "\n"
         f'    (instances\n'
         f'      (project "{PROJECT_NAME}"\n'
-        f'        (path "/{SHEET_UUID}"\n'
+        f'        (path "/{sheet_uuid()}"\n'
         f'          (reference "{ref}") (unit {unit})\n'
         f'        )\n'
         f'      )\n'
@@ -639,7 +682,7 @@ def power_port(lib_id: str, x: float, y: float, rot: int = 0) -> str:
         f'    )\n'
         f'    (instances\n'
         f'      (project "{PROJECT_NAME}"\n'
-        f'        (path "/{SHEET_UUID}"\n'
+        f'        (path "/{sheet_uuid()}"\n'
         f'          (reference "{ref}") (unit 1)\n'
         f'        )\n'
         f'      )\n'
@@ -946,7 +989,7 @@ def assemble(lib_block: str, s: "Sheet", paper: str, title_block: str) -> str:
     """Wrap a populated Sheet into a complete .kicad_sch document."""
     header = (
         '(kicad_sch (version 20230121) (generator gen_schematic_py)\n'
-        f'  (uuid {SHEET_UUID})\n'
+        f'  (uuid {sheet_uuid()})\n'
         f'  (paper "{paper}")\n'
         f'{title_block}\n'
     )
