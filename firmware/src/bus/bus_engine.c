@@ -45,7 +45,11 @@ static uint hoff;
 
 static void event_init(void) {
     evsm = (int)pio_claim_unused_sm(epio, true);
-#ifdef PICOCO_BOARD_PLUSW
+#if defined(PICOCO_PLUSW_HEADERS)
+    uint off = pio_add_program(epio, &bus_event_ph_program);
+    pio_sm_config c = bus_event_ph_program_get_default_config(off);
+    sm_config_set_mov_status(&c, STATUS_IRQ_SET, 3);  /* `mov y, status`: ~0 while bus_sel_ph holds flag 3 up */
+#elif defined(PICOCO_BOARD_PLUSW)
     uint off = pio_add_program(epio, &bus_event_pw_program);
     pio_sm_config c = bus_event_pw_program_get_default_config(off);
     sm_config_set_jmp_pin(&c, PIN_E);
@@ -104,8 +108,13 @@ static void engine_init(void) {
     hpio = pio2;
     if (pio_get_gpio_base(hpio) != 16) hard_assert(pio_set_gpio_base(hpio, 16) == PICO_OK);
     hsm = (int)pio_claim_unused_sm(hpio, true);
+#ifdef PICOCO_PLUSW_HEADERS
+    hoff = pio_add_program(hpio, &bus_sel_ph_program);
+    pio_sm_config hc = bus_sel_ph_program_get_default_config(hoff);
+#else
     hoff = pio_add_program(hpio, &bus_sel_pw_program);
     pio_sm_config hc = bus_sel_pw_program_get_default_config(hoff);
+#endif
     sm_config_set_clkdiv(&hc, 1.0f);
     pio_sm_init(hpio, (uint)hsm, hoff, &hc);
     pio_sm_set_enabled(hpio, (uint)hsm, false);

@@ -160,6 +160,13 @@ on a Plus-W the same physical header pins are `GP40`/`GP41`/`GP42`.
 (a different, lower-numbered GPIO than the header's GP40) — see the
 "same net also reaches..." note in the table below.
 
+A Plus-W on 2x20 pin headers (a v2.3.1 board, where its underside flash
+stops it sitting flat) has none of the pad-grid pins below connected.
+`firmware/boards/plusw_hdr.h` (`-DPICOCO_BOARD=plusw_hdr`) builds for that:
+the event state machine (`bus_event_ph`) ends each cycle on a PIO0 flag
+that the PIO2 helper (`bus_sel_ph`) holds up while GP40 (OE_BUS) is low,
+read with `mov y, status`, instead of on E, and there is no `CART_DRV`.
+
 | Pad-grid pin | Net | Purpose (Plus-W only) |
 |---|---|---|
 | GP24 | CTS_BUF | capture |

@@ -2,10 +2,12 @@ cmake_minimum_required(VERSION 3.20)
 option(PICOCO_HOST "Build host library, tests and picoco-host instead of Pico firmware" OFF)
 option(PICOCO_BENCH "Register tools/bench.py as a ctest. It drives the bus pins: only with the board unplugged from the CoCo." OFF)
 set(PICOCO_VERSION "1.4")
-# PiCoCo board: "pico2" (Pico 2 / RP2350A, default) or "plusw" (Waveshare
-# RP2350B-Plus-W). Picks both the PiCoCo pin header (boards/<x>.h) and, for
-# plusw, the SDK's PICO_BOARD (boards/picoco_plusw.h, below).
-set(PICOCO_BOARD "pico2" CACHE STRING "PiCoCo board: pico2 or plusw")
+# PiCoCo board: "pico2" (Pico 2 / RP2350A, default), "plusw" (Waveshare
+# RP2350B-Plus-W, flat on its pad grid) or "plusw_hdr" (a Plus-W on pin
+# headers: pad grid unconnected, boards/plusw_hdr.h). Picks both the PiCoCo
+# pin header (boards/<x>.h) and, for the Plus-W, the SDK's PICO_BOARD
+# (boards/picoco_plusw.h, below).
+set(PICOCO_BOARD "pico2" CACHE STRING "PiCoCo board: pico2, plusw or plusw_hdr")
 
 set(CORE_SRC
   src/dw/dw_util.c src/dw/dw_disk.c src/dw/dw_server.c src/dw/dw_vser.c
@@ -22,15 +24,16 @@ if(NOT PICOCO_HOST)
     # ponytail: legacy alias — PICOCO_BOARD used to hold the pin-header stem
     # directly (pre-Plus-W refactor); normalize an old cached build dir
     # instead of silently misreading it or forcing a clean reconfigure.
-    set(PICOCO_BOARD "pico2" CACHE STRING "PiCoCo board: pico2 or plusw" FORCE)
+    set(PICOCO_BOARD "pico2" CACHE STRING "PiCoCo board: pico2, plusw or plusw_hdr" FORCE)
   endif()
-  if(PICOCO_BOARD STREQUAL "plusw")
+  if(PICOCO_BOARD STREQUAL "plusw" OR PICOCO_BOARD STREQUAL "plusw_hdr")
+    set(PICOCO_PLUSW ON)
     list(APPEND PICO_BOARD_HEADER_DIRS "${CMAKE_CURRENT_LIST_DIR}/boards")
     set(PICO_BOARD picoco_plusw CACHE STRING "" FORCE)
   elseif(PICOCO_BOARD STREQUAL "pico2")
     set(PICO_BOARD pico2 CACHE STRING "" FORCE)
   else()
-    message(FATAL_ERROR "PICOCO_BOARD must be 'pico2' or 'plusw' (got '${PICOCO_BOARD}')")
+    message(FATAL_ERROR "PICOCO_BOARD must be 'pico2', 'plusw' or 'plusw_hdr' (got '${PICOCO_BOARD}')")
   endif()
   set(PICO_PLATFORM rp2350-arm-s CACHE STRING "")
   include(pico_sdk_import.cmake)
@@ -45,15 +48,15 @@ if(NOT PICOCO_HOST)
     src/fs_flash.c src/dw/dw_store_fatfs.c
     src/plat_pico.c src/usb/usb_descriptors.c src/main.c
     src/crash.c src/bus/bus_core1.c src/bus/bus_engine.c)
-  if(PICOCO_BOARD STREQUAL "plusw")
+  if(PICOCO_PLUSW)
     target_sources(picoco PRIVATE src/net/net.c)
     target_link_libraries(picoco pico_cyw43_arch_lwip_poll pico_lwip_sntp)
   else()
     target_sources(picoco PRIVATE ${NET_STUB_SRC})
   endif()
   pico_generate_pio_header(picoco ${CMAKE_CURRENT_LIST_DIR}/src/bus/bus_engine.pio)
-  if(PICOCO_BOARD STREQUAL "plusw")
-    set(PICOCO_PIN_HEADER plusw)
+  if(PICOCO_PLUSW)
+    set(PICOCO_PIN_HEADER ${PICOCO_BOARD})
   else()
     set(PICOCO_PIN_HEADER pico2_breadboard)
   endif()

@@ -124,7 +124,15 @@ cmake -B build-pico-plusw -G Ninja -DPICO_SDK_PATH=/Users/cognitivegears/project
 ninja -C build-pico-plusw
 ```
 
-Both builds run `firmware/tools/check_core1_flash_free.py` as a POST_BUILD
+A Plus-W can't sit flat on a v2.3.1 board (its underside flash; the v2.4
+board has a cutout for it), but it works there on 2x20 pin headers with
+`-DPICOCO_BOARD=plusw_hdr` (`firmware/boards/plusw_hdr.h`). On headers the
+15 pad-grid pins reach nothing, so this build ends each bus cycle on OE_BUS
+instead of the pad-grid E, and has no `CART_DRV` (`cart on`/`auto` are
+refused, as on a Pico 2). The bus, Becker port, DriveWire and Wi-Fi are the
+same as the flat build. Not yet run on a CoCo.
+
+Every build runs `firmware/tools/check_core1_flash_free.py` as a POST_BUILD
 step, failing the build if any code core1's event loop can reach (directly,
 or through a read or write hook) lands outside SRAM.
 

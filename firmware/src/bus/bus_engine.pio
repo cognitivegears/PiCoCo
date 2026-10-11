@@ -89,6 +89,32 @@ done:
     push noblock
 .wrap
 
+; Plus-W on pin headers (plusw_hdr.h): the pad grid is not connected, so E
+; (GP26) floats and cannot end the cycle. bus_sel_ph holds flag 3 up while
+; OE_BUS is low instead (set before flag 1, cleared at the rise), and this SM
+; tests it without stalling: `mov y, status` reads ~0 while it is up (EXECCTRL
+; status_sel IRQ, index 3, set in bus_engine.c). The clear lands a few clk
+; after the rise (GP40's synchroniser plus the helper), so the kept sample can
+; be from up to about the rise itself (D0-D7 keep their synchronisers), a clk
+; or two later than on a Pico 2: U10 has just gone high-Z then and the lines
+; still hold the write data. 9 instructions, as bus_event_pw: the selftest's
+; write-data burst fills PIO0 exactly (fake6809.c, wdata_arm).
+.program bus_event_ph
+.pio_version 1
+.wrap_target
+    mov x, null             ; the seed, between cycles
+    wait 1 irq 1
+smp:
+    mov isr, pins
+    mov y, status           ; ~0 while flag 3 (the cycle) is up
+    jmp !y done
+    mov x, isr              ; a sample taken while the cycle was still on
+    jmp smp
+done:
+    mov isr, x
+    push noblock
+.wrap
+
 ; Select helper (Plus-W): runs in a PIO block with GPIO base 16 (the one the
 ; cyw43 driver also uses), watches the board's OE_BUS on GP40 and raises the
 ; read SM's flags in PIO0 across blocks (`next` wraps from PIO2 to PIO0).
@@ -103,5 +129,20 @@ done:
     irq next set 0          ; read SM: cycle start
     irq next set 1          ; event SM
     wait 1 gpio 40          ; OE_BUS high: cycle over
+    irq next set 2          ; read SM: release
+.wrap
+
+; Select helper (Plus-W on pin headers): bus_sel_pw plus flag 3, up for the
+; length of the cycle, which ends bus_event_ph's sampling in place of E.
+.program bus_sel_ph
+.pio_version 1
+.wrap_target
+    wait 1 gpio 40          ; starts here: a start while OE_BUS is low skips that cycle
+    wait 0 gpio 40          ; OE_BUS low: selected and E high
+    irq next set 0          ; read SM: cycle start
+    irq next set 3          ; cycle on, for bus_event_ph: up before it starts
+    irq next set 1          ; event SM
+    wait 1 gpio 40          ; OE_BUS high: cycle over
+    irq next clear 3        ; event SM: done (first, to end its sampling soonest)
     irq next set 2          ; read SM: release
 .wrap
