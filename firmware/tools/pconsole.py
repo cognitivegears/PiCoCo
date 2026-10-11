@@ -24,8 +24,15 @@ def open_port(path):
     lflag = 0
     cc[termios.VMIN] = 0
     cc[termios.VTIME] = 1
-    termios.tcsetattr(fd, termios.TCSANOW,
-                       [iflag, oflag, cflag, lflag, termios.B115200, termios.B115200, cc])
+    try:
+        termios.tcsetattr(fd, termios.TCSANOW,
+                           [iflag, oflag, cflag, lflag, termios.B115200, termios.B115200, cc])
+    except termios.error:
+        # Claude Code's macOS sandbox refuses tty ioctls (EPERM). A fresh
+        # USB CDC node is already raw (iflag/oflag/lflag 0) and the reads
+        # below are non-blocking, so carry on unless it isn't.
+        if any(termios.tcgetattr(fd)[i] for i in (0, 1, 3)):
+            raise
     return fd
 
 

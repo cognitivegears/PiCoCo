@@ -29,10 +29,20 @@ def open_port(path):
     cflag |= termios.CREAD | termios.CLOCAL | termios.CS8
     cc[termios.VMIN] = 0
     cc[termios.VTIME] = 0
-    termios.tcsetattr(fd, termios.TCSANOW,
-                      [0, 0, cflag, 0, termios.B115200, termios.B115200, cc])
+    try:
+        termios.tcsetattr(fd, termios.TCSANOW,
+                          [0, 0, cflag, 0, termios.B115200, termios.B115200, cc])
+    except termios.error:
+        # Claude Code's macOS sandbox refuses tty ioctls (EPERM); a fresh USB
+        # CDC node is already raw, and the reads below are non-blocking.
+        if any(termios.tcgetattr(fd)[i] for i in (0, 1, 3)):
+            raise
     # The firmware only reads CDC0 while DTR is up (tud_cdc_n_connected).
-    fcntl.ioctl(fd, termios.TIOCMBIS, termios.TIOCM_DTR.to_bytes(4, sys.byteorder))
+    # macOS raises DTR on open; this makes sure, where the ioctl is allowed.
+    try:
+        fcntl.ioctl(fd, termios.TIOCMBIS, termios.TIOCM_DTR.to_bytes(4, sys.byteorder))
+    except OSError:
+        pass
     return fd
 
 
