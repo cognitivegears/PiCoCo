@@ -78,6 +78,34 @@ def check_pad_clearances(p, min_gap=0.15):
                             assert _clear(b1, b2, min_gap), f"pad {n1} too close to pad {n2}"
 
 
+# v2.4 Plus-W flash cutout (x0, y0, x1, y1) and the underside parts it must
+# clear, measured on a real module: flash body/legs and the PSRAM footprint.
+FLASH_CUTOUT = (-5.0, -10.9, 5.0, 1.6)
+UNDERSIDE_PARTS = (-4.5, -10.1, 4.5, 0.88)
+
+
+def check_flash_cutout(fp, p, edge_gap=0.5):
+    """The Edge.Cuts cutout is a closed loop with the expected extents, keeps
+    >=0.5 mm around the Plus-W underside parts, and no pad copper comes
+    within edge_gap of it."""
+    pts = []
+    for m in re.finditer(r'\(fp_(line|arc) \(start ([-\d.]+) ([-\d.]+)\)(?: \(mid [-\d.]+ [-\d.]+\))? \(end ([-\d.]+) ([-\d.]+)\)[^\n]*\(layer "Edge\.Cuts"\)', fp):
+        pts.append(((float(m.group(2)), float(m.group(3))), (float(m.group(4)), float(m.group(5)))))
+    assert len(pts) == 8, f"expected 4 lines + 4 arcs on Edge.Cuts, got {len(pts)}"
+    ends = sorted(e for seg in pts for e in seg)
+    assert all(ends[i] == ends[i + 1] for i in range(0, len(ends), 2)), "cutout outline not closed"
+    xs = [x for seg in pts for x, _ in seg]
+    ys = [y for seg in pts for _, y in seg]
+    assert (min(xs), min(ys), max(xs), max(ys)) == FLASH_CUTOUT, "cutout extents"
+    x0, y0, x1, y1 = FLASH_CUTOUT
+    u0, v0, u1, v1 = UNDERSIDE_PARTS
+    assert min(u0 - x0, v0 - y0, x1 - u1, y1 - v1) >= 0.5, "cutout margin around Plus-W flash/PSRAM"
+    for num, recs in p.items():
+        for rec in recs:
+            for b in _boxes(rec):
+                assert _clear(b, (x0, x1, y0, y1), edge_gap), f"pad {num or 'NPTH'} too close to the flash cutout"
+
+
 def _debug_row_label_count(text):
     """Count silkscreen labels tied to the removed debug pads 41-43 (the
     SWCLK/GND/SWDIO row at y=26.2 in the source footprint), so the F.SilkS
@@ -129,6 +157,7 @@ def main():
     )
     assert fp.count("(fp_poly") == src.count("(fp_poly"), "fp_poly (copper keepout) count changed"
     check_pad_clearances(p)
+    check_flash_cutout(fp, p)
 
     cart = (PRETTY / "COCO-CART-2.1X1.75.kicad_mod").read_text()
     assert "-5.207) (size 1.27 9.525)" not in cart, "fingers still end 0.44 mm from the edge"

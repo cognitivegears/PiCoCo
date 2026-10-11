@@ -214,11 +214,15 @@ def octile(dx, dy):
 
 class Router:
     def __init__(self, board, static_idx, keepouts, region, track_w, via_dia, via_drill,
-                 clearance, hole_clearance):
+                 clearance, hole_clearance, via_region=None):
         self.board = board
         self.idx = static_idx
         self.keepouts = keepouts
         self.region_poly, self.region_bbox = region
+        # A grid node only proves the track centreline is inside `region`; a via
+        # reaches via_dia/2 from its centre, so it needs a region eroded further
+        # (a 0.8 mm via 0.3 mm from a cutout edge has zero copper-edge clearance).
+        self.via_region_poly = (via_region or region)[0]
         self.w = track_w
         self.via_dia = via_dia
         self.via_drill = via_drill
@@ -268,7 +272,9 @@ class Router:
         cu_shape = pcbnew.SHAPE_CIRCLE(pt, self.via_dia // 2)
         hole_shape = pcbnew.SHAPE_CIRCLE(pt, self.via_drill // 2)
         ok = True
-        if self.keepouts.blocks_via(cu_shape, cu_shape):
+        if not self.via_region_poly.Contains(pt):
+            ok = False
+        elif self.keepouts.blocks_via(cu_shape, cu_shape):
             ok = False
         elif self.idx.copper_blocked(F_CU, cu_shape, netcode, self.clearance):
             ok = False
@@ -507,9 +513,10 @@ def main():
     static_idx = build_static_obstacles(board)
     keepouts = Keepouts(board)
     region = build_board_region(board, edge_clearance)
+    via_region = build_board_region(board, max(ds.m_CopperEdgeClearance, edge_clearance - track_w // 2) + via_dia // 2)
 
     router = Router(board, static_idx, keepouts, region, track_w, via_dia, via_drill,
-                     clearance, hole_clearance)
+                     clearance, hole_clearance, via_region)
 
     jobs = []
     for name in net_names:

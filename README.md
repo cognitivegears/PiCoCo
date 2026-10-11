@@ -27,7 +27,13 @@ cased, future-variant footprint, not this board.
    `stencil-module` paste stencil for the 15 grid pads only and hand-solder
    the castellations). A flat-mounted Pico 2 rests its three underside debug
    pads on grid pads GP29/GP32/GP35: put Kapton tape over those three pads
-   first, or use headers. Nothing else goes under the module.
+   first, or use headers. Nothing else goes under the module. From v2.4 the
+   board has a 10 x 12.5 mm cutout under the module's middle: the Plus-W's
+   underside flash (SOIC-8, up to 2.16 mm tall) and its empty PSRAM
+   footprint sit in it, so the Plus-W lies flat. The flash pokes up to
+   ~0.6 mm out of the back of the board. On v2.3.1 boards (no cutout) a
+   Plus-W cannot sit flat. A Pico 2 is unaffected (only bare test pads
+   over the cutout).
 4. **Jumpers (solder bridges, defaults as shipped).**
    - `JP2` 1-2: U10 data-buffer /OE from the hardware decode (default).
      2-3: /OE from firmware GP31 (Plus-W only). Today's firmware holds GP31

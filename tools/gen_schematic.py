@@ -292,8 +292,44 @@ def _top_level_items(body: str) -> list[str]:
     return items
 
 
+# v2.4: the Plus-W carries its 16 MB flash (W25Q128JVSIQ, SOIC-8 208 mil,
+# up to 2.16 mm tall) and an empty PSRAM footprint on its underside, on the
+# module centreline, so it cannot sit flat on solid board. Measured on a
+# real module (2026-10-11): flash body 15.4 mm from the USB end (y=-10.10),
+# PSRAM outline ends 5.75 mm past the flash body (y=+0.88), leg shoulders
+# 7.33 mm in from the long edge (x=+-3.17); pads reach x=+-4.5. A routed
+# opening clears all of it with >=0.5 mm margin; the flash pokes <=0.56 mm
+# out the back of a 1.6 mm board. Harmless under a Pico 2 (bare test pads).
+FLASH_CUTOUT = (-5.0, -10.9, 5.0, 1.6)  # x0, y0, x1, y1, footprint frame
+FLASH_CUTOUT_R = 0.5  # corner radius: matches the router bit's inner corner
+
+
+def _flash_cutout_items() -> list[str]:
+    """Edge.Cuts rounded rectangle (4 lines + 4 arcs) plus a fab label."""
+    x0, y0, x1, y1 = FLASH_CUTOUT
+    r = FLASH_CUTOUT_R
+    m = r * (1 - 0.5 ** 0.5)  # arc midpoint inset from the corner
+    stroke = '(stroke (width 0.1) (type default)) (layer "Edge.Cuts")'
+    lines = [((x0 + r, y0), (x1 - r, y0)), ((x1, y0 + r), (x1, y1 - r)),
+             ((x1 - r, y1), (x0 + r, y1)), ((x0, y1 - r), (x0, y0 + r))]
+    arcs = [((x1 - r, y0), (x1 - m, y0 + m), (x1, y0 + r)),
+            ((x1, y1 - r), (x1 - m, y1 - m), (x1 - r, y1)),
+            ((x0 + r, y1), (x0 + m, y1 - m), (x0, y1 - r)),
+            ((x0, y0 + r), (x0 + m, y0 + m), (x0 + r, y0))]
+    f = lambda v: f"{v:.4f}".rstrip("0").rstrip(".")
+    out = []
+    for i, (a, b) in enumerate(lines):
+        out.append(f'(fp_line (start {f(a[0])} {f(a[1])}) (end {f(b[0])} {f(b[1])}) {stroke} (tstamp {_uid(f"cutout-line{i}")}))')
+    for i, (s, mid, e) in enumerate(arcs):
+        out.append(f'(fp_arc (start {f(s[0])} {f(s[1])}) (mid {f(mid[0])} {f(mid[1])}) (end {f(e[0])} {f(e[1])}) {stroke} (tstamp {_uid(f"cutout-arc{i}")}))')
+    out.append('(fp_text user "Plus-W flash cutout" (at 0 %s) (layer "F.Fab") (effects (font (size 0.8 0.8) (thickness 0.12))) (tstamp %s))'
+               % (f((y0 + y1) / 2), _uid("cutout-fab-text")))
+    return out
+
+
 def write_carrier_footprint() -> None:
-    """Pico-Carrier = RPi_Pico_SMD_TH + the 15 Plus-W pads + antenna courtyard.
+    """Pico-Carrier = RPi_Pico_SMD_TH + the 15 Plus-W pads + antenna courtyard
+    + the Plus-W flash cutout (FLASH_CUTOUT).
 
     No paste anywhere. Pico 2's own SWD debug castellations (pads 41/42/43 =
     SWCLK/GND/SWDIO, the row at Y=23.9) sit directly under the Plus-W
@@ -330,7 +366,7 @@ def write_carrier_footprint() -> None:
         if kind == "descr":
             it = ('(descr "Carrier land pattern for Raspberry Pi Pico 2 or Waveshare '
                   'RP2350B-Plus-W: 2x20 castellated/THT header plus the Plus-W 3x5 '
-                  'underside pad grid; no debug pads (collide with the grid)")')
+                  'underside pad grid and the Plus-W flash cutout; no debug pads (collide with the grid)")')
         elif kind == "tags":
             it = '(tags "Pico 2 RP2350B-Plus-W carrier")'
         elif kind == "fp_text" and it.startswith('(fp_text value "RPi_Pico_SMD_TH"'):
@@ -350,6 +386,7 @@ def write_carrier_footprint() -> None:
     extra.append('(fp_text user "ANT antenna keepout (Plus-W)" (at 0 28) (layer "F.Fab") (effects (font (size 0.8 0.8) (thickness 0.12))) (tstamp %s))' % _uid("antenna-fab-text"))
     extra.append('(fp_text user "USB" (at 0 -23) (layer "F.SilkS") (effects (font (size 1 1) (thickness 0.15))) (tstamp %s))' % _uid("usb-text"))
     extra.append('(fp_text user "ANT" (at 0 27.5) (layer "F.SilkS") (effects (font (size 1 1) (thickness 0.15))) (tstamp %s))' % _uid("ant-text"))
+    extra.extend(_flash_cutout_items())
 
     text = header + "\n  " + "\n  ".join(kept + extra) + "\n)\n"
     (PRETTY / "Pico-Carrier.kicad_mod").write_text(text)
