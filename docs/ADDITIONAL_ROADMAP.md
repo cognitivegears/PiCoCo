@@ -311,7 +311,7 @@ Spec: `docs/superpowers/specs/2026-10-01-rom-manager-design.md` section 10.
 ## 8. A14 (and A15) must reach the module on every build (hardware, required)
 
 **Limitation today.** A Pico 2 build sees A0-A13 only. All 26 header GPIOs
-are spent (`CLAUDE.md` "Pico 2 (module) only exposes 26 GPIO"), so A14 and
+are spent (a Pico 2 exposes only 26 GPIO, see `CONTEXT.md`), so A14 and
 A15 are buffered by U13 but land on Plus-W pad-grid pins a Pico 2 does not
 have. The firmware therefore cannot tell `$8000-$BFFF` from `$C000-$FEFF`.
 

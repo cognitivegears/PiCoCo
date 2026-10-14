@@ -1,0 +1,3 @@
+# The schematic is generated from tools/gen_schematic.py, never hand-edited
+
+`PiCoCo/PiCoCo.kicad_sch`, the `Pico-Carrier` and `74LVC00` symbols in `libraries/PiCoCo.kicad_sym` and `libraries/PiCoCo.pretty/Pico-Carrier.kicad_mod` are outputs of `tools/gen_schematic.py`; edit the declarative `pin_nets` dicts and regenerate. The script's `check()` asserts the decode wiring, jumper defaults and the net-name convention (`_BUF`/`_RAW` suffixes, `_B`/`_DBG` banned), which a hand-edited schematic would silently lose. The PCB is the opposite: `PiCoCo.kicad_pcb` is hand-routed in KiCad and authoritative, and `tools/place_pcb.py` must not be re-run on it.

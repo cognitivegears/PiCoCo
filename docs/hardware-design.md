@@ -754,7 +754,7 @@ hand debug.
   corner (§5) only 10 mm past it — too tight to use either reliably.
   The board grew 12 mm away from the fingers to fix this (§6); no
   mounting hole was added in the new strip, so the board's lack of a
-  mounting hole (`CLAUDE.md`) is unchanged.
+  mounting hole (`docs/adr/0005-no-swd-header-no-mounting-hole.md`) is unchanged.
 
 ### 9.1 Deferred to v2.4
 

@@ -62,7 +62,7 @@ numbers from it, don't hand-patch around a mismatch.
 | FID1–FID3 | `Fiducial:Fiducial_1mm_Mask2mm` | — | SMT assembly fiducials, no net, excluded from BOM |
 
 There is no `J_SWD` header and no mounting hole (`MTG1`) on this board — both
-were removed in v2.3 (see `CLAUDE.md` and `docs/hardware-design.md` §7, §9).
+were removed in v2.3 (see `docs/adr/0005-no-swd-header-no-mounting-hole.md` and `docs/hardware-design.md` §7, §9).
 
 DNP by default: R2, R10, R15, R17, Q3, C12, C15, J1. Everything else,
 including the JP5-reachable /CART stage (Q4/R16/R18), is populated.

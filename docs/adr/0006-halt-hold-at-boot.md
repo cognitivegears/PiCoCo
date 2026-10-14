@@ -1,0 +1,3 @@
+# /HALT is held low at boot by hardware, with a 10 kΩ gate pull-up
+
+Q2/R7/R8 hold the CoCo's /HALT low from cold power until firmware releases it on GP27 (`HALT_GATE`), so the CPU cannot read the ROM window before core1 is serving it (about 1.16 s after module boot). The 2026-09-17 decision kept the hold without measuring the CoCo's reset-to-first-read time because it costs three parts on an already-budgeted pin that doubles as DriveWire flow control. R7 went from 100 kΩ to 10 kΩ on 2026-09-18 because the RP2350's internal reset pull-down beat the weaker value, making the held-at-boot default a lottery. Details: `docs/hardware-design.md` §4.
