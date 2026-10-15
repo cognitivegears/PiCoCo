@@ -23,7 +23,7 @@ The $C000-$FEFF address range the CoCo selects with /CTS. The board answers read
 _Avoid_: CTS range, cart space (the latter is the whole 32 KB region)
 
 **Becker port**:
-The two-register DriveWire peripheral at $FF41 (status) and $FF42 (data), selected by /SCS. Named after the Becker interface in the CoCo emulators.
+The two-register DriveWire peripheral at $FF41 (status) and $FF42 (data), selected by /SCS. Named after the Becker interface in the CoCo emulators. It belongs to the board, not to any Pak.
 _Avoid_: Becker window, DriveWire port
 
 **Cycle**:
@@ -87,3 +87,39 @@ _Avoid_: shell, CLI, serial monitor
 **Bring-up**:
 The staged process of proving a new board or build works on a real CoCo, milestone by milestone.
 _Avoid_: testing (too broad), commissioning
+
+### The manager
+
+**Manager**:
+The board's front door on the CoCo screen: the firmware's screens plus the Stub that draws them. It lists ROMs and disks, boots, and holds the settings.
+_Avoid_: ROM manager (it is more than ROMs), menu
+
+**Stub**:
+The 8 KB cart image the Manager runs on the CoCo. It draws, reads keys and polls the firmware; it decides nothing.
+_Avoid_: manager ROM, client
+
+**UI session**:
+The state in which the Becker port carries Manager traffic instead of DriveWire. Begun and ended by the Stub.
+_Avoid_: manager mode
+
+**Loader**:
+The small program on a disk that enters the Manager from a running DOS.
+_Avoid_: PICOCO.BIN (a file name, and the old program's)
+
+**CoCo-side manager**:
+The retired program, loaded from disk, that did the Manager's job before the Stub. Deleted once the Manager has all of its features.
+_Avoid_: old manager, PICOCO
+
+### The virtual Multi-Pak
+
+**Virtual Multi-Pak**:
+The board acting as a Multi-Pak Interface: four Slots, one active at a time.
+_Avoid_: multipak, MPI emulation
+
+**Slot**:
+One of the four positions in the virtual Multi-Pak. Each holds a Pak; the slot register picks which Slot owns the ROM window and /SCS.
+_Avoid_: bank (a bank is part of a ROM image)
+
+**Pak**:
+A named profile the board can present as a cartridge: an optional ROM image plus a set of emulated devices with their settings.
+_Avoid_: cartridge (ambiguous with the board itself), profile
