@@ -13,6 +13,7 @@ typedef enum { NET_OFF, NET_JOINING, NET_CONNECTING, NET_UP, NET_FAILED } net_st
 #define NET_DEFAULT_PORT 65504
 #define NET_BOOT_HOLD_MS 10000
 #define NET_RETRY_MS 2000
+#define NET_BADAUTH_GRACE_MS 3000   /* the AP often rejects the first auth and the driver re-auths about 2.1 s later (G.3) */
 #define NET_JOIN_TIMEOUT_MS 15000
 
 typedef struct {
