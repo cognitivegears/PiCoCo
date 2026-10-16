@@ -47,3 +47,5 @@ void ui_ctl(uint8_t code);          /* a write to $FF43: 0xA5 begin, 0x5A end */
 bool ui_active(void);
 void ui_feed(const uint8_t *buf, size_t n, uint32_t now_ms);   /* bytes from the CoCo during a session */
 void ui_row_text(int row, char out[UI_COLS + 1]);              /* tests: one model row as ASCII */
+uint8_t ui_cell(int row, int col);                             /* tests: one raw screen code */
+void ui_set_cell(int row, int col, uint8_t screen_code);       /* for the line editor's overlay */

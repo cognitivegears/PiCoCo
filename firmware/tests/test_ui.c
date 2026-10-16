@@ -1,6 +1,7 @@
 #include "test.h"
 #include "ui.h"
 #include "plat.h"
+#include "ui_text.h"
 #include "dw_store.h"
 #include "dw.h"
 #include <stdio.h>
@@ -519,15 +520,121 @@ TEST(failed_change_shows_the_reason_and_does_not_save) {
     ASSERT(row_has(14, "ROM LOAD FAILED"));  /* the test exec's reason text */
 }
 
-TEST(disks_new_and_boot_wait_for_their_tickets) {
+TEST(disks_boot_waits_for_its_ticket) {
     setup();
     mkfile("alpha.dsk", "", 256);
     open_disks(0);
-    poll(0, 'N', -1, 10);
-    ASSERT(row_has(14, "NOT YET"));
     poll(0, 'B', -1, 11);
     ASSERT(row_has(14, "NOT YET"));
     ASSERT_EQ(nlines, 0);
+}
+
+static void open_settings(int capsv);
+static uint32_t tnow = 100;
+static void type(const char *s) { for (; *s; s++) poll(0, (uint8_t)*s, -1, tnow++); }
+
+TEST(new_disk_keeps_case_and_adds_dsk) {
+    setup();
+    open_disks(0);
+    poll(0, 'N', -1, 10);
+    ASSERT(row_has(12, "NAME:"));
+    poll(0, 0x01, -1, 11);                   /* a control code below $20 is ignored */
+    poll(0, 0x08, -1, 12);                   /* backspace at empty is harmless */
+    type("MyDisk1");
+    ASSERT_EQ(ui_cell(13, 0), 0x4D);         /* M normal */
+    ASSERT_EQ(ui_cell(13, 1), 0x19);         /* y inverse Y */
+    ASSERT_EQ(ui_cell(13, 2), 0x44);         /* D normal */
+    ASSERT_EQ(ui_cell(13, 3), 0x09);         /* i inverse I */
+    ASSERT_EQ(ui_cell(13, 6), 0x71);         /* 1 normal */
+    ASSERT_EQ(ui_cell(13, 7), 0x20);         /* cursor: inverse space */
+    ASSERT_EQ(ui_cell(13, 8), 0x60);
+    poll(0, UI_KEY_ENTER, -1, 200);
+    ASSERT_EQ(nlines, 2);
+    ASSERT(strcmp(lines[0], "fs new MyDisk1.DSK") == 0);
+    ASSERT(strcmp(lines[1], "save") == 0);
+    ASSERT(row_has(15, "BREAK=BACK") || row_has(15, "N=NEW"));   /* editor closed, footer back */
+}
+
+TEST(new_disk_with_an_extension_is_left_alone) {
+    setup();
+    open_disks(0);
+    poll(0, 'n', -1, 10);
+    type("a.img");
+    poll(0, UI_KEY_ENTER, -1, 200);
+    ASSERT(strcmp(lines[0], "fs new a.img") == 0);
+}
+
+TEST(editor_limit_and_cancel) {
+    setup();
+    open_disks(0);
+    poll(0, 'N', -1, 10);
+    type("abcdefghijklmnopqrstuvwxyz012345XYZ");   /* 35 keys, 31 fit */
+    poll(0, 0x08, -1, 300);
+    poll(0, 'Q', -1, 301);                         /* back to 31 */
+    poll(0, 'R', -1, 302);                         /* ignored */
+    ASSERT_EQ(ui_cell(13, 30), 0x51);              /* Q, normal: the 31st cell */
+    ASSERT_EQ(ui_cell(13, 31), 0x20);              /* the cursor follows it */
+    poll(0, UI_KEY_BREAK, -1, 303);
+    ASSERT_EQ(nlines, 0);
+    ASSERT(!row_has(12, "NAME:"));
+    ASSERT(row_has(15, "N=NEW"));
+    ASSERT(ui_active());
+}
+
+TEST(masked_field_shows_stars) {
+    setup();
+    open_disks(0);
+    ui_text_begin("PSK:", "", true, 63, NULL);
+    ui_text_key('p'); ui_text_key('W');
+    ui_text_draw();
+    ASSERT_EQ(ui_cell(13, 0), 0x6A);                 /* * normal */
+    ASSERT_EQ(ui_cell(13, 1), 0x6A);
+    ASSERT_EQ(ui_cell(13, 2), 0x20);
+    ui_text_key(UI_KEY_BREAK);
+    ASSERT(!ui_text_active());
+}
+
+TEST(clock_is_set_from_typed_text) {
+    setup();
+    open_settings(0);
+    poll(0, 'T', -1, 10);
+    ASSERT(row_has(12, "YYYY-MM-DD HH:MM"));
+    ASSERT(row_has(13, "20"));                       /* starts from the current clock */
+    for (int i = 0; i < 16; i++) poll(0, 0x08, -1, 20 + (uint32_t)i);
+    type("2026-10-15 19:30");
+    poll(0, UI_KEY_ENTER, -1, 300);
+    ASSERT_EQ(nlines, 2);
+    ASSERT(strcmp(lines[0], "time set 1792092600") == 0);   /* date -u -j -f "%Y-%m-%d %H:%M:%S" "2026-10-15 19:30:00" +%s */
+    ASSERT(strcmp(lines[1], "save") == 0);
+}
+
+TEST(bad_clock_text_runs_nothing) {
+    setup();
+    open_settings(0);
+    poll(0, 'T', -1, 10);
+    for (int i = 0; i < 16; i++) poll(0, 0x08, -1, 20 + (uint32_t)i);
+    type("2026-02-30 19:30");
+    poll(0, UI_KEY_ENTER, -1, 300);
+    ASSERT_EQ(nlines, 0);
+    ASSERT(row_has(14, "BAD DATE/TIME"));
+}
+
+static void tz(const char *text) {
+    setup();
+    open_settings(0);
+    poll(0, 'Z', -1, 10);
+    type(text);
+    poll(0, UI_KEY_ENTER, -1, 300);
+}
+
+TEST(timezone_is_parsed_in_minutes) {
+    tz("-05:00"); ASSERT(strcmp(lines[0], "net tz -300") == 0); ASSERT(strcmp(lines[1], "save") == 0);
+    tz("OFF");    ASSERT(strcmp(lines[0], "net tz off") == 0);
+    tz("+5:30");  ASSERT(strcmp(lines[0], "net tz 330") == 0);
+    tz("+14");    ASSERT(strcmp(lines[0], "net tz 840") == 0);
+    tz("+14:00"); ASSERT(strcmp(lines[0], "net tz 840") == 0);
+    tz("+15");    ASSERT_EQ(nlines, 0); ASSERT(row_has(14, "BAD OFFSET"));   /* net_set_tz allows +-840 */
+    tz("x");      ASSERT_EQ(nlines, 0); ASSERT(row_has(14, "BAD OFFSET"));
 }
 
 TEST(list_pages_counts_and_jumps) {
@@ -579,8 +686,6 @@ TEST(settings_toggle_hdbdos_is_saved) {
     ASSERT_EQ(nlines, 2);
     ASSERT(strcmp(lines[0], "dw hdbdos off") == 0);
     ASSERT(strcmp(lines[1], "save") == 0);
-    poll(0, 'T', -1, 11);
-    ASSERT(row_has(14, "NOT YET"));
 }
 
 TEST(wifi_screen_without_a_radio_is_one_line) {
@@ -699,7 +804,14 @@ int main(void) {
     RUN(disks_lists_images_not_roms_or_config);
     RUN(mount_and_eject_are_saved_and_shown);
     RUN(failed_change_shows_the_reason_and_does_not_save);
-    RUN(disks_new_and_boot_wait_for_their_tickets);
+    RUN(disks_boot_waits_for_its_ticket);
+    RUN(new_disk_keeps_case_and_adds_dsk);
+    RUN(new_disk_with_an_extension_is_left_alone);
+    RUN(editor_limit_and_cancel);
+    RUN(masked_field_shows_stars);
+    RUN(clock_is_set_from_typed_text);
+    RUN(bad_clock_text_runs_nothing);
+    RUN(timezone_is_parsed_in_minutes);
     RUN(list_pages_counts_and_jumps);
     RUN(settings_toggle_hdbdos_is_saved);
     RUN(wifi_screen_without_a_radio_is_one_line);

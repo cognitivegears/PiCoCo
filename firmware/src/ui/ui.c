@@ -4,6 +4,7 @@
 #include "mode.h"
 #include "net.h"
 #include "console.h"
+#include "ui_text.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -91,6 +92,9 @@ void ui_row_text(int row, char out[UI_COLS + 1]) {
     out[UI_COLS] = '\0';
 }
 
+uint8_t ui_cell(int row, int col) { return scr[row * UI_COLS + col]; }
+void ui_set_cell(int row, int col, uint8_t c) { scr[row * UI_COLS + col] = c; }
+
 static void set_msg(const char *s) { snprintf(msg, sizeof msg, "%s", s); }
 
 /* Run a console line; on failure the reason is the message row. 0 ok. */
@@ -104,6 +108,51 @@ static int run(const char *line) {
 static int change(const char *line) {
     if (run(line) != 0) return -1;
     return run("save");
+}
+
+/* "YYYY-MM-DD HH:MM" to unix seconds (the clock holds local time as if UTC). 0 ok. */
+static int parse_datetime(const char *s, int64_t *out) {
+    static const int mdays[12] = { 31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31 };
+    static const int at[5] = { 0, 5, 8, 11, 14 }, w[5] = { 4, 2, 2, 2, 2 };
+    int f[5];
+    if (strlen(s) != 16 || s[4] != '-' || s[7] != '-' || s[10] != ' ' || s[13] != ':') return -1;
+    for (int k = 0; k < 5; k++) {
+        f[k] = 0;
+        for (int i = 0; i < w[k]; i++) {
+            if (s[at[k] + i] < '0' || s[at[k] + i] > '9') return -1;
+            f[k] = f[k] * 10 + (s[at[k] + i] - '0');
+        }
+    }
+    int y = f[0], mo = f[1], d = f[2];
+#define LEAP(v) (((v) % 4 == 0 && (v) % 100 != 0) || (v) % 400 == 0)
+    if (y < 1970 || y > 2099 || mo < 1 || mo > 12 || d < 1 || f[3] > 23 || f[4] > 59) return -1;
+    if (d > mdays[mo - 1] + (mo == 2 && LEAP(y))) return -1;
+    int64_t days = d - 1;
+    for (int i = 1970; i < y; i++) days += LEAP(i) ? 366 : 365;
+    for (int i = 1; i < mo; i++) days += mdays[i - 1] + (i == 2 && LEAP(y));
+#undef LEAP
+    *out = days * 86400 + f[3] * 3600 + f[4] * 60;
+    return 0;
+}
+
+/* "+HH:MM", "-HH", "OFF" (or empty) to minutes east. 0 ok, 1 off, -1 bad. Within +-14:00, as net_set_tz. */
+static int parse_tz(const char *s, int *minutes) {
+    bool neg = false;
+    int h = 0, m = 0, nd = 0;
+    if (!s[0] || strcasecmp(s, "off") == 0) return 1;
+    if (*s == '+' || *s == '-') neg = *s++ == '-';
+    while (*s >= '0' && *s <= '9' && nd < 2) { h = h * 10 + (*s++ - '0'); nd++; }
+    if (!nd) return -1;
+    if (*s == ':') {
+        s++;
+        if (!(s[0] >= '0' && s[0] <= '5' && s[1] >= '0' && s[1] <= '9')) return -1;
+        m = (s[0] - '0') * 10 + (s[1] - '0');
+        s += 2;
+    }
+    if (*s || h > 14 || (h == 14 && m)) return -1;
+    m += h * 60;
+    *minutes = neg ? -m : m;
+    return 0;
 }
 
 /* ---- list widget: ROMs and Disks share it ---- */
@@ -285,6 +334,13 @@ static void draw_disks(void) {
     put(15, 0, "0-3=MOUNT  E=EJECT  N=NEW  B=BOOT", false);
 }
 
+static void new_disk_cb(const char *text) {
+    static char line[48];
+    if (!text[0]) return;
+    snprintf(line, sizeof line, "fs new %s%s", text, strchr(text, '.') ? "" : ".DSK");
+    if (change(line) == 0) list_load(false);
+}
+
 static uint8_t key_disks(uint8_t key) {
     char line[24 + NAME_LEN];
     if (list_key(key)) return 0;
@@ -297,18 +353,41 @@ static uint8_t key_disks(uint8_t key) {
         change(line);
     }
     else if (key == 'E' || key == 'e') { eject_armed = true; set_msg("EJECT: PRESS 0-3"); }
-    else if (key == 'N' || key == 'n' || key == 'B' || key == 'b') set_msg("NOT YET");   /* #59 line editor, #66 Boot */
+    else if (key == 'N' || key == 'n') ui_text_begin("NAME:", "", false, 31, new_disk_cb);
+    else if (key == 'B' || key == 'b') set_msg("NOT YET");   /* #66 Boot */
     return 0;
 }
 
 /* ---- Settings ---- */
 
-static void draw_settings(void) {
-    char line[UI_COLS + 1], when[20];
+static void clock_text(char when[20]) {
     time_t t = (time_t)dw_time_get(g_dw, now_ms);
     struct tm tmv;
-    if (gmtime_r(&t, &tmv)) strftime(when, sizeof when, "%Y-%m-%d %H:%M", &tmv);   /* dw time is local already */
-    else snprintf(when, sizeof when, "?");
+    if (gmtime_r(&t, &tmv)) strftime(when, 20, "%Y-%m-%d %H:%M", &tmv);   /* dw time is local already */
+    else snprintf(when, 20, "?");
+}
+
+static void clock_cb(const char *text) {
+    static char line[32];
+    int64_t t;
+    if (parse_datetime(text, &t) != 0) { set_msg("BAD DATE/TIME"); return; }
+    snprintf(line, sizeof line, "time set %lld", (long long)t);
+    change(line);
+}
+
+static void tz_cb(const char *text) {
+    static char line[24];
+    int m = 0;
+    int r = parse_tz(text, &m);
+    if (r < 0) { set_msg("BAD OFFSET"); return; }
+    if (r) snprintf(line, sizeof line, "net tz off");
+    else snprintf(line, sizeof line, "net tz %d", m);
+    change(line);
+}
+
+static void draw_settings(void) {
+    char line[UI_COLS + 1], when[20];
+    clock_text(when);
     put(1, 0, "SETTINGS", false);
     snprintf(line, sizeof line, "H:HDB-DOS DRIVE MODE %s", g_dw->hdbdos ? "ON" : "OFF");
     put(3, 0, line, false);
@@ -327,14 +406,75 @@ static void draw_settings(void) {
 static uint8_t key_settings(uint8_t key) {
     if (key == UI_KEY_BREAK) screen = SCR_HOME;
     else if (key == 'H' || key == 'h') change(g_dw->hdbdos ? "dw hdbdos off" : "dw hdbdos on");
-    else if (key == 'T' || key == 't' || key == 'Z' || key == 'z') set_msg("NOT YET");   /* #59 line editor */
+    else if (key == 'T' || key == 't') {
+        char when[20];
+        clock_text(when);
+        ui_text_begin("YYYY-MM-DD HH:MM", when, false, 16, clock_cb);
+    }
+    else if (key == 'Z' || key == 'z') ui_text_begin("UTC OFFSET (+HH:MM, -HH, OFF):", "", false, 6, tz_cb);
     return 0;
 }
 
 /* ---- WiFi ---- */
 
+static bool scanning;           /* WiFi: the list holds scanned SSIDs, ENTER picks one */
+static char ssid_pick[NAME_LEN], host_pick[UI_TEXT_MAX + 1];
+static char wline[96];
+
+static void psk_cb(const char *text) {
+    snprintf(wline, sizeof wline, "net psk%s%s", text[0] ? " " : "", text);
+    change(wline);
+}
+
+static void join_cb(const char *text) {
+    snprintf(wline, sizeof wline, "net join %s", ssid_pick);
+    if (change(wline) == 0) psk_cb(text);
+}
+
+static void port_cb(const char *text) {
+    unsigned port = text[0] ? 0 : NET_DEFAULT_PORT;
+    for (const char *c = text; *c; c++) {
+        if (*c < '0' || *c > '9') { port = 0; break; }
+        port = port * 10 + (unsigned)(*c - '0');
+        if (port > 65535) { port = 0; break; }
+    }
+    if (!port) { set_msg("BAD PORT"); return; }
+    snprintf(wline, sizeof wline, "net server %s %u", host_pick, port);
+    change(wline);
+}
+
+static void host_cb(const char *text) {
+    if (!text[0]) return;
+    snprintf(host_pick, sizeof host_pick, "%s", text);
+    ui_text_begin("PORT (65504):", "", false, 5, port_cb);
+}
+
+static void scan_cb(const char *ssid, int rssi, int chan, void *ctx) {
+    (void)rssi; (void)chan; (void)ctx;
+    size_t l = strlen(ssid);
+    /* shortcut: a 32-character SSID does not fit a list name and is left out; widen NAME_LEN if one turns up. */
+    if (!l || l >= NAME_LEN || nnames >= MAX_NAMES) return;
+    for (int i = 0; i < nnames; i++) if (strcmp(names[i], ssid) == 0) return;   /* one row per network, not per access point */
+    memcpy(names[nnames++], ssid, l + 1);
+}
+
+static void scan_start(void) {
+    nnames = sel = top = jumpn = 0;
+    truncated = jump_armed = false;
+    list_roms = true;                   /* no drive digits beside SSIDs */
+    /* shortcut: net_scan blocks core0 for up to 5 s; the stub's poll retries cover it. */
+    if (net_scan(scan_cb, NULL) != 0) { set_msg("SCAN FAILED"); return; }
+    if (!nnames) { set_msg("NO NETWORKS FOUND"); return; }
+    scanning = true;
+}
+
 static void draw_wifi(void) {
     char line[UI_COLS + 1];
+    if (scanning) {
+        list_draw("PICK A NETWORK", "");
+        put(15, 0, "ENTER=PICK  BREAK=BACK", false);
+        return;
+    }
     put(1, 0, "WIFI", false);
     if (!net_available()) { put(3, 0, "NO RADIO ON THIS BOARD", false); put(15, 0, "BREAK=BACK", false); return; }
     snprintf(line, sizeof line, "S:SSID %s", net_ssid());
@@ -357,10 +497,22 @@ static void draw_wifi(void) {
 }
 
 static uint8_t key_wifi(uint8_t key) {
+    if (scanning) {
+        if (list_key(key)) return 0;
+        if (key == UI_KEY_BREAK) scanning = false;
+        else if (key == UI_KEY_ENTER) {
+            snprintf(ssid_pick, sizeof ssid_pick, "%s", names[sel]);
+            scanning = false;
+            ui_text_begin("PSK:", "", true, NET_PSK_MAX, join_cb);
+        }
+        return 0;
+    }
     if (key == UI_KEY_BREAK) screen = SCR_HOME;
     else if (!net_available()) return 0;
     else if (key == 'M' || key == 'm') change(console_boot_mode() == MODE_NET ? "net mode native" : "net mode net");
-    else if (key == 'S' || key == 's' || key == 'P' || key == 'p' || key == 'H' || key == 'h') set_msg("NOT YET");   /* #59 line editor */
+    else if (key == 'S' || key == 's') scan_start();
+    else if (key == 'P' || key == 'p') ui_text_begin("PSK:", "", true, NET_PSK_MAX, psk_cb);
+    else if (key == 'H' || key == 'h') ui_text_begin("HOST:", "", false, 63, host_cb);
     return 0;
 }
 
@@ -376,6 +528,7 @@ static void draw(void) {
     memset(scr, 0x60, sizeof scr);
     draw_header();
     screens[screen].draw();
+    ui_text_draw();                 /* the editor overlays rows 12-15 */
 }
 
 /* Emit the cells that differ from ack as text runs, then act (if any) and
@@ -413,6 +566,7 @@ static void build_reply(bool full, uint8_t act) {
 
 static uint8_t on_key(uint8_t key) {
     if (key) { msg[0] = '\0'; pending_act = 0; }
+    if (ui_text_active()) { ui_text_key(key); return 0; }
     return screens[screen].key(key);
 }
 
@@ -420,7 +574,7 @@ static void on_poll(uint8_t flags, uint8_t key, uint8_t c) {
     if ((flags & 1) && reply_len) { g_send(g_ctx, reply, reply_len); return; }
     bool first = (flags & 2) != 0;
     uint8_t act = 0;
-    if (first) { caps = c; screen = SCR_HOME; menu_sel = 0; }
+    if (first) { caps = c; screen = SCR_HOME; menu_sel = 0; scanning = false; ui_text_key(UI_KEY_BREAK); }
     else { memcpy(ack, sent, sizeof ack); act = on_key(key); }   /* a new poll acknowledges the last reply */
     if (act) memset(scr, 0x60, sizeof scr);   /* leaving: the reply clears the screen, nothing to draw */
     else draw();
@@ -461,7 +615,7 @@ void ui_init(ui_send_fn send, void *ctx, ui_exec_fn exec, dw_store *store, dw_se
     g_send = send; g_ctx = ctx; g_exec = exec; g_store = store; g_dw = dw;
     active = false;
     pkn = 0; reply_len = 0; pending_act = 0;
-    screen = SCR_HOME; menu_sel = 0;
+    screen = SCR_HOME; menu_sel = 0; scanning = false; ui_text_key(UI_KEY_BREAK);
     nnames = sel = top = 0; truncated = false;
     msg[0] = '\0'; pending[0] = '\0'; caps = 0;
     memset(scr, 0x60, sizeof scr);
