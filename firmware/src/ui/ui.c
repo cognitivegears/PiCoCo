@@ -338,6 +338,7 @@ static void new_disk_cb(const char *text) {
     static char line[48];
     if (!text[0]) return;
     snprintf(line, sizeof line, "fs new %s%s", text, strchr(text, '.') ? "" : ".DSK");
+    if (strlen(line) - 7 >= NAME_LEN) { set_msg("NAME TOO LONG"); return; }   /* the list keeps names under NAME_LEN */
     if (change(line) == 0) list_load(false);
 }
 
@@ -428,7 +429,7 @@ static void psk_cb(const char *text) {
 
 static void join_cb(const char *text) {
     snprintf(wline, sizeof wline, "net join %s", ssid_pick);
-    if (change(wline) == 0) psk_cb(text);
+    if (run(wline) == 0) psk_cb(text);      /* one action, one save: psk_cb's */
 }
 
 static void port_cb(const char *text) {
@@ -459,6 +460,7 @@ static void scan_cb(const char *ssid, int rssi, int chan, void *ctx) {
 }
 
 static void scan_start(void) {
+    if (mode_get() == MODE_NET) { set_msg("LEAVE NET MODE FIRST"); return; }
     nnames = sel = top = jumpn = 0;
     truncated = jump_armed = false;
     list_roms = true;                   /* no drive digits beside SSIDs */

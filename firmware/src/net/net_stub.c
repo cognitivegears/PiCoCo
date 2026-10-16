@@ -15,7 +15,8 @@ static void rings(void) { if (!rings_ready) { ring_init(&up, up_buf, 1024); ring
 static int tz = NET_TZ_OFF;
 int net_set_tz(int m) { if (m != NET_TZ_OFF && (m < -840 || m > 840)) return -1; tz = m; return 0; }
 int net_tz(void) { return tz; }
-bool net_available(void) { return false; }
+static bool avail;
+bool net_available(void) { return avail; }
 void net_init(void) {}
 int net_set_ssid(const char *s) { if (!s[0] || strlen(s) > NET_SSID_MAX) return -1; strcpy(ssid, s); return 0; }
 int net_set_psk(const char *s) { if (strlen(s) > NET_PSK_MAX) return -1; strcpy(psk, s); return 0; }
@@ -44,9 +45,17 @@ size_t net_write(const uint8_t *buf, size_t n) {
     if (st != NET_UP) return n;   /* bridge rule: never let the mode pump spin */
     size_t i = 0; while (i < n && ring_push(&up, buf[i])) i++; return i;
 }
-int net_scan(void (*cb)(const char *, int, int, void *), void *ctx) { (void)cb; (void)ctx; return -1; }
+static const char *const *scan_ssids;
+static int scan_n = -1;
+int net_scan(void (*cb)(const char *, int, int, void *), void *ctx) {
+    if (scan_n < 0) return -1;
+    for (int i = 0; i < scan_n; i++) cb(scan_ssids[i], -50, 1, ctx);
+    return 0;
+}
 #ifdef PICOCO_HOST
 void net_stub_set_state(net_state_t s) { st = s; }
+void net_stub_set_available(bool a) { avail = a; }
+void net_stub_set_scan(const char *const *ssids, int n) { scan_ssids = ssids; scan_n = n; }   /* n < 0: scan fails */
 void net_stub_push_from_server(const uint8_t *b, size_t n) { rings(); for (size_t i = 0; i < n; i++) ring_push(&down, b[i]); }
 size_t net_stub_take_to_server(uint8_t *b, size_t n) { rings(); size_t i = 0; while (i < n && ring_pop(&up, &b[i])) i++; return i; }
 #endif

@@ -2,6 +2,7 @@
 #include "ui.h"
 #include "plat.h"
 #include "ui_text.h"
+#include "net.h"
 #include "dw_store.h"
 #include "dw.h"
 #include <stdio.h>
@@ -59,6 +60,8 @@ static void setup(void) {
     exec_rc = 0;
     last_line[0] = '\0';
     nlines = 0;
+    net_stub_set_available(false);
+    net_stub_set_scan(NULL, -1);
     dw_store_posix_init(&store, g_dir);
     dw_init(&dw, &store, NULL, NULL);
     ui_init(send_cb, NULL, exec_cb, &store, &dw);
@@ -552,7 +555,7 @@ TEST(new_disk_keeps_case_and_adds_dsk) {
     ASSERT_EQ(nlines, 2);
     ASSERT(strcmp(lines[0], "fs new MyDisk1.DSK") == 0);
     ASSERT(strcmp(lines[1], "save") == 0);
-    ASSERT(row_has(15, "BREAK=BACK") || row_has(15, "N=NEW"));   /* editor closed, footer back */
+    ASSERT(row_has(15, "N=NEW"));   /* editor closed, footer back */
 }
 
 TEST(new_disk_with_an_extension_is_left_alone) {
@@ -581,17 +584,95 @@ TEST(editor_limit_and_cancel) {
     ASSERT(ui_active());
 }
 
-TEST(masked_field_shows_stars) {
+TEST(new_disk_name_must_fit_the_list) {
     setup();
     open_disks(0);
-    ui_text_begin("PSK:", "", true, 63, NULL);
-    ui_text_key('p'); ui_text_key('W');
-    ui_text_draw();
+    poll(0, 'N', -1, 10);
+    type("abcdefghijklmnopqrstuvwxyzab");    /* 28 + .DSK = 32 */
+    poll(0, UI_KEY_ENTER, -1, 300);
+    ASSERT_EQ(nlines, 0);
+    ASSERT(row_has(14, "NAME TOO LONG"));
+    poll(0, 'N', -1, 310);
+    type("abcdefghijklmnopqrstuvwxyza");     /* 27 + .DSK = 31 */
+    poll(0, UI_KEY_ENTER, -1, 600);
+    ASSERT_EQ(nlines, 2);
+    ASSERT(strcmp(lines[0], "fs new abcdefghijklmnopqrstuvwxyza.DSK") == 0);
+}
+
+static void open_wifi(void) {
+    net_stub_set_available(true);
+    open_with(0);
+    for (int i = 0; i < 3; i++) poll(0, UI_KEY_DOWN, -1, 5 + (uint32_t)i);
+    poll(0, UI_KEY_ENTER, -1, 9);
+}
+
+TEST(wifi_psk_is_masked_and_saved) {
+    setup();
+    open_wifi();
+    poll(0, 'P', -1, 10);
+    type("pW");
     ASSERT_EQ(ui_cell(13, 0), 0x6A);                 /* * normal */
     ASSERT_EQ(ui_cell(13, 1), 0x6A);
     ASSERT_EQ(ui_cell(13, 2), 0x20);
-    ui_text_key(UI_KEY_BREAK);
-    ASSERT(!ui_text_active());
+    poll(0, UI_KEY_ENTER, -1, 300);
+    ASSERT_EQ(nlines, 2);
+    ASSERT(strcmp(lines[0], "net psk pW") == 0);
+    ASSERT(strcmp(lines[1], "save") == 0);
+}
+
+TEST(wifi_scan_pick_and_join_saves_once) {
+    static const char *const found[] = { "Home", "Cafe", "Home" };
+    setup();
+    open_wifi();
+    net_stub_set_scan(found, 3);
+    poll(0, 'S', -1, 10);
+    ASSERT(row_has(2, "HOME"));
+    ASSERT(row_has(3, "CAFE"));
+    ASSERT(!row_has(4, "HOME"));                     /* one row per network */
+    poll(0, UI_KEY_ENTER, -1, 11);
+    ASSERT(row_has(12, "PSK:"));
+    type("sEcret");
+    poll(0, UI_KEY_ENTER, -1, 300);
+    ASSERT_EQ(nlines, 3);
+    ASSERT(strcmp(lines[0], "net join Home") == 0);
+    ASSERT(strcmp(lines[1], "net psk sEcret") == 0);
+    ASSERT(strcmp(lines[2], "save") == 0);
+}
+
+TEST(wifi_scan_failure_is_shown) {
+    setup();
+    open_wifi();
+    poll(0, 'S', -1, 10);
+    ASSERT(row_has(14, "SCAN FAILED"));
+    net_stub_set_scan(NULL, 0);
+    poll(0, 'S', -1, 11);
+    ASSERT(row_has(14, "NO NETWORKS FOUND"));
+    ASSERT_EQ(nlines, 0);
+}
+
+TEST(wifi_server_host_then_port) {
+    setup();
+    open_wifi();
+    poll(0, 'H', -1, 10);
+    type("my.host");
+    poll(0, UI_KEY_ENTER, -1, 300);
+    ASSERT(row_has(12, "PORT (65504):"));
+    poll(0, UI_KEY_ENTER, -1, 301);                  /* empty: the default */
+    ASSERT_EQ(nlines, 2);
+    ASSERT(strcmp(lines[0], "net server my.host 65504") == 0);
+    ASSERT(strcmp(lines[1], "save") == 0);
+}
+
+TEST(wifi_server_bad_port_runs_nothing) {
+    setup();
+    open_wifi();
+    poll(0, 'H', -1, 10);
+    type("my.host");
+    poll(0, UI_KEY_ENTER, -1, 300);
+    type("abc");
+    poll(0, UI_KEY_ENTER, -1, 600);
+    ASSERT_EQ(nlines, 0);
+    ASSERT(row_has(14, "BAD PORT"));
 }
 
 TEST(clock_is_set_from_typed_text) {
@@ -808,7 +889,12 @@ int main(void) {
     RUN(new_disk_keeps_case_and_adds_dsk);
     RUN(new_disk_with_an_extension_is_left_alone);
     RUN(editor_limit_and_cancel);
-    RUN(masked_field_shows_stars);
+    RUN(new_disk_name_must_fit_the_list);
+    RUN(wifi_psk_is_masked_and_saved);
+    RUN(wifi_scan_pick_and_join_saves_once);
+    RUN(wifi_scan_failure_is_shown);
+    RUN(wifi_server_host_then_port);
+    RUN(wifi_server_bad_port_runs_nothing);
     RUN(clock_is_set_from_typed_text);
     RUN(bad_clock_text_runs_nothing);
     RUN(timezone_is_parsed_in_minutes);

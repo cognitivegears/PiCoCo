@@ -54,6 +54,8 @@ extern struct dw_server *net_dw;   /* main.c sets it: SNTP updates this server's
 
 #ifdef PICOCO_HOST
 void   net_stub_set_state(net_state_t s);
+void   net_stub_set_available(bool a);                     /* net_available() result */
+void   net_stub_set_scan(const char *const *ssids, int n); /* canned net_scan results; n < 0 fails */
 void   net_stub_push_from_server(const uint8_t *b, size_t n);
 size_t net_stub_take_to_server(uint8_t *b, size_t n);
 #endif
