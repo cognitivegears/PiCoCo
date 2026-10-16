@@ -132,6 +132,7 @@ bus selftest net: not supported by this engine`.
 | G.1 `net tz` (firmware 1.3, 25517de) | pass 2026-09-30: `net tz -240` + `save` + reboot logs `net: sntp set 1790765675 (utc 1790780075 tz -240)`, exactly Mac UTC minus 14400; `net tz 0` then `net tz -240` move `time` at once, no hourly wait | |
 | G.1 reconnect after a Pico reboot with picoco-host (af12f4d) | pass 2026-09-30: the server replaces the stale client on the new accept; `bus selftest net` passes right after the reboot (dwinit 5 ms, worst 19 ms) without restarting the server. `bus selftest net` is not supported by the PIO engine | |
 | G.1 first-auth rejection (Plus-W on headers, 3e32f3a+) | Over 4 reboots: 2 joins clean at 3.0-3.1 s; 2 saw `BADAUTH` on the first auth and the driver re-authed itself 2.0-2.1 s later (total 5.4 s). The 2 s is the AP/driver, not our retry timer: `net.c` now waits `NET_BADAUTH_GRACE_MS` (3 s) before calling it `bad password`, and a `NONET` first scan rejoins at once instead of after `NET_RETRY_MS` (one boot missed the 10 s hold that way: `no such network` at 4.5 s, up at 15.1 s, native fallback) | 2026-10-15 |
+| G.1 first scan misses the AP (63585fd, immediate rejoin) | `no such network` at 4.5 s, rejoin up at 11.4 s: 0.5 s after the 10 s hold had fallen back to native, so HDB-DOS got `?IO ERROR` on drive 0. The hold now runs to `NET_BOOT_HOLD_MAX_MS` (16 s) while the join is still in progress; a refused server still falls back at 10 s | 2026-10-16 |
 | G.2 boot hold with CoCo | pass (Plus-W on headers, `plusw_hdr`): HDB-DOS banner with the cursor after the hold, drive 0 served by `picoco-host` on the Mac. The `plusw` PCB build served the ROM but saw no Becker events (its event SM waits on pad-grid E, absent on headers): HDB-DOS banner, no cursor | 2026-10-15 |
 | G.2 DIR/LOADM from DW4 | pass with `picoco-host` on the Mac (DW4 not tried): `DIR` of PICOCO.DSK in drive 0, `LOADM"PICOCO"` then `RUN`; `net bytes up 98 down 3598 overrun 0 retries 0` | 2026-10-16 |
 | G.2 DIR/LOADM from FujiNet-PC | | |
@@ -483,9 +484,11 @@ copied to the flash and mounted in drive 3.
    and no `rom prev`.
 3. Mount a disk from the Manager, BREAK, `DIR` on it: the mount took and the
    DOS is live.
-4. `becker off` on the console, then `RUN"PICOCO"`: `PICOCO NOT RESPONDING` at
-   the top left, then `OK` (the Loader gives up after ~1.3 s). `becker native`
-   again afterwards.
+4. `becker off` does not make the Loader fail: the Stub owns the Becker port in
+   every transport mode, so the Manager comes up with `OFF` in the header. The
+   failure path is an emulator check: XRoar `coco2bus` with `picoco-host`
+   started without `--ui`, `LOADM"PICOCO"` then `EXEC`: `PICOCO NOT RESPONDING`
+   at the top left, then `OK` (the Loader gives up after ~1.3 s).
 5. CoCo 2 rows (batched session): 1-3 at 0.89 MHz; the Stub runs from the cart.
 
 ### J.6 Boot screen (#66: NitrOS-9 boot and the RS-DOS program handoff)
@@ -547,7 +550,8 @@ run there (no cart swap, no Becker boot disk).
 | J.4.2-6, J.4.8 | open | |
 | J.5.1 Loader entry (Plus-W on headers, net mode, 63585fd) | pass: `RUN"PICOCO"` from HDB-DOS enters the Manager; `status` shows `rom now load manager`, `rom prev hdbdw3bck.rom`; `becker reads 3788 writes 113 underrun 0 overrun 0`, `engine_stall 0`, `event_drop 0` | 2026-10-16 |
 | J.5.2 BREAK on a Loader entry | pass: `OK` with no banner, `LIST` shows PICOCO.BAS; `status` `rom now load hdbdw3bck.rom`, no `rom prev`; `becker reads 5164 writes 182 underrun 0 overrun 0`, `engine_stall 0` | 2026-10-16 |
-| J.5.3-5 | open | |
+| J.5.4 Loader with no answer | bench: `becker off` then `EXEC` still enters the Manager, header `PICOCO  COCO 3 2M   OFF 1.4` (the Stub owns the port in every mode). Emulator (aee164b+): `picoco-host` without `--ui`, `LOADM"PICOCO"`, `EXEC`: `PICOCO NOT RESPONDING` then `OK` | 2026-10-16 |
+| J.5.3, J.5.5 | open | |
 | J.6.1-7 | open | |
 | J.3.10 CoCo 2 double RESET | pass once with the first flash-marker build (3 s window): manager loaded, `EXEC 49154`, launch carttest, single RESET back to the saved ROM. Not re-run with the final 2 s window + debounce build | 2026-10-01 |
 
