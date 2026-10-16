@@ -557,7 +557,8 @@ run there (no cart swap, no Becker boot disk).
 | J.5.5 | open | |
 | J.6.1-3 Boot list, BREAK, ENTER on PICOCO.BIN (native, Loader entry) | pass: `RUN WHICH FILE?` lists PICOCO.BAS and PICOCO.BIN; BREAK returns to DISKS with drive 0 mounted; ENTER clears the screen, BASIC types `DRIVE0:LOADM"PICOCO.BIN":EXEC` and the Loader re-enters the Manager; `rom prev hdbdw3bck.rom`, `dw reads 21 crc_err 0`, `becker underrun 0 overrun 0`, `engine_stall 0` | 2026-10-16 |
 | J.6.5 power-on entry, J.6.6 net mode (Plus-W on headers, 91034ac) | pass: double RESET, `PICOCO  COCO 3 2M   NATIVE 1.4`; `B` on PICOCO.DSK, ENTER on `PICOCO.BAS` shows `STARTING DOS, THEN TYPE:` / `RUN"PICOCO.BAS"`; a key cold-restarts into HDB-DOS (`$17`) and the typed line enters the Manager through the Loader. Typing the line found clunky: #69. In net mode `B` says `BOOT NEEDS NATIVE MODE` | 2026-10-16 |
-| J.6.4, J.6.7 | open | |
+| J.6.4 NitrOS-9 boot and no answer (Plus-W on headers, native, 91034ac) | pass: `B` on `NOS9BECK.DSK` (stock L2 6309 Becker floppy from flash) boots NitrOS-9 to the shell; `dw reads 498 crc_err 0 timeouts 0`, OP_READ 18 (the Stub), OP_READEX 480, `becker underrun 0 overrun 0`, `engine_stall 0`, `event_drop 0`. The boot saves `dw hdbdos off` with the disk in drive 0. With `becker off` saved: header `OFF`, `B` shows `PICOCO NOT RESPONDING`, a key brings the Manager back | 2026-10-16 |
+| J.6.7 | open | |
 | J.3.10 CoCo 2 double RESET | pass once with the first flash-marker build (3 s window): manager loaded, `EXEC 49154`, launch carttest, single RESET back to the saved ROM. Not re-run with the final 2 s window + debounce build | 2026-10-01 |
 
 ## K. PIO bus engine
