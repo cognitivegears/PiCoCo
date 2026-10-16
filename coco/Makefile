@@ -1,13 +1,11 @@
-# PiCoCo manager: CMOC + LWTOOLS build of PICOCO.BIN, ToolShed decb for the .DSK.
-CMOC ?= cmoc
+# PiCoCo Loader: lwasm builds PICOCO.BIN, ToolShed decb puts it on the .DSK
+# with PICOCO.BAS. The CoCo-side manager's C sources are retired by #61.
 DECB ?= decb
-ORG  ?= 0x3800
-SRCS  = main.c ui.c dw.c parse.c boot.c hook.asm
 
 all: PICOCO.DSK
 
-PICOCO.BIN: $(SRCS) $(wildcard *.h)
-	$(CMOC) --coco --org=$(ORG) --limit=7B80 -o $@ $(SRCS)
+PICOCO.BIN: loader.asm
+	lwasm --format=decb -o $@ --list=loader.lst $<
 
 PICOCO.DSK: PICOCO.BIN PICOCO.BAS
 	rm -f $@

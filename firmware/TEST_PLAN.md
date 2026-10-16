@@ -469,6 +469,23 @@ there is no save key.
    `net status`; `M` flips the next-boot transport and shows `(RESET TO APPLY)`.
 8. BREAK on a screen returns home; BREAK on the home screen returns to BASIC.
 
+### J.5 Loader (#60: into the Manager from a running DOS, and back)
+
+CoCo 3, Pico 2 PCB, HDB-DOS as the saved ROM; `PICOCO.DSK` (`make -C coco`)
+copied to the flash and mounted in drive 3.
+
+1. `DRIVE 3:RUN"PICOCO"`: the home screen; `status` shows `rom now load manager`
+   and `rom prev HDBDW3BC3.ROM`.
+2. BREAK on the home screen: back at `OK` with the BASIC program still listable
+   (`LIST`), no banner (no restart); `status` shows `rom now load HDBDW3BC3.ROM`
+   and no `rom prev`.
+3. Mount a disk from the Manager, BREAK, `DIR` on it: the mount took and the
+   DOS is live.
+4. `becker off` on the console, then `RUN"PICOCO"`: `PICOCO NOT RESPONDING` at
+   the top left, then `OK` (the Loader gives up after ~1.3 s). `becker native`
+   again afterwards.
+5. CoCo 2 rows (batched session): 1-3 at 0.89 MHz; the Stub runs from the cart.
+
 ### J.2 Results
 
 | Check | Result | Date |
@@ -495,6 +512,7 @@ there is no save key.
 | ROM trials from the manager, CoCo 3 | work: Daggorath, Microbes, Temple of ROM, Thexder. Corrupt graphics: Tetris (16K: selects 1.79 MHz with `$FFD9` and runs from the cart, i.e. back-to-back cart cycles in fast mode), Silpheed and Super Pitfall (32K: need A14, and fast mode too) | 2026-10-02 |
 | J.3 re-run on the head build (7ea34e6) | pass: double RESET, header `PICOCO  COCO 3`; ENTER on `HDBDW3BC3.ROM` gives HDB-DOS and `DIR`; double RESET, ENTER on `CARTTEST.ROM` prints PASS lines. These are the exits that select slow speed and clear `$FEED` | 2026-10-02 |
 | J.4.1-8 | open | |
+| J.5.1-5 | open | |
 | J.3.10 CoCo 2 double RESET | pass once with the first flash-marker build (3 s window): manager loaded, `EXEC 49154`, launch carttest, single RESET back to the saved ROM. Not re-run with the final 2 s window + debounce build | 2026-10-01 |
 
 ## K. PIO bus engine

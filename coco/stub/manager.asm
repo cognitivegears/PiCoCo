@@ -4,7 +4,8 @@
 * the action list: draw text, clear, or leave (jump / restart).
 *
 * Entry is $C002 on every path (the image starts with "DK"):
-*   Extended BASIC cold start, or EXEC 49154 from Color BASIC.
+*   Extended BASIC cold start, EXEC 49154 from Color BASIC, or the Loader
+*   (coco/loader.asm) from a running DOS, marked by X = $5043 and A = $4C.
 * Rules: interrupts masked, no BASIC ROM call except POLCAT [$A000] (it is
 * not hooked through RAM), never CLR a Becker register (CLR reads first).
 * Y is the frame pointer for the whole session; nothing else may use Y.
@@ -25,7 +26,8 @@ LEN     equ BUFSZ+3             2 bytes
 ACC     equ BUFSZ+5             2 bytes, running sum of the reply
 CNT     equ BUFSZ+7             2 bytes
 TRIES   equ BUFSZ+9
-FRAME   equ BUFSZ+10
+LOADER  equ BUFSZ+10            1 = entered from the Loader (caps bit 3; 13/18 return into it)
+FRAME   equ BUFSZ+11
 
         org $C000
         fcc "DK"
@@ -40,7 +42,13 @@ START   jmp BEGIN
 BEGIN   orcc #$50
         leas -FRAME,s
         tfr s,y
-        lda #$A5
+        clr LOADER,y
+        cmpx #$5043             the Loader's mark, checked before any register is touched
+        bne BEG1
+        cmpa #$4C
+        bne BEG1
+        inc LOADER,y
+BEG1    lda #$A5
         sta UICTL
         jsr DRAIN
         jsr DETECT
@@ -89,7 +97,10 @@ DET2    pshs b
 DET2N   coma
         sta $7FFF               put back whatever we changed
         puls b
-DET3    tfr b,a
+DET3    tst LOADER,y
+        beq DET4
+        orb #$08                bit 3: Disk BASIC live, entered from the Loader
+DET4    tfr b,a
         rts
 
 * CoCo 3 RAM size, in caps bits 6-7: A = $00 128K, $40 512K, $80 1 MB, $C0 2 MB.
@@ -352,7 +363,9 @@ LV2     lda BDATA
         cmpb #$18
         beq LVWARM3
         clr RSTSW               11: cold restart
-LVWARM  jmp [$FFFE]
+LVWARM  tst LOADER,y
+        bne LVRET
+        jmp [$FFFE]
 LVJMP   andcc #$AF
         jmp $C000
 * CoCo 3 exits. All three first select 0.89 MHz ($FFD8): the board cannot
@@ -367,8 +380,13 @@ LVCOLD3 sta $FFD8
         clr $FEED               INT.FLAG: not $55 forces the init's cold path, which recopies the cart
         clr RSTSW
         jmp $8C1B
-LVWARM3 sta $FFD8
+LVWARM3 tst LOADER,y
+        bne LVRET
+        sta $FFD8
         jmp $8C1B
+* 13 or 18 on a Loader entry: the previous ROM is back in the window; return
+* into the Loader, which returns to BASIC. No DOS init runs on this path.
+LVRET   rts
 LVFAIL  leas FRAME,y
         jmp START
 LEAVEND

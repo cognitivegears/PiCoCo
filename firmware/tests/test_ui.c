@@ -81,6 +81,7 @@ static void poll(uint8_t flags, uint8_t key, int caps, uint32_t now) {
 }
 
 static void open_roms(int capsv);
+static void expect_clear_then(uint8_t act);
 
 /* Check the framing of the reply in tx; returns the action-byte count or -1. */
 static int reply_ok(void) {
@@ -468,6 +469,42 @@ TEST(launch_is_not_saved) {
     ui_feed(&g, 1, 20);
     ASSERT_EQ(nlines, 1);
     ASSERT(strcmp(lines[0], "rom launch game.rom") == 0);
+}
+
+/* The Loader (spec 7.2, #60) sends L + sum8 before it jumps into the Stub. */
+TEST(loader_request_launches_the_manager) {
+    setup();
+    ui_ctl(0xA5);
+    txn = 0;
+    uint8_t bad[2] = { 'L', 'X' };
+    ui_feed(bad, 2, 10);
+    ASSERT_EQ(txn, 0);                       /* wrong sum: no reply, the Loader times out */
+    ASSERT_EQ(nlines, 0);
+    uint8_t good[2] = { 'L', 'L' };
+    ui_feed(good, 2, 20);
+    ASSERT_EQ(txn, 1);
+    ASSERT_EQ(tx[0], UI_GO_OK);
+    ASSERT_EQ(nlines, 1);
+    ASSERT(strcmp(lines[0], "rom launch manager") == 0);
+    ASSERT(ui_active());
+    exec_rc = -1;
+    txn = 0;
+    ui_feed(good, 2, 30);
+    ASSERT_EQ(tx[0], UI_GO_FAIL);
+}
+
+/* No previous ROM known (this harness has no console): BREAK on a Loader
+ * entry is a plain warm return with nothing to load. */
+TEST(loader_entry_break_without_previous_rom) {
+    setup();
+    open_with(UI_CAP_32K | UI_CAP_ECB | UI_CAP_DOS);
+    poll(0, UI_KEY_BREAK, -1, 10);
+    expect_clear_then(UI_ACT_WARM);
+    uint8_t g = 'G';
+    txn = 0;
+    ui_feed(&g, 1, 20);
+    ASSERT_EQ(tx[0], UI_GO_OK);
+    ASSERT_EQ(nlines, 0);
 }
 
 static void open_disks(int capsv) {
@@ -941,6 +978,8 @@ int main(void) {
     RUN(coco2_codes_unchanged);
     RUN(default_rom_is_set_and_saved);
     RUN(launch_is_not_saved);
+    RUN(loader_request_launches_the_manager);
+    RUN(loader_entry_break_without_previous_rom);
     RUN(disks_lists_images_not_roms_or_config);
     RUN(mount_and_eject_are_saved_and_shown);
     RUN(failed_change_shows_the_reason_and_does_not_save);

@@ -47,6 +47,8 @@ static char msg[UI_COLS + 1];
 static char pending[NAME_LEN];
 static uint8_t pending_act;
 static bool msg_keep;           /* a failed leave's reason is for the session the stub starts next */
+static char prev[NAME_LEN];     /* the ROM the Loader's L replaced (#60); BREAK on that entry puts it back */
+static bool want_lsum;          /* an L arrived; its sum8 (another L) is next */
 static uint32_t now_ms;
 
 /* One list, reloaded when a list screen opens. */
@@ -240,7 +242,9 @@ static bool list_key(uint8_t key) {
 /* ---- leaving ---- */
 
 static uint8_t leave_warm(void) {
-    pending[0] = '\0';
+    /* A Loader entry (bit 3) came from a running DOS: put that ROM back first.
+     * The Stub then returns through the Loader instead of restarting. */
+    snprintf(pending, sizeof pending, "%s", (caps & UI_CAP_DOS) ? prev : "");
     pending_act = (caps & UI_CAP_COCO3) ? UI_ACT_WARM3 : UI_ACT_WARM;
     return pending_act;
 }
@@ -599,6 +603,7 @@ static void on_poll(uint8_t flags, uint8_t key, uint8_t c) {
 }
 
 static void on_go(void);
+static void on_load(void);
 
 void ui_feed(const uint8_t *buf, size_t n, uint32_t now) {
     now_ms = now;
@@ -607,6 +612,8 @@ void ui_feed(const uint8_t *buf, size_t n, uint32_t now) {
     for (size_t i = 0; i < n; i++) {
         uint8_t b = buf[i];
         if (pkn == 0) {
+            if (want_lsum) { want_lsum = false; if (b == 'L') on_load(); continue; }   /* sum8 of "L" is L */
+            if (b == 'L') { want_lsum = true; continue; }
             if (b == 'G') { on_go(); continue; }
             if (b != 'P') continue;                 /* noise: wait for a poll */
         }
@@ -622,7 +629,7 @@ void ui_feed(const uint8_t *buf, size_t n, uint32_t now) {
 }
 
 void ui_ctl(uint8_t codev) {
-    if (codev == 0xA5) { active = true; pkn = 0; reply_len = 0; pending_act = 0; }
+    if (codev == 0xA5) { active = true; pkn = 0; reply_len = 0; pending_act = 0; want_lsum = false; }
     else if (codev == 0x5A) active = false;
 }
 
@@ -634,7 +641,7 @@ void ui_init(ui_send_fn send, void *ctx, ui_exec_fn exec, dw_store *store, dw_se
     pkn = 0; reply_len = 0; pending_act = 0;
     screen = SCR_HOME; menu_sel = 0; scanning = false; ui_text_key(UI_KEY_BREAK);
     nnames = sel = top = 0; truncated = false;
-    msg[0] = '\0'; pending[0] = '\0'; caps = 0;
+    msg[0] = '\0'; pending[0] = '\0'; prev[0] = '\0'; caps = 0; want_lsum = false;
     memset(scr, 0x60, sizeof scr);
     memset(sent, 0x60, sizeof sent);
     memset(ack, 0x60, sizeof ack);
@@ -650,6 +657,19 @@ static void on_go(void) {
         if (g_exec(line, err, sizeof err) != 0) { r = UI_GO_FAIL; set_msg(err); msg_keep = true; }
     }
     pending_act = 0;
-    if (r == UI_GO_OK) { msg[0] = '\0'; active = false; }
+    if (r == UI_GO_OK) { msg[0] = '\0'; active = false; if (strcmp(pending, prev) == 0) prev[0] = '\0'; }
     g_send(g_ctx, &r, 1);
 }
+
+/* The Loader asks for the manager from a running DOS: remember what it
+ * replaces so BREAK can put it back. A console `rom launch` leaves prev alone. */
+static void on_load(void) {
+    char err[UI_COLS + 1];
+    const char *now = console_rom_now();
+    snprintf(prev, sizeof prev, "%s", strcasecmp(now, "manager") == 0 ? "" : now);
+    uint8_t r = g_exec("rom launch manager", err, sizeof err) == 0 ? UI_GO_OK : UI_GO_FAIL;
+    if (r != UI_GO_OK) prev[0] = '\0';
+    g_send(g_ctx, &r, 1);
+}
+
+const char *ui_prev_rom(void) { return prev; }

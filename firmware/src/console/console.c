@@ -286,6 +286,7 @@ static int cmd_status(void) {
     outf("dw hdbdos %s\n", g_dw->hdbdos ? "on" : "off"); /* DWINIT can flip this remotely */
     outf("rom now %s\n", rom_now[0] ? rom_now : "none");
     outf("rom next %s\n", rom_cmd[0] ? rom_cmd : "none");
+    if (ui_prev_rom()[0]) outf("rom prev %s\n", ui_prev_rom());
     outf("becker reads %u writes %u underrun %u overrun %u\n",
          becker_stats.reads, becker_stats.writes, becker_stats.underrun, becker_stats.overrun);
     if (net_available()) outf("net %s %s\n", net_state_name(net_state()), net_ip());
@@ -379,6 +380,7 @@ static int cmd_rom(int argc, char **argv) {
 static int g_boot_mode = -1; /* pending next-boot mode from "net mode", -1 = none */
 void console_set_boot_mode(picoco_mode m) { g_boot_mode = (int)m; }
 picoco_mode console_boot_mode(void) { return g_boot_mode >= 0 ? (picoco_mode)g_boot_mode : mode_get(); }
+const char *console_rom_now(void) { return strncmp(rom_now, "load ", 5) == 0 ? rom_now + 5 : rom_now; }
 const char *console_rom_next(void) { return strncmp(rom_cmd, "load ", 5) == 0 ? rom_cmd + 5 : rom_cmd; }
 
 static int cmd_becker(int argc, char **argv) {
