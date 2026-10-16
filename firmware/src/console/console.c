@@ -379,7 +379,7 @@ static int cmd_rom(int argc, char **argv) {
 static int g_boot_mode = -1; /* pending next-boot mode from "net mode", -1 = none */
 void console_set_boot_mode(picoco_mode m) { g_boot_mode = (int)m; }
 picoco_mode console_boot_mode(void) { return g_boot_mode >= 0 ? (picoco_mode)g_boot_mode : mode_get(); }
-const char *console_rom_next(void) { return rom_cmd; }
+const char *console_rom_next(void) { return strncmp(rom_cmd, "load ", 5) == 0 ? rom_cmd + 5 : rom_cmd; }
 
 static int cmd_becker(int argc, char **argv) {
     if (argc < 2) return cerr("usage: becker off|loop|bridge|native|net");

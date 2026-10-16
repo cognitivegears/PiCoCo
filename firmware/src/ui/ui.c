@@ -46,6 +46,7 @@ static int menu_sel;
 static char msg[UI_COLS + 1];
 static char pending[NAME_LEN];
 static uint8_t pending_act;
+static bool msg_keep;           /* a failed leave's reason is for the session the stub starts next */
 static uint32_t now_ms;
 
 /* One list, reloaded when a list screen opens. */
@@ -157,13 +158,23 @@ static int parse_tz(const char *s, int *minutes) {
 
 /* ---- list widget: ROMs and Disks share it ---- */
 
+/* Image files by extension: dw_disk_open reads any file as a raw image, so
+ * this is the convention that keeps README.txt and firmware.uf2 off the list. */
+static bool has_ext(const char *name, const char *const *exts) {
+    const char *dot = strrchr(name, '.');
+    if (!dot) return false;
+    for (; *exts; exts++) if (strcasecmp(dot + 1, *exts) == 0) return true;
+    return false;
+}
+
 static void list_cb(const char *name, uint32_t size, void *ctx) {
     (void)size; (void)ctx;
+    static const char *const roms[] = { "rom", NULL };
+    static const char *const images[] = { "dsk", "jvc", "vdk", "os9", "vhd", "img", NULL };
     size_t l = strlen(name);
     if (l >= NAME_LEN) return;
-    bool rom = l > 4 && strcasecmp(name + l - 4, ".rom") == 0;
     /* `rom boot` takes one token, so a ROM name with a space cannot be sent. */
-    if (list_roms ? (!rom || strchr(name, ' ') != NULL) : (rom || dw_disk_is_config_name(name))) return;
+    if (list_roms ? (!has_ext(name, roms) || strchr(name, ' ') != NULL) : !has_ext(name, images)) return;
     if (nnames >= MAX_NAMES) { truncated = true; return; }
     memcpy(names[nnames++], name, l + 1);
 }
@@ -205,14 +216,15 @@ static void list_draw(const char *title, const char *empty) {
 }
 
 static bool list_key(uint8_t key) {
-    if (jump_armed && key) {
-        jump_armed = false;
+    bool armed = jump_armed;
+    jump_armed = false;
+    if (armed && key >= ' ') {
         if (now_ms - jump_ms > JUMP_MS) jumpn = 0;
-        if (jumpn < 4) jump[jumpn++] = (char)(key >= 'a' && key <= 'z' ? key - 0x20 : key);
+        if (jumpn < 4) jump[jumpn++] = (char)key;
         jump[jumpn] = '\0';
         jump_ms = now_ms;
         for (int i = 0; i < nnames; i++)
-            if (strncasecmp(names[i], jump, (size_t)jumpn) == 0) { sel = top = i; break; }   /* the target heads the window */
+            if (strncasecmp(names[i], jump, (size_t)jumpn) == 0) { sel = i; break; }
     }
     else if (key == UI_KEY_UP) { if (sel > 0) sel--; }
     else if (key == UI_KEY_DOWN) { if (sel + 1 < nnames) sel++; }
@@ -245,8 +257,7 @@ static void draw_header(void) {
                  caps & UI_CAP_64K ? "64K" : caps & UI_CAP_32K ? "32K" : "16K",
                  caps & UI_CAP_ECB ? "ECB" : "NO ECB");
     put(0, 0, line, false);
-    snprintf(line, sizeof line, "%s " PICOCO_VERSION, mode_name(mode_get()));
-    for (char *p = line; *p; p++) if (*p >= 'a' && *p <= 'z') *p -= 0x20;
+    snprintf(line, sizeof line, "%s " PICOCO_VERSION, mode_name(mode_get()));   /* code() upper-cases it */
     put_right(0, line);
 }
 
@@ -255,12 +266,11 @@ static void draw_home(void) {
     char line[UI_COLS + 1];
     for (int i = 0; i < DW_MAX_DRIVES; i++) {
         dw_disk *d = &g_dw->drives[i];
-        snprintf(line, sizeof line, "D%d %s", i, d->mounted ? d->name : "-");
+        snprintf(line, sizeof line, "D%d %.*s", i, d->read_only ? UI_COLS - 6 : UI_COLS - 3, d->mounted ? d->name : "-");
         put(2 + i, 0, line, false);
         if (d->mounted && d->read_only) put_right(2 + i, "RO");
     }
     const char *next = console_rom_next();
-    if (strncmp(next, "load ", 5) == 0) next += 5;
     snprintf(line, sizeof line, "ROM NEXT %s", next[0] ? next : "MANAGER");
     put(6, 0, line, false);
     for (int i = 0; i < 4; i++) put(8 + i, 1, items[i], i == menu_sel);
@@ -331,7 +341,7 @@ static uint8_t key_roms(uint8_t key) {
 
 static void draw_disks(void) {
     list_draw("DISKS", "NO DISK IMAGES");
-    put(15, 0, "0-3=MOUNT  E=EJECT  N=NEW  B=BOOT", false);
+    put(15, 0, "0-3=MOUNT E=EJECT N=NEW B=BOOT", false);
 }
 
 static void new_disk_cb(const char *text) {
@@ -344,13 +354,14 @@ static void new_disk_cb(const char *text) {
 
 static uint8_t key_disks(uint8_t key) {
     char line[24 + NAME_LEN];
+    bool eject = eject_armed && key;
+    if (key) eject_armed = false;           /* the arm lasts one key, like its prompt */
     if (list_key(key)) return 0;
     if (key == UI_KEY_BREAK) screen = SCR_HOME;
     else if (key >= '0' && key < '0' + DW_MAX_DRIVES) {
-        if (eject_armed) snprintf(line, sizeof line, "dw disk eject %c", key);
+        if (eject) snprintf(line, sizeof line, "dw disk eject %c", key);
         else if (nnames) snprintf(line, sizeof line, "dw disk insert %c %s", key, names[sel]);
         else return 0;
-        eject_armed = false;
         change(line);
     }
     else if (key == 'E' || key == 'e') { eject_armed = true; set_msg("EJECT: PRESS 0-3"); }
@@ -576,7 +587,11 @@ static void on_poll(uint8_t flags, uint8_t key, uint8_t c) {
     if ((flags & 1) && reply_len) { g_send(g_ctx, reply, reply_len); return; }
     bool first = (flags & 2) != 0;
     uint8_t act = 0;
-    if (first) { caps = c; screen = SCR_HOME; menu_sel = 0; scanning = false; ui_text_key(UI_KEY_BREAK); }
+    if (first) {
+        caps = c; screen = SCR_HOME; menu_sel = 0; scanning = false; ui_text_key(UI_KEY_BREAK);
+        if (!msg_keep) msg[0] = '\0';
+        msg_keep = jump_armed = eject_armed = false;
+    }
     else { memcpy(ack, sent, sizeof ack); act = on_key(key); }   /* a new poll acknowledges the last reply */
     if (act) memset(scr, 0x60, sizeof scr);   /* leaving: the reply clears the screen, nothing to draw */
     else draw();
@@ -632,7 +647,7 @@ static void on_go(void) {
     else if (pending[0]) {
         char line[16 + NAME_LEN], err[UI_COLS + 1] = "ROM LOAD FAILED";
         snprintf(line, sizeof line, "rom launch %s", pending);
-        if (g_exec(line, err, sizeof err) != 0) { r = UI_GO_FAIL; set_msg(err); }
+        if (g_exec(line, err, sizeof err) != 0) { r = UI_GO_FAIL; set_msg(err); msg_keep = true; }
     }
     pending_act = 0;
     if (r == UI_GO_OK) { msg[0] = '\0'; active = false; }

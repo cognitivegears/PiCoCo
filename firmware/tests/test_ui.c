@@ -739,14 +739,73 @@ TEST(list_pages_counts_and_jumps) {
     ASSERT(row_has(2, "A00.ROM"));
     poll(0, 'G', -1, 20);
     poll(0, 'c', -1, 21);                   /* lowercase mode: still a jump to C */
-    ASSERT(row_has(2, "C20.ROM"));
+    ASSERT(row_has(13, "C20.ROM"));         /* the window scrolls just enough, as for any move */
+    ASSERT(row_has(1, "10-21 OF 30"));
     poll(0, 'G', -1, 22);
     poll(0, '2', -1, 23);                   /* within a second: prefix C2 */
-    ASSERT(row_has(2, "C20.ROM"));
+    ASSERT(row_has(13, "C20.ROM"));
     poll(0, 'G', -1, 2000);
     poll(0, 'B', -1, 2001);                 /* a second later: a new prefix */
-    ASSERT(row_has(2, "B10.ROM") || row_has(13, "B10.ROM"));
+    ASSERT(row_has(3, "B10.ROM"));
     ASSERT_EQ(nlines, 0);
+}
+
+TEST(g_then_a_control_key_still_acts) {
+    setup();
+    mkfile("a.rom", "\x7E\xC0\x10", 8192);
+    open_roms(0);
+    poll(0, 'G', -1, 10);
+    poll(0, UI_KEY_BREAK, -1, 11);
+    ASSERT(row_has(15, "ENTER=OPEN  BREAK=BASIC"));   /* back home, not swallowed as a jump letter */
+}
+
+TEST(eject_arm_lasts_one_key) {
+    setup();
+    mkfile("alpha.dsk", "", 256);
+    mkfile("beta.dsk", "", 256);
+    open_disks(0);
+    poll(0, 'E', -1, 10);
+    poll(0, UI_KEY_DOWN, -1, 11);           /* changed my mind, picked another image */
+    poll(0, '1', -1, 12);
+    ASSERT_EQ(nlines, 2);
+    ASSERT(strcmp(lines[0], "dw disk insert 1 beta.dsk") == 0);
+}
+
+TEST(new_session_starts_without_last_sessions_message) {
+    setup();
+    mkfile("alpha.dsk", "", 256);
+    open_disks(0);
+    exec_rc = -1;
+    poll(0, '0', -1, 10);
+    ASSERT(row_has(14, "ROM LOAD FAILED"));
+    ui_ctl(0xA5);
+    poll(2, 0, 0, 20);
+    ASSERT(!row_has(14, "FAILED"));
+}
+
+TEST(disks_lists_image_files_only) {
+    setup();
+    mkfile("firmware.uf2", "", 256);
+    mkfile("notes.txt", "", 16);
+    mkfile("a.dsk", "", 256);
+    mkfile("b.jvc", "", 256);
+    mkfile("c.vdk", "", 256);
+    open_disks(0);
+    ASSERT(row_has(2, "A.DSK"));
+    ASSERT(row_has(3, "B.JVC"));
+    ASSERT(row_has(4, "C.VDK"));
+    ASSERT(!row_has(5, "."));
+}
+
+TEST(home_long_read_only_name_keeps_ro) {
+    setup();
+    mkfile("abcdefghijklmnopqrstuvwxyz0.dsk", "", 256);   /* 31 chars */
+    ASSERT_EQ(dw_mount(&dw, 1, "abcdefghijklmnopqrstuvwxyz0.dsk", true), 0);
+    open_with(0);
+    char row[UI_COLS + 1];
+    ui_row_text(3, row);
+    ASSERT(strncmp(row, "D1 ABCDEFGHIJKLMNOPQRSTUVW", 26) == 0);
+    ASSERT(strcmp(row + UI_COLS - 2, "RO") == 0);
 }
 
 static void open_settings(int capsv) {
@@ -899,6 +958,11 @@ int main(void) {
     RUN(bad_clock_text_runs_nothing);
     RUN(timezone_is_parsed_in_minutes);
     RUN(list_pages_counts_and_jumps);
+    RUN(g_then_a_control_key_still_acts);
+    RUN(eject_arm_lasts_one_key);
+    RUN(new_session_starts_without_last_sessions_message);
+    RUN(disks_lists_image_files_only);
+    RUN(home_long_read_only_name_keeps_ro);
     RUN(settings_toggle_hdbdos_is_saved);
     RUN(wifi_screen_without_a_radio_is_one_line);
     RUN(bad_size_refused_before_leaving);
