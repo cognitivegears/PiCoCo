@@ -3,6 +3,7 @@
 #include <stdbool.h>
 #include <stddef.h>
 #include "dw_store.h"
+#include "dw.h"
 
 /* On-board manager UI (spec 2026-10-01-rom-manager-design.md). core0 only.
  * The CoCo stub polls with the last key; ui answers with an action list. */
@@ -32,6 +33,8 @@
 #define UI_KEY_DOWN  0x0A
 #define UI_KEY_ENTER 0x0D
 #define UI_KEY_UP    0x5E
+#define UI_KEY_PGUP  0x5F           /* SHIFT+UP */
+#define UI_KEY_PGDN  0x5B           /* SHIFT+DOWN */
 
 #define UI_GO_OK   0x06             /* reply to the stub's 'G' */
 #define UI_GO_FAIL 0x15
@@ -39,7 +42,7 @@
 typedef void (*ui_send_fn)(void *ctx, const uint8_t *buf, size_t n);
 typedef int  (*ui_exec_fn)(const char *line, char *msg, size_t cap);   /* 0 ok, else msg = reason */
 
-void ui_init(ui_send_fn send, void *ctx, ui_exec_fn exec, dw_store *store);
+void ui_init(ui_send_fn send, void *ctx, ui_exec_fn exec, dw_store *store, dw_server *dw);
 void ui_ctl(uint8_t code);          /* a write to $FF43: 0xA5 begin, 0x5A end */
 bool ui_active(void);
 void ui_feed(const uint8_t *buf, size_t n, uint32_t now_ms);   /* bytes from the CoCo during a session */

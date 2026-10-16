@@ -450,6 +450,25 @@ BASIC):
     flash-marker build (3 s window); not re-run with the final 2 s window
     and debounce.
 
+### J.4 Manager screens (#58: home, Disks, Settings, WiFi, save on every change)
+
+CoCo 3, Pico 2 PCB, unless noted. Every change is saved at once (ADR 0011):
+there is no save key.
+
+1. Double RESET: the home screen. Row 0 `PICOCO  COCO 3 <RAM>   NATIVE <version>`;
+   `D0`-`D3` match `status`'s drive lines; `ROM NEXT` matches `rom next`.
+2. ROMS: ENTER launches as before; `D` on `HDBDW3BC3.ROM` shows `NEXT BOOT SET`,
+   `picoco.cfg` now holds `rom load HDBDW3BC3.ROM` (check with `fs export` or `rom next`).
+3. DISKS: `1` on an image mounts it in drive 1 (digit shown by the name);
+   `E` then `1` ejects. RESET: the mount is still there (`status`), no `save` typed.
+4. SHIFT+UP/DOWN page a long list; `G` then a letter jumps; the title row counts.
+5. SETTINGS: `H` toggles the HDB-DOS mode; the clock row shows the date; `T`/`Z`
+   say `NOT YET` until #59.
+6. WIFI on the Pico 2 PCB: `NO RADIO ON THIS BOARD`.
+7. WIFI on the Plus-W header build: SSID, PSK, SERVER, MODE, STATE, IP rows match
+   `net status`; `M` flips the next-boot transport and shows `(RESET TO APPLY)`.
+8. BREAK on a screen returns home; BREAK on the home screen returns to BASIC.
+
 ### J.2 Results
 
 | Check | Result | Date |
@@ -475,6 +494,7 @@ BASIC):
 | J.3 re-run on 1d86869 (screen clear, RAM size) | pass: header `PICOCO  COCO 3 2M` on the 2 MB machine (RAM probe through MMU slot 4), arrows, `TEMPLE.ROM`/`DAGGORATH.ROM` start on a clean screen, HDB-DOS launch and `DIR` | 2026-10-02 |
 | ROM trials from the manager, CoCo 3 | work: Daggorath, Microbes, Temple of ROM, Thexder. Corrupt graphics: Tetris (16K: selects 1.79 MHz with `$FFD9` and runs from the cart, i.e. back-to-back cart cycles in fast mode), Silpheed and Super Pitfall (32K: need A14, and fast mode too) | 2026-10-02 |
 | J.3 re-run on the head build (7ea34e6) | pass: double RESET, header `PICOCO  COCO 3`; ENTER on `HDBDW3BC3.ROM` gives HDB-DOS and `DIR`; double RESET, ENTER on `CARTTEST.ROM` prints PASS lines. These are the exits that select slow speed and clear `$FEED` | 2026-10-02 |
+| J.4.1-8 | open | |
 | J.3.10 CoCo 2 double RESET | pass once with the first flash-marker build (3 s window): manager loaded, `EXEC 49154`, launch carttest, single RESET back to the saved ROM. Not re-run with the final 2 s window + debounce build | 2026-10-01 |
 
 ## K. PIO bus engine

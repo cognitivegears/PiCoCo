@@ -2,6 +2,7 @@
 #include "ui.h"
 #include "plat.h"
 #include "dw_store.h"
+#include "dw.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -9,9 +10,12 @@
 
 static char g_dir[300];
 static dw_store store;
+static dw_server dw;
 static uint8_t tx[4096];
 static size_t txn;
 static char last_line[80];
+static char lines[16][80];      /* every console line the Manager ran, in order */
+static int nlines;
 static int exec_rc;
 
 static void send_cb(void *ctx, const uint8_t *buf, size_t n) {
@@ -21,6 +25,7 @@ static void send_cb(void *ctx, const uint8_t *buf, size_t n) {
 }
 static int exec_cb(const char *line, char *msg, size_t cap) {
     snprintf(last_line, sizeof last_line, "%s", line);
+    if (nlines < 16) snprintf(lines[nlines++], sizeof lines[0], "%s", line);
     if (exec_rc) snprintf(msg, cap, "rom load failed");
     return exec_rc;
 }
@@ -52,8 +57,10 @@ static void setup(void) {
     txn = 0;
     exec_rc = 0;
     last_line[0] = '\0';
+    nlines = 0;
     dw_store_posix_init(&store, g_dir);
-    ui_init(send_cb, NULL, exec_cb, &store);
+    dw_init(&dw, &store, NULL, NULL);
+    ui_init(send_cb, NULL, exec_cb, &store, &dw);
 }
 
 /* Send one poll the way the stub does. caps < 0: not a first poll. */
@@ -68,6 +75,8 @@ static void poll(uint8_t flags, uint8_t key, int caps, uint32_t now) {
     txn = 0;
     ui_feed(p, n, now);
 }
+
+static void open_roms(int capsv);
 
 /* Check the framing of the reply in tx; returns the action-byte count or -1. */
 static int reply_ok(void) {
@@ -126,8 +135,7 @@ TEST(coco3_header_shows_ram_size) {
         poll(2, 0, UI_CAP_COCO3 | UI_CAP_ECB | UI_CAP_64K | UI_CAP_32K | t[i].bits, 0);
         char row[UI_COLS + 1];
         ui_row_text(0, row);
-        for (int k = UI_COLS - 1; k >= 0 && row[k] == ' '; k--) row[k] = '\0';
-        ASSERT(strcmp(row, t[i].want) == 0);
+        ASSERT(strncmp(row, t[i].want, strlen(t[i].want)) == 0);   /* the transport and version follow */
         ASSERT(strstr(row, "64K") == NULL);
         ASSERT(strstr(row, "ECB") == NULL);
     }
@@ -185,8 +193,7 @@ TEST(reply_never_exceeds_cap) {
         snprintf(n, sizeof n, "%02d_abcdefghijklmnopqrstuvwx.rom", i);   /* 31 chars */
         mkfile(n, "", 8192);
     }
-    ui_ctl(0xA5);
-    poll(2, 0, 0, 0);
+    open_roms(0);
     int len = reply_ok();
     ASSERT(len > 0 && len <= UI_REPLY_MAX);
     char row[UI_COLS + 1];
@@ -205,10 +212,44 @@ static bool row_has(int row, const char *s) {
     return strstr(t, s) != NULL;
 }
 
+/* The home screen opens first; ENTER on its first menu row is ROMS. */
+static void open_roms(int capsv) {
+    open_with(capsv);
+    poll(0, UI_KEY_ENTER, -1, 5);
+}
+
+TEST(home_screen_shows_drives_and_menu) {
+    setup();
+    mkfile("game.dsk", "", 256);
+    ASSERT_EQ(dw_mount(&dw, 1, "game.dsk", true), 0);
+    open_with(UI_CAP_32K | UI_CAP_ECB);
+    ASSERT(row_has(0, PICOCO_VERSION));
+    ASSERT(row_has(2, "D0 -"));
+    ASSERT(row_has(3, "D1 GAME.DSK"));
+    ASSERT(row_has(3, "RO"));
+    ASSERT(row_has(5, "D3 -"));
+    ASSERT(row_has(6, "ROM NEXT"));
+    ASSERT(row_has(8, "ROMS"));
+    ASSERT(row_has(9, "DISKS"));
+    ASSERT(row_has(10, "SETTINGS"));
+    ASSERT(row_has(11, "WIFI"));
+    ASSERT(row_has(15, "ENTER=OPEN  BREAK=BASIC"));
+    poll(0, UI_KEY_ENTER, -1, 5);            /* ROMS */
+    ASSERT(row_has(1, "ROMS") || row_has(1, "NO .ROM FILES"));
+    ASSERT(!row_has(8, "ROMS"));
+    poll(0, UI_KEY_BREAK, -1, 6);            /* back home, still in the session */
+    ASSERT(ui_active());
+    ASSERT(row_has(15, "ENTER=OPEN  BREAK=BASIC"));
+    poll(0, UI_KEY_DOWN, -1, 7);
+    poll(0, UI_KEY_ENTER, -1, 8);            /* DISKS */
+    ASSERT(row_has(1, "DISKS"));
+    ASSERT_EQ(nlines, 0);                    /* browsing changes nothing */
+}
+
 /* Review Focus 1 */
 TEST(no_roms_message_and_enter_is_harmless) {
     setup();
-    open_with(0);
+    open_roms(0);
     ASSERT(row_has(1, "NO .ROM FILES"));
     poll(0, UI_KEY_ENTER, -1, 10);
     int len = reply_ok();
@@ -224,7 +265,7 @@ TEST(lists_roms_sorted_and_hides_others) {
     mkfile("ALPHA.ROM", "\x7E\xC0\x10", 8192);
     mkfile("disk.dsk", "", 256);
     mkfile("picoco.cfg", "", 16);
-    open_with(0);
+    open_roms(0);
     ASSERT(row_has(1, "ROMS"));
     ASSERT(row_has(2, "ALPHA.ROM"));
     ASSERT(row_has(3, "ZETA.ROM"));         /* lowercase folded */
@@ -237,7 +278,7 @@ TEST(awkward_names_hidden) {
     mkfile("my game.rom", "\x7E\xC0\x10", 8192);
     mkfile("abcdefghijklmnopqrstuvwxyz012.rom", "\x7E\xC0\x10", 8192);   /* 33 chars */
     mkfile("ok.rom", "\x7E\xC0\x10", 8192);
-    open_with(0);
+    open_roms(0);
     ASSERT(row_has(2, "OK.ROM"));
     ASSERT(!row_has(3, "ROM"));
 }
@@ -250,7 +291,7 @@ TEST(scrolls_with_the_selection) {
         snprintf(name, sizeof name, "r%02d.rom", i);
         mkfile(name, "\x7E\xC0\x10", 8192);
     }
-    open_with(0);
+    open_roms(0);
     ASSERT(row_has(2, "R00.ROM"));
     ASSERT(row_has(13, "R11.ROM"));
     for (int i = 0; i < 12; i++) poll(0, UI_KEY_DOWN, -1, 10 + (uint32_t)i);
@@ -262,23 +303,23 @@ TEST(scrolls_with_the_selection) {
     ASSERT(row_has(2, "R00.ROM"));
 }
 
-/* Review Focus 2: which 64 of 70 are kept depends on directory order, so
+/* Review Focus 2: which 128 of 130 are kept depends on directory order, so
  * only the notice is asserted. */
-TEST(more_than_64_shows_truncated) {
+TEST(more_than_128_shows_truncated) {
     setup();
     char name[16];
-    for (int i = 0; i < 70; i++) {
-        snprintf(name, sizeof name, "r%02d.rom", i);
+    for (int i = 0; i < 130; i++) {
+        snprintf(name, sizeof name, "r%03d.rom", i);
         mkfile(name, "\x7E\xC0\x10", 8192);
     }
-    open_with(0);
+    open_roms(0);
     ASSERT(row_has(14, "LIST TRUNCATED"));
 }
 
 TEST(enter_on_pak_asks_for_jump_then_go_loads) {
     setup();
     mkfile("game.rom", "\x7E\xC0\x10", 8192);
-    open_with(0);
+    open_roms(0);
     poll(0, UI_KEY_ENTER, -1, 10);
     int len = reply_ok();
     ASSERT(len >= 2);
@@ -296,7 +337,7 @@ TEST(enter_on_pak_asks_for_jump_then_go_loads) {
 TEST(dos_rom_needs_ecb) {
     setup();
     mkfile("hdb.rom", "DK", 8192);
-    open_with(0);                            /* no ECB */
+    open_roms(0);                            /* no ECB */
     poll(0, UI_KEY_ENTER, -1, 10);
     ASSERT(row_has(14, "NEEDS EXTENDED BASIC"));
     int len = reply_ok();
@@ -307,7 +348,7 @@ TEST(dos_rom_needs_ecb) {
 TEST(dos_rom_with_ecb_cold_restarts) {
     setup();
     mkfile("hdb.rom", "DK", 8192);
-    open_with(UI_CAP_32K | UI_CAP_ECB);
+    open_roms(UI_CAP_32K | UI_CAP_ECB);
     poll(0, UI_KEY_ENTER, -1, 10);
     int len = reply_ok();
     ASSERT_EQ(tx[2 + len - 2], UI_ACT_COLD);
@@ -320,7 +361,7 @@ TEST(dos_rom_with_ecb_cold_restarts) {
 TEST(coco3_pak_uses_the_rom_mode_jump) {
     setup();
     mkfile("game.rom", "\x7E\xC0\x10", 8192);
-    open_with(CAPS_COCO3);
+    open_roms(CAPS_COCO3);
     poll(0, UI_KEY_ENTER, -1, 10);
     int len = reply_ok();
     ASSERT(len >= 2);
@@ -335,7 +376,7 @@ TEST(coco3_pak_uses_the_rom_mode_jump) {
 TEST(coco3_dos_rom_uses_the_coco3_cold_restart) {
     setup();
     mkfile("hdb.rom", "DK", 8192);
-    open_with(CAPS_COCO3);
+    open_roms(CAPS_COCO3);
     poll(0, UI_KEY_ENTER, -1, 10);
     int len = reply_ok();
     ASSERT(len >= 2);
@@ -368,7 +409,7 @@ static void expect_clear_then(uint8_t act) {
 TEST(launch_reply_clears_the_screen) {
     setup();
     mkfile("game.rom", "\x7E\xC0\x10", 8192);
-    open_with(UI_CAP_32K | UI_CAP_ECB);
+    open_roms(UI_CAP_32K | UI_CAP_ECB);
     poll(0, UI_KEY_ENTER, -1, 10);
     expect_clear_then(UI_ACT_JUMP);
 }
@@ -391,19 +432,175 @@ TEST(coco3_break_reply_clears_the_screen) {
 TEST(coco2_codes_unchanged) {
     setup();
     mkfile("game.rom", "\x7E\xC0\x10", 8192);
-    open_with(UI_CAP_32K | UI_CAP_ECB);
+    open_roms(UI_CAP_32K | UI_CAP_ECB);
     poll(0, UI_KEY_ENTER, -1, 10);
     int len = reply_ok();
     ASSERT_EQ(tx[2 + len - 2], UI_ACT_JUMP);
-    poll(0, UI_KEY_BREAK, -1, 20);
+    poll(0, UI_KEY_BREAK, -1, 20);           /* back to the home screen */
+    poll(0, UI_KEY_BREAK, -1, 21);           /* and out */
     len = reply_ok();
     ASSERT_EQ(tx[2 + len - 2], UI_ACT_WARM);
+}
+
+/* ADR 0011: every change the Manager makes is saved at once. */
+TEST(default_rom_is_set_and_saved) {
+    setup();
+    mkfile("hdb.rom", "DK", 8192);
+    open_roms(UI_CAP_32K | UI_CAP_ECB);
+    poll(0, 'D', -1, 10);
+    ASSERT_EQ(nlines, 2);
+    ASSERT(strcmp(lines[0], "rom boot hdb.rom") == 0);
+    ASSERT(strcmp(lines[1], "save") == 0);
+    ASSERT(row_has(14, "NEXT BOOT SET"));
+    ASSERT(ui_active());
+}
+
+TEST(launch_is_not_saved) {
+    setup();
+    mkfile("game.rom", "\x7E\xC0\x10", 8192);
+    open_roms(0);
+    poll(0, UI_KEY_ENTER, -1, 10);
+    uint8_t g = 'G';
+    ui_feed(&g, 1, 20);
+    ASSERT_EQ(nlines, 1);
+    ASSERT(strcmp(lines[0], "rom launch game.rom") == 0);
+}
+
+static void open_disks(int capsv) {
+    open_with(capsv);
+    poll(0, UI_KEY_DOWN, -1, 5);
+    poll(0, UI_KEY_ENTER, -1, 6);
+}
+
+TEST(disks_lists_images_not_roms_or_config) {
+    setup();
+    mkfile("game.rom", "\x7E\xC0\x10", 8192);
+    mkfile("picoco.cfg", "", 16);
+    mkfile("my disk.dsk", "", 256);
+    mkfile("ALPHA.DSK", "", 256);
+    open_disks(0);
+    ASSERT(row_has(1, "DISKS"));
+    ASSERT(row_has(2, "ALPHA.DSK"));
+    ASSERT(row_has(3, "MY DISK.DSK"));      /* spaces are fine: dw disk insert takes the raw tail */
+    ASSERT(!row_has(4, "."));
+}
+
+TEST(mount_and_eject_are_saved_and_shown) {
+    setup();
+    mkfile("alpha.dsk", "", 256);
+    mkfile("beta.dsk", "", 256);
+    open_disks(0);
+    exec_rc = 0;
+    poll(0, UI_KEY_DOWN, -1, 10);
+    poll(0, '2', -1, 11);                    /* mount beta in drive 2 */
+    ASSERT_EQ(nlines, 2);
+    ASSERT(strcmp(lines[0], "dw disk insert 2 beta.dsk") == 0);
+    ASSERT(strcmp(lines[1], "save") == 0);
+    ASSERT_EQ(dw_mount(&dw, 2, "beta.dsk", false), 0);   /* what the console line would have done */
+    poll(0, 0, -1, 12);
+    ASSERT(row_has(3, "2 BETA.DSK") || row_has(3, "2BETA.DSK"));
+    poll(0, 'E', -1, 13);
+    ASSERT(row_has(14, "EJECT"));
+    poll(0, '2', -1, 14);
+    ASSERT_EQ(nlines, 4);
+    ASSERT(strcmp(lines[2], "dw disk eject 2") == 0);
+    ASSERT(strcmp(lines[3], "save") == 0);
+    poll(0, UI_KEY_BREAK, -1, 15);
+    ASSERT(row_has(4, "D2 BETA.DSK"));      /* home shows the drive table as it is */
+}
+
+TEST(failed_change_shows_the_reason_and_does_not_save) {
+    setup();
+    mkfile("alpha.dsk", "", 256);
+    open_disks(0);
+    exec_rc = -1;
+    poll(0, '0', -1, 10);
+    ASSERT_EQ(nlines, 1);
+    ASSERT(row_has(14, "ROM LOAD FAILED"));  /* the test exec's reason text */
+}
+
+TEST(disks_new_and_boot_wait_for_their_tickets) {
+    setup();
+    mkfile("alpha.dsk", "", 256);
+    open_disks(0);
+    poll(0, 'N', -1, 10);
+    ASSERT(row_has(14, "NOT YET"));
+    poll(0, 'B', -1, 11);
+    ASSERT(row_has(14, "NOT YET"));
+    ASSERT_EQ(nlines, 0);
+}
+
+TEST(list_pages_counts_and_jumps) {
+    setup();
+    char name[16];
+    for (int i = 0; i < 30; i++) {
+        snprintf(name, sizeof name, "%c%02d.rom", 'A' + i / 10, i);
+        mkfile(name, "\x7E\xC0\x10", 8192);
+    }
+    open_roms(0);
+    ASSERT(row_has(1, "1-12 OF 30"));
+    poll(0, UI_KEY_PGDN, -1, 10);
+    ASSERT(row_has(13, "B12.ROM"));         /* selection 12 is the last visible row */
+    ASSERT(row_has(1, "2-13 OF 30"));
+    poll(0, UI_KEY_PGDN, -1, 11);
+    poll(0, UI_KEY_PGDN, -1, 12);
+    ASSERT(row_has(13, "C29.ROM"));         /* clamps at the end */
+    poll(0, UI_KEY_PGUP, -1, 13);
+    poll(0, UI_KEY_PGUP, -1, 14);
+    poll(0, UI_KEY_PGUP, -1, 15);
+    ASSERT(row_has(2, "A00.ROM"));
+    poll(0, 'G', -1, 20);
+    poll(0, 'c', -1, 21);                   /* lowercase mode: still a jump to C */
+    ASSERT(row_has(2, "C20.ROM"));
+    poll(0, 'G', -1, 22);
+    poll(0, '2', -1, 23);                   /* within a second: prefix C2 */
+    ASSERT(row_has(2, "C20.ROM"));
+    poll(0, 'G', -1, 2000);
+    poll(0, 'B', -1, 2001);                 /* a second later: a new prefix */
+    ASSERT(row_has(2, "B10.ROM") || row_has(13, "B10.ROM"));
+    ASSERT_EQ(nlines, 0);
+}
+
+static void open_settings(int capsv) {
+    open_with(capsv);
+    poll(0, UI_KEY_DOWN, -1, 5);
+    poll(0, UI_KEY_DOWN, -1, 6);
+    poll(0, UI_KEY_ENTER, -1, 7);
+}
+
+TEST(settings_toggle_hdbdos_is_saved) {
+    setup();
+    open_settings(0);
+    ASSERT(row_has(1, "SETTINGS"));
+    ASSERT(row_has(3, "HDB-DOS DRIVE MODE ON"));
+    ASSERT(row_has(4, "T:CLOCK 20"));       /* a formatted date, not a raw number */
+    ASSERT(row_has(5, "Z:TIMEZONE OFF"));
+    poll(0, 'H', -1, 10);
+    ASSERT_EQ(nlines, 2);
+    ASSERT(strcmp(lines[0], "dw hdbdos off") == 0);
+    ASSERT(strcmp(lines[1], "save") == 0);
+    poll(0, 'T', -1, 11);
+    ASSERT(row_has(14, "NOT YET"));
+}
+
+TEST(wifi_screen_without_a_radio_is_one_line) {
+    setup();
+    open_with(0);
+    for (int i = 0; i < 3; i++) poll(0, UI_KEY_DOWN, -1, 5 + (uint32_t)i);
+    poll(0, UI_KEY_ENTER, -1, 9);
+    ASSERT(row_has(1, "WIFI"));
+    ASSERT(row_has(3, "NO RADIO ON THIS BOARD"));
+    poll(0, 'M', -1, 10);
+    ASSERT_EQ(nlines, 0);
+    poll(0, UI_KEY_BREAK, -1, 11);
+    ASSERT(row_has(11, "WIFI"));
+    ASSERT(row_has(11, "NO RADIO"));
 }
 
 TEST(bad_size_refused_before_leaving) {
     setup();
     mkfile("odd.rom", "\x7E\xC0\x10", 5000);
-    open_with(0);
+    open_roms(0);
     poll(0, UI_KEY_ENTER, -1, 10);
     ASSERT(row_has(14, "NOT A ROM SIZE"));
     ASSERT(ui_active());
@@ -413,7 +610,7 @@ TEST(bad_size_refused_before_leaving) {
 TEST(go_failure_keeps_session_and_shows_reason) {
     setup();
     mkfile("game.rom", "\x7E\xC0\x10", 8192);
-    open_with(0);
+    open_roms(0);
     poll(0, UI_KEY_ENTER, -1, 10);
     exec_rc = -1;
     txn = 0;
@@ -452,7 +649,7 @@ TEST(break_asks_for_warm_restart) {
 TEST(key_after_enter_cancels_the_launch) {
     setup();
     mkfile("game.rom", "\x7E\xC0\x10", 8192);
-    open_with(0);
+    open_roms(0);
     poll(0, UI_KEY_ENTER, -1, 10);
     int len = reply_ok();
     ASSERT_EQ(tx[2 + len - 2], UI_ACT_JUMP);
@@ -472,6 +669,7 @@ int main(void) {
     snprintf(g_dir, sizeof g_dir, "%s", mkdtemp(tmpl));
     plat_host_set_dir(g_dir);
 
+    RUN(home_screen_shows_drives_and_menu);
     RUN(inactive_until_ctl);
     RUN(first_poll_clears_and_draws);
     RUN(caps_shown);
@@ -488,7 +686,7 @@ int main(void) {
     RUN(lists_roms_sorted_and_hides_others);
     RUN(awkward_names_hidden);
     RUN(scrolls_with_the_selection);
-    RUN(more_than_64_shows_truncated);
+    RUN(more_than_128_shows_truncated);
     RUN(enter_on_pak_asks_for_jump_then_go_loads);
     RUN(dos_rom_needs_ecb);
     RUN(dos_rom_with_ecb_cold_restarts);
@@ -496,6 +694,15 @@ int main(void) {
     RUN(coco3_dos_rom_uses_the_coco3_cold_restart);
     RUN(coco3_break_uses_the_coco3_warm_restart);
     RUN(coco2_codes_unchanged);
+    RUN(default_rom_is_set_and_saved);
+    RUN(launch_is_not_saved);
+    RUN(disks_lists_images_not_roms_or_config);
+    RUN(mount_and_eject_are_saved_and_shown);
+    RUN(failed_change_shows_the_reason_and_does_not_save);
+    RUN(disks_new_and_boot_wait_for_their_tickets);
+    RUN(list_pages_counts_and_jumps);
+    RUN(settings_toggle_hdbdos_is_saved);
+    RUN(wifi_screen_without_a_radio_is_one_line);
     RUN(bad_size_refused_before_leaving);
     RUN(go_failure_keeps_session_and_shows_reason);
     RUN(go_without_a_pending_launch_fails);

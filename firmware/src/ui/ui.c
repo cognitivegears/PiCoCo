@@ -1,20 +1,36 @@
 #include "ui.h"
 #include "plat.h"
 #include "rom.h"
+#include "mode.h"
+#include "net.h"
+#include "console.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <strings.h>
+#include <time.h>
 
-#define MAX_ROMS  64
+#ifndef PICOCO_VERSION
+#define PICOCO_VERSION "dev"
+#endif
+
+/* Screens are a draw/key pair each (the table at the bottom); a new screen
+ * is one more pair. Every change a screen makes is saved at once (ADR 0011). */
+#define MAX_NAMES 128
 #define NAME_LEN  32            /* longest name kept, with its NUL */
+#define LIST_TOP  2
 #define LIST_ROWS 12
+#define MSG_ROW   14
 #define POLL_QUIET_MS 250       /* a poll cut short is dropped after this; the stub retries at ~1.3 s */
+#define JUMP_MS   1000          /* G+letter within this narrows the jump prefix */
+
+typedef enum { SCR_HOME, SCR_ROMS, SCR_DISKS, SCR_SETTINGS, SCR_WIFI } screen_t;
 
 static ui_send_fn g_send;
 static void *g_ctx;
 static ui_exec_fn g_exec;
 static dw_store *g_store;
+static dw_server *g_dw;
 static bool active;
 
 static uint8_t scr[UI_CELLS];   /* what the screen should show, VDG screen codes */
@@ -24,12 +40,22 @@ static uint8_t reply[UI_REPLY_MAX + 4];
 static size_t reply_len;
 
 static uint8_t caps;
-static char roms[MAX_ROMS][NAME_LEN];
-static int nroms, sel, top;
-static bool truncated;
+static screen_t screen;
+static int menu_sel;
 static char msg[UI_COLS + 1];
 static char pending[NAME_LEN];
 static uint8_t pending_act;
+static uint32_t now_ms;
+
+/* One list, reloaded when a list screen opens. */
+static char names[MAX_NAMES][NAME_LEN];
+static int nnames, sel, top;
+static bool truncated, list_roms;
+static char jump[5];
+static int jumpn;
+static bool jump_armed;
+static uint32_t jump_ms;
+static bool eject_armed;        /* Disks: E pressed, a digit picks the drive */
 
 static uint8_t pk[5];
 static int pkn;
@@ -50,6 +76,11 @@ static void put(int row, int col, const char *s, bool inv) {
     for (int i = row * UI_COLS + col; *s && i < (row + 1) * UI_COLS; i++) scr[i] = code(*s++, inv);
 }
 
+static void put_right(int row, const char *s) {
+    int l = (int)strlen(s);
+    put(row, l < UI_COLS ? UI_COLS - l : 0, s, false);
+}
+
 void ui_row_text(int row, char out[UI_COLS + 1]) {
     for (int c = 0; c < UI_COLS; c++) {
         uint8_t s = scr[row * UI_COLS + c];
@@ -60,27 +91,102 @@ void ui_row_text(int row, char out[UI_COLS + 1]) {
     out[UI_COLS] = '\0';
 }
 
-static void rom_cb(const char *name, uint32_t size, void *ctx) {
+static void set_msg(const char *s) { snprintf(msg, sizeof msg, "%s", s); }
+
+/* Run a console line; on failure the reason is the message row. 0 ok. */
+static int run(const char *line) {
+    char err[UI_COLS + 1] = "FAILED";
+    if (g_exec(line, err, sizeof err) != 0) { set_msg(err); return -1; }
+    return 0;
+}
+
+/* A change is run and then saved: the Manager has no unsaved state. */
+static int change(const char *line) {
+    if (run(line) != 0) return -1;
+    return run("save");
+}
+
+/* ---- list widget: ROMs and Disks share it ---- */
+
+static void list_cb(const char *name, uint32_t size, void *ctx) {
     (void)size; (void)ctx;
     size_t l = strlen(name);
-    /* `rom load` takes one token, so a name with a space cannot be sent. */
-    if (l < 5 || l >= NAME_LEN || strcasecmp(name + l - 4, ".rom") != 0 || strchr(name, ' ')) return;
-    if (nroms >= MAX_ROMS) { truncated = true; return; }
-    memcpy(roms[nroms++], name, l + 1);
+    if (l >= NAME_LEN) return;
+    bool rom = l > 4 && strcasecmp(name + l - 4, ".rom") == 0;
+    /* `rom boot` takes one token, so a ROM name with a space cannot be sent. */
+    if (list_roms ? (!rom || strchr(name, ' ') != NULL) : (rom || dw_disk_is_config_name(name))) return;
+    if (nnames >= MAX_NAMES) { truncated = true; return; }
+    memcpy(names[nnames++], name, l + 1);
 }
 
 static int name_cmp(const void *a, const void *b) { return strcasecmp(a, b); }
 
-static void load_list(void) {
-    nroms = 0;
+static void list_load(bool roms) {
+    nnames = 0;
     truncated = false;
-    plat_fs_list(rom_cb, NULL);
-    qsort(roms, (size_t)nroms, NAME_LEN, name_cmp);
+    list_roms = roms;
+    plat_fs_list(list_cb, NULL);
+    qsort(names, (size_t)nnames, NAME_LEN, name_cmp);
     sel = top = 0;
+    jumpn = 0;
+    jump_armed = false;
 }
 
-static void draw(void) {
-    memset(scr, 0x60, sizeof scr);
+/* Drive holding this image, or -1. */
+static int mounted_in(const char *name) {
+    for (int i = 0; i < DW_MAX_DRIVES; i++)
+        if (g_dw->drives[i].mounted && strcasecmp(g_dw->drives[i].name, name) == 0) return i;
+    return -1;
+}
+
+static void list_draw(const char *title, const char *empty) {
+    put(1, 0, nnames ? title : empty, false);
+    if (nnames > LIST_ROWS) {
+        char c[40];
+        int last = top + LIST_ROWS < nnames ? top + LIST_ROWS : nnames;
+        snprintf(c, sizeof c, "%d-%d OF %d", top + 1, last, nnames);
+        put_right(1, c);
+    }
+    for (int i = 0; i < LIST_ROWS && top + i < nnames; i++) {
+        put(LIST_TOP + i, 1, names[top + i], top + i == sel);
+        int d = list_roms ? -1 : mounted_in(names[top + i]);
+        if (d >= 0) put(LIST_TOP + i, 0, (char[]){ (char)('0' + d), 0 }, false);
+    }
+    put(MSG_ROW, 0, msg[0] ? msg : truncated ? "LIST TRUNCATED" : "", false);
+}
+
+static bool list_key(uint8_t key) {
+    if (jump_armed && key) {
+        jump_armed = false;
+        if (now_ms - jump_ms > JUMP_MS) jumpn = 0;
+        if (jumpn < 4) jump[jumpn++] = (char)(key >= 'a' && key <= 'z' ? key - 0x20 : key);
+        jump[jumpn] = '\0';
+        jump_ms = now_ms;
+        for (int i = 0; i < nnames; i++)
+            if (strncasecmp(names[i], jump, (size_t)jumpn) == 0) { sel = top = i; break; }   /* the target heads the window */
+    }
+    else if (key == UI_KEY_UP) { if (sel > 0) sel--; }
+    else if (key == UI_KEY_DOWN) { if (sel + 1 < nnames) sel++; }
+    else if (key == UI_KEY_PGUP) sel = sel > LIST_ROWS ? sel - LIST_ROWS : 0;
+    else if (key == UI_KEY_PGDN) sel = sel + LIST_ROWS < nnames ? sel + LIST_ROWS : (nnames ? nnames - 1 : 0);
+    else if (key == 'G' || key == 'g') jump_armed = true;
+    else return false;
+    if (sel < top) top = sel;
+    if (sel >= top + LIST_ROWS) top = sel - LIST_ROWS + 1;
+    return true;
+}
+
+/* ---- leaving ---- */
+
+static uint8_t leave_warm(void) {
+    pending[0] = '\0';
+    pending_act = (caps & UI_CAP_COCO3) ? UI_ACT_WARM3 : UI_ACT_WARM;
+    return pending_act;
+}
+
+/* ---- home ---- */
+
+static void draw_header(void) {
     char line[UI_COLS + 1];
     if (caps & UI_CAP_COCO3)    /* every CoCo 3 has ECB; the size is in bits 6-7 */
         snprintf(line, sizeof line, "PICOCO  COCO 3 %s",
@@ -90,10 +196,186 @@ static void draw(void) {
                  caps & UI_CAP_64K ? "64K" : caps & UI_CAP_32K ? "32K" : "16K",
                  caps & UI_CAP_ECB ? "ECB" : "NO ECB");
     put(0, 0, line, false);
-    put(1, 0, nroms ? "ROMS" : "NO .ROM FILES", false);
-    for (int i = 0; i < LIST_ROWS && top + i < nroms; i++) put(2 + i, 1, roms[top + i], top + i == sel);
-    put(14, 0, msg[0] ? msg : truncated ? "LIST TRUNCATED" : "", false);
-    put(15, 0, "ENTER=RUN  BREAK=BASIC", false);
+    snprintf(line, sizeof line, "%s " PICOCO_VERSION, mode_name(mode_get()));
+    for (char *p = line; *p; p++) if (*p >= 'a' && *p <= 'z') *p -= 0x20;
+    put_right(0, line);
+}
+
+static void draw_home(void) {
+    static const char *const items[] = { "ROMS", "DISKS", "SETTINGS", "WIFI" };
+    char line[UI_COLS + 1];
+    for (int i = 0; i < DW_MAX_DRIVES; i++) {
+        dw_disk *d = &g_dw->drives[i];
+        snprintf(line, sizeof line, "D%d %s", i, d->mounted ? d->name : "-");
+        put(2 + i, 0, line, false);
+        if (d->mounted && d->read_only) put_right(2 + i, "RO");
+    }
+    const char *next = console_rom_next();
+    if (strncmp(next, "load ", 5) == 0) next += 5;
+    snprintf(line, sizeof line, "ROM NEXT %s", next[0] ? next : "MANAGER");
+    put(6, 0, line, false);
+    for (int i = 0; i < 4; i++) put(8 + i, 1, items[i], i == menu_sel);
+    put(11, 8, !net_available() ? "NO RADIO" : net_state() == NET_UP ? net_ip() : net_state_name(net_state()), false);
+    put(MSG_ROW, 0, msg, false);
+    put(15, 0, "ENTER=OPEN  BREAK=BASIC", false);
+}
+
+static uint8_t key_home(uint8_t key) {
+    if (key == UI_KEY_UP && menu_sel > 0) menu_sel--;
+    else if (key == UI_KEY_DOWN && menu_sel < 3) menu_sel++;
+    else if (key == UI_KEY_BREAK) return leave_warm();
+    else if (key == UI_KEY_ENTER) {
+        screen = (screen_t)(SCR_ROMS + menu_sel);
+        if (screen == SCR_ROMS || screen == SCR_DISKS) list_load(screen == SCR_ROMS);
+        eject_armed = false;
+    }
+    return 0;
+}
+
+/* ---- ROMs ---- */
+
+/* First two bytes of a file: "DK" marks a DOS ROM that Extended BASIC must start. */
+static int peek2(const char *name, uint8_t two[2]) {
+    dw_file f;
+    if (g_store->ops->open(g_store->ctx, name, false, &f) < 0) return -1;
+    int n = g_store->ops->read(&f, 0, two, 2);
+    g_store->ops->close(&f);
+    return n == 2 ? 0 : -1;
+}
+
+static uint8_t launch(void) {
+    if (!nnames) return 0;
+    const char *name = names[sel];
+    int rc = rom_check_file(g_store, name);
+    uint8_t two[2];
+    if (rc == -2) { set_msg("NOT A ROM SIZE"); return 0; }
+    if (rc != 0 || peek2(name, two) != 0) { set_msg("CANNOT READ FILE"); return 0; }
+    bool dos = two[0] == 'D' && two[1] == 'K';
+    if (dos && !(caps & UI_CAP_ECB)) { set_msg("NEEDS EXTENDED BASIC"); return 0; }
+    snprintf(pending, sizeof pending, "%s", name);
+    /* A CoCo 3 copies the cart to RAM at boot and runs all-RAM: a pak is
+     * started in ROM mode like the CoCo 3's own cart start ($8C28), a DOS ROM
+     * by re-running reset so the new cart is copied. */
+    bool c3 = (caps & UI_CAP_COCO3) != 0;
+    pending_act = dos ? (c3 ? UI_ACT_COLD3 : UI_ACT_COLD) : (c3 ? UI_ACT_JUMP3 : UI_ACT_JUMP);
+    return pending_act;
+}
+
+static void draw_roms(void) {
+    list_draw("ROMS", "NO .ROM FILES");
+    put(15, 0, "ENTER=RUN  D=DEFAULT  BREAK=BACK", false);
+}
+
+static uint8_t key_roms(uint8_t key) {
+    if (list_key(key)) return 0;
+    if (key == UI_KEY_ENTER) return launch();
+    if (key == UI_KEY_BREAK) screen = SCR_HOME;
+    else if ((key == 'D' || key == 'd') && nnames) {
+        char line[16 + NAME_LEN];
+        snprintf(line, sizeof line, "rom boot %s", names[sel]);
+        if (change(line) == 0) set_msg("NEXT BOOT SET");
+    }
+    return 0;
+}
+
+/* ---- Disks ---- */
+
+static void draw_disks(void) {
+    list_draw("DISKS", "NO DISK IMAGES");
+    put(15, 0, "0-3=MOUNT  E=EJECT  N=NEW  B=BOOT", false);
+}
+
+static uint8_t key_disks(uint8_t key) {
+    char line[24 + NAME_LEN];
+    if (list_key(key)) return 0;
+    if (key == UI_KEY_BREAK) screen = SCR_HOME;
+    else if (key >= '0' && key < '0' + DW_MAX_DRIVES) {
+        if (eject_armed) snprintf(line, sizeof line, "dw disk eject %c", key);
+        else if (nnames) snprintf(line, sizeof line, "dw disk insert %c %s", key, names[sel]);
+        else return 0;
+        eject_armed = false;
+        change(line);
+    }
+    else if (key == 'E' || key == 'e') { eject_armed = true; set_msg("EJECT: PRESS 0-3"); }
+    else if (key == 'N' || key == 'n' || key == 'B' || key == 'b') set_msg("NOT YET");   /* #59 line editor, #66 Boot */
+    return 0;
+}
+
+/* ---- Settings ---- */
+
+static void draw_settings(void) {
+    char line[UI_COLS + 1], when[20];
+    time_t t = (time_t)dw_time_get(g_dw, now_ms);
+    struct tm tmv;
+    if (gmtime_r(&t, &tmv)) strftime(when, sizeof when, "%Y-%m-%d %H:%M", &tmv);   /* dw time is local already */
+    else snprintf(when, sizeof when, "?");
+    put(1, 0, "SETTINGS", false);
+    snprintf(line, sizeof line, "H:HDB-DOS DRIVE MODE %s", g_dw->hdbdos ? "ON" : "OFF");
+    put(3, 0, line, false);
+    snprintf(line, sizeof line, "T:CLOCK %s", when);
+    put(4, 0, line, false);
+    int tz = net_tz();
+    if (tz == NET_TZ_OFF) snprintf(line, sizeof line, "Z:TIMEZONE OFF");
+    else snprintf(line, sizeof line, "Z:TIMEZONE UTC%c%02d:%02d", tz < 0 ? '-' : '+', abs(tz) / 60, abs(tz) % 60);
+    put(5, 0, line, false);
+    int64_t dummy;
+    if (!plat_rtc_get(&dummy)) put(6, 2, "(CLOCK LOST AT RESET)", false);
+    put(MSG_ROW, 0, msg, false);
+    put(15, 0, "BREAK=BACK", false);
+}
+
+static uint8_t key_settings(uint8_t key) {
+    if (key == UI_KEY_BREAK) screen = SCR_HOME;
+    else if (key == 'H' || key == 'h') change(g_dw->hdbdos ? "dw hdbdos off" : "dw hdbdos on");
+    else if (key == 'T' || key == 't' || key == 'Z' || key == 'z') set_msg("NOT YET");   /* #59 line editor */
+    return 0;
+}
+
+/* ---- WiFi ---- */
+
+static void draw_wifi(void) {
+    char line[UI_COLS + 1];
+    put(1, 0, "WIFI", false);
+    if (!net_available()) { put(3, 0, "NO RADIO ON THIS BOARD", false); put(15, 0, "BREAK=BACK", false); return; }
+    snprintf(line, sizeof line, "S:SSID %s", net_ssid());
+    put(3, 0, line, false);
+    snprintf(line, sizeof line, "P:PSK %s", net_psk_set() ? "********" : "");
+    put(4, 0, line, false);
+    snprintf(line, sizeof line, "H:SERVER %s %u", net_host(), (unsigned)net_port());
+    put(5, 0, line, false);
+    picoco_mode boot = console_boot_mode();
+    snprintf(line, sizeof line, "M:MODE %s", boot == MODE_NET ? "NET" : "NATIVE");
+    put(6, 0, line, false);
+    if (boot != mode_get()) put(7, 2, "(RESET TO APPLY)", false);
+    snprintf(line, sizeof line, "STATE %s", net_state_name(net_state()));
+    put(9, 0, line, false);
+    snprintf(line, sizeof line, "IP %s", net_ip());
+    put(10, 0, line, false);
+    put(11, 0, net_last_error(), false);
+    put(MSG_ROW, 0, msg, false);
+    put(15, 0, "BREAK=BACK", false);
+}
+
+static uint8_t key_wifi(uint8_t key) {
+    if (key == UI_KEY_BREAK) screen = SCR_HOME;
+    else if (!net_available()) return 0;
+    else if (key == 'M' || key == 'm') change(console_boot_mode() == MODE_NET ? "net mode native" : "net mode net");
+    else if (key == 'S' || key == 's' || key == 'P' || key == 'p' || key == 'H' || key == 'h') set_msg("NOT YET");   /* #59 line editor */
+    return 0;
+}
+
+static const struct { void (*draw)(void); uint8_t (*key)(uint8_t); } screens[] = {
+    [SCR_HOME] = { draw_home, key_home },
+    [SCR_ROMS] = { draw_roms, key_roms },
+    [SCR_DISKS] = { draw_disks, key_disks },
+    [SCR_SETTINGS] = { draw_settings, key_settings },
+    [SCR_WIFI] = { draw_wifi, key_wifi },
+};
+
+static void draw(void) {
+    memset(scr, 0x60, sizeof scr);
+    draw_header();
+    screens[screen].draw();
 }
 
 /* Emit the cells that differ from ack as text runs, then act (if any) and
@@ -129,22 +411,26 @@ static void build_reply(bool full, uint8_t act) {
     g_send(g_ctx, reply, reply_len);
 }
 
-static uint8_t on_key(uint8_t key);   /* Task 2 */
+static uint8_t on_key(uint8_t key) {
+    if (key) { msg[0] = '\0'; pending_act = 0; }
+    return screens[screen].key(key);
+}
 
 static void on_poll(uint8_t flags, uint8_t key, uint8_t c) {
     if ((flags & 1) && reply_len) { g_send(g_ctx, reply, reply_len); return; }
     bool first = (flags & 2) != 0;
     uint8_t act = 0;
-    if (first) { caps = c; load_list(); }
+    if (first) { caps = c; screen = SCR_HOME; menu_sel = 0; }
     else { memcpy(ack, sent, sizeof ack); act = on_key(key); }   /* a new poll acknowledges the last reply */
     if (act) memset(scr, 0x60, sizeof scr);   /* leaving: the reply clears the screen, nothing to draw */
     else draw();
     build_reply(first || act, act);
 }
 
-static void on_go(void);              /* Task 2 */
+static void on_go(void);
 
-void ui_feed(const uint8_t *buf, size_t n, uint32_t now_ms) {
+void ui_feed(const uint8_t *buf, size_t n, uint32_t now) {
+    now_ms = now;
     if (pkn && now_ms - pk_ms > POLL_QUIET_MS) pkn = 0;
     pk_ms = now_ms;
     for (size_t i = 0; i < n; i++) {
@@ -171,56 +457,16 @@ void ui_ctl(uint8_t codev) {
 
 bool ui_active(void) { return active; }
 
-void ui_init(ui_send_fn send, void *ctx, ui_exec_fn exec, dw_store *store) {
-    g_send = send; g_ctx = ctx; g_exec = exec; g_store = store;
+void ui_init(ui_send_fn send, void *ctx, ui_exec_fn exec, dw_store *store, dw_server *dw) {
+    g_send = send; g_ctx = ctx; g_exec = exec; g_store = store; g_dw = dw;
     active = false;
     pkn = 0; reply_len = 0; pending_act = 0;
-    nroms = sel = top = 0; truncated = false;
+    screen = SCR_HOME; menu_sel = 0;
+    nnames = sel = top = 0; truncated = false;
     msg[0] = '\0'; pending[0] = '\0'; caps = 0;
     memset(scr, 0x60, sizeof scr);
     memset(sent, 0x60, sizeof sent);
     memset(ack, 0x60, sizeof ack);
-}
-
-static void set_msg(const char *s) { snprintf(msg, sizeof msg, "%s", s); }
-
-/* First two bytes of a file: "DK" marks a DOS ROM that Extended BASIC must start. */
-static int peek2(const char *name, uint8_t two[2]) {
-    dw_file f;
-    if (g_store->ops->open(g_store->ctx, name, false, &f) < 0) return -1;
-    int n = g_store->ops->read(&f, 0, two, 2);
-    g_store->ops->close(&f);
-    return n == 2 ? 0 : -1;
-}
-
-static uint8_t launch(void) {
-    if (!nroms) return 0;
-    const char *name = roms[sel];
-    int rc = rom_check_file(g_store, name);
-    uint8_t two[2];
-    if (rc == -2) { set_msg("NOT A ROM SIZE"); return 0; }
-    if (rc != 0 || peek2(name, two) != 0) { set_msg("CANNOT READ FILE"); return 0; }
-    bool dos = two[0] == 'D' && two[1] == 'K';
-    if (dos && !(caps & UI_CAP_ECB)) { set_msg("NEEDS EXTENDED BASIC"); return 0; }
-    snprintf(pending, sizeof pending, "%s", name);
-    /* A CoCo 3 copies the cart to RAM at boot and runs all-RAM: a pak is
-     * started in ROM mode like the CoCo 3's own cart start ($8C28), a DOS ROM
-     * by re-running reset so the new cart is copied. */
-    bool c3 = (caps & UI_CAP_COCO3) != 0;
-    pending_act = dos ? (c3 ? UI_ACT_COLD3 : UI_ACT_COLD) : (c3 ? UI_ACT_JUMP3 : UI_ACT_JUMP);
-    return pending_act;
-}
-
-static uint8_t on_key(uint8_t key) {
-    uint8_t act = 0;
-    if (key) { msg[0] = '\0'; pending_act = 0; }
-    if (key == UI_KEY_UP && sel > 0) sel--;
-    else if (key == UI_KEY_DOWN && sel + 1 < nroms) sel++;
-    else if (key == UI_KEY_ENTER) act = launch();
-    else if (key == UI_KEY_BREAK) { pending[0] = '\0'; act = pending_act = (caps & UI_CAP_COCO3) ? UI_ACT_WARM3 : UI_ACT_WARM; }
-    if (sel < top) top = sel;
-    if (sel >= top + LIST_ROWS) top = sel - LIST_ROWS + 1;
-    return act;
 }
 
 /* The stub has left the cart and is running from RAM: do the swap now. */
