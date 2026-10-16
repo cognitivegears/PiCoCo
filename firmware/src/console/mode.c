@@ -88,6 +88,7 @@ void mode_pump(dw_server *dw, uint32_t now_ms) {
             uint8_t buf[64];
             size_t n = becker_read(buf, sizeof(buf));
             if (n) ui_feed(buf, n, now_ms);
+            if (n && ui_input_stale()) while (becker_read(buf, sizeof(buf))) {}   /* poll retries sent during a blocking scan */
         }
         flush_pending();
         return;

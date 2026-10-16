@@ -57,6 +57,8 @@ static uint32_t now_ms;
 static char names[MAX_NAMES][NAME_LEN];
 static int nnames, sel, top;
 static bool truncated, list_roms;
+static bool list_drives;         /* Disks: a mounted image shows its drive digit */
+static bool blocked, stale;     /* a key handler blocked core0; polls the stub sent meanwhile are stale */
 static char jump[5];
 static int jumpn;
 static bool jump_armed;
@@ -192,6 +194,7 @@ static void list_load(bool roms) {
     nnames = 0;
     truncated = false;
     list_roms = roms;
+    list_drives = !roms;
     plat_fs_list(list_cb, NULL);
     qsort(names, (size_t)nnames, NAME_LEN, name_cmp);
     sel = top = 0;
@@ -216,7 +219,7 @@ static void list_draw(const char *title, const char *empty) {
     }
     for (int i = 0; i < LIST_ROWS && top + i < nnames; i++) {
         put(LIST_TOP + i, 1, names[top + i], top + i == sel);
-        int d = list_roms ? -1 : mounted_in(names[top + i]);
+        int d = list_drives ? mounted_in(names[top + i]) : -1;
         if (d >= 0) put(LIST_TOP + i, 0, (char[]){ (char)('0' + d), 0 }, false);
     }
     put(MSG_ROW, 0, msg[0] ? msg : truncated ? "LIST TRUNCATED" : "", false);
@@ -225,7 +228,7 @@ static void list_draw(const char *title, const char *empty) {
 static bool list_key(uint8_t key) {
     bool armed = jump_armed;
     jump_armed = false;
-    if (armed && key >= ' ') {
+    if (armed && key >= ' ' && key != UI_KEY_UP && key != UI_KEY_PGUP && key != UI_KEY_PGDN) {
         if (now_ms - jump_ms > JUMP_MS) jumpn = 0;
         if (jumpn < 4) jump[jumpn++] = (char)key;
         jump[jumpn] = '\0';
@@ -398,6 +401,9 @@ static bool rsdos_dir(const uint8_t sec[256]) {
         const uint8_t *d = sec + e * 32;
         if (d[0] == 0xFF) return false;
         if (d[0] == 0x00 || (d[11] != 0 && d[11] != 2)) continue;
+        bool ascii = true;              /* not an RS-DOS disk at all (OS-9, blank): no garbage names */
+        for (int i = 0; i < 11; i++) if (d[i] < ' ' || d[i] > '~') ascii = false;
+        if (!ascii) continue;
         if (nnames >= MAX_NAMES) { truncated = true; return false; }
         char *n = names[nnames];
         int k = 0;
@@ -438,7 +444,7 @@ static uint8_t boot_start(void) {
     disks_sel = sel; disks_top = top;
     nnames = sel = top = jumpn = 0;
     truncated = jump_armed = false;
-    list_roms = true;                   /* no drive digits beside program names */
+    list_drives = false;
     for (int i = 0; i < 9; i++) {
         if (boot_read(DIR_LSN + (uint32_t)i, sec) != 0) { set_msg("CANNOT READ DIRECTORY"); disks_back(); return 0; }
         if (!rsdos_dir(sec)) break;
@@ -456,7 +462,7 @@ static int boot_cmd(char *out, size_t cap, bool drive0) {
 }
 
 static void draw_boot(void) {
-    list_draw("RUN WHICH FILE? (DRIVE 0)", "");
+    list_draw("RUN WHICH FILE?", "");
     if (boot_wait) {
         char line[48];
         boot_cmd(line, sizeof line, false);
@@ -608,9 +614,12 @@ static void scan_start(void) {
     if (mode_get() == MODE_NET) { set_msg("LEAVE NET MODE FIRST"); return; }
     nnames = sel = top = jumpn = 0;
     truncated = jump_armed = false;
-    list_roms = true;                   /* no drive digits beside SSIDs */
-    /* shortcut: net_scan blocks core0 for up to 5 s; the stub's poll retries cover it. */
-    if (net_scan(scan_cb, NULL) != 0) { set_msg("SCAN FAILED"); return; }
+    list_drives = false;
+    /* shortcut: net_scan blocks core0 for up to 5 s; the stub's poll retries cover it, and
+     * ui_feed drops the retries it sent meanwhile (a retry landing after that still gets one copy). */
+    int rc = net_scan(scan_cb, NULL);
+    blocked = true;
+    if (rc != 0) { set_msg("SCAN FAILED"); return; }
     if (!nnames) { set_msg("NO NETWORKS FOUND"); return; }
     scanning = true;
 }
@@ -756,8 +765,11 @@ void ui_feed(const uint8_t *buf, size_t n, uint32_t now) {
         pkn = 0;
         if (sum != pk[want - 1]) continue;          /* no reply: the stub times out and asks again */
         on_poll(pk[1], pk[2], want == 5 ? pk[3] : caps);
+        if (blocked) { blocked = false; stale = true; pkn = 0; break; }
     }
 }
+
+bool ui_input_stale(void) { bool s = stale; stale = false; return s; }
 
 void ui_ctl(uint8_t codev) {
     if (codev == 0xA5) { active = true; pkn = 0; reply_len = 0; pending_act = 0; act_argn = 0; want_lsum = false; }
@@ -788,7 +800,7 @@ static void on_go(void) {
         if (g_exec(line, err, sizeof err) != 0) { r = UI_GO_FAIL; set_msg(err); msg_keep = true; }
     }
     pending_act = 0;
-    if (r == UI_GO_OK) { msg[0] = '\0'; active = false; if (strcmp(pending, prev) == 0) prev[0] = '\0'; }
+    if (r == UI_GO_OK) { msg[0] = '\0'; active = false; prev[0] = '\0'; }   /* any leave ends what the Loader could return to */
     g_send(g_ctx, &r, 1);
 }
 

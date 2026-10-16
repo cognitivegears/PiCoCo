@@ -82,6 +82,8 @@ DET1    lda $FFFE
         cmpa #$8C
         bne DET2
         orb #$12                CoCo 3, and 64K with it
+        tst LOADER,y            the Loader leaves us in ROM mode: $8000 reads ROM, MEM3 cannot probe
+        bne DET2
         pshs b
         jsr MEM3
         ora ,s+
@@ -445,7 +447,12 @@ LVWARM3 tst LOADER,y
 * 13 or 18 on a Loader entry: the previous ROM is back in the window; return
 * into the Loader, which returns to BASIC. No DOS init runs on this path.
 LVRET   rts
-LVFAIL  leas FRAME,y
+LVFAIL  ldx #0
+        tst LOADER,y
+        beq LVFAIL1
+        ldx #$5043              re-enter as from the Loader: its frame is still below ours
+        lda #$4C
+LVFAIL1 leas FRAME,y
         jmp START
 LEAVEND
 

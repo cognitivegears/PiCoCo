@@ -474,8 +474,9 @@ there is no save key.
 CoCo 3, Pico 2 PCB, HDB-DOS as the saved ROM; `PICOCO.DSK` (`make -C coco`)
 copied to the flash and mounted in drive 3.
 
-1. `DRIVE 3:RUN"PICOCO"`: the home screen; `status` shows `rom now load manager`
-   and `rom prev HDBDW3BC3.ROM`.
+1. `DRIVE 3:RUN"PICOCO"`: the home screen with `COCO 3 128K` in the header (the
+   RAM probe is skipped on a Loader entry: ROM mode); `status` shows
+   `rom now load manager` and `rom prev HDBDW3BC3.ROM`.
 2. BREAK on the home screen: back at `OK` with the BASIC program still listable
    (`LIST`), no banner (no restart); `status` shows `rom now load HDBDW3BC3.ROM`
    and no `rom prev`.
@@ -492,7 +493,7 @@ CoCo 3, Pico 2 PCB, native transport. A game disk (DINORUN on it) and the
 NitrOS-9 EOU Becker disk on the flash.
 
 1. Loader entry (`DRIVE 3:RUN"PICOCO"` from HDB-DOS), DISKS, `B` on the game
-   disk: `RUN WHICH FILE? (DRIVE 0)` lists the `.BAS`/`.BIN` entries; `status`
+   disk: `RUN WHICH FILE?` lists the `.BAS`/`.BIN` entries; `status`
    shows the disk in drive 0 and it stays there after RESET (saved).
 2. ENTER on `DINORUN.BIN`: the screen clears, BASIC shows
    `DRIVE0:LOADM"DINORUN.BIN":EXEC` typed by itself and the game runs (action

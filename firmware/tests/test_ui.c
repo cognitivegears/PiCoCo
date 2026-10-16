@@ -803,6 +803,43 @@ TEST(boot_on_a_loader_entry_swaps_the_dos_back) {
     ASSERT(!ui_active());
 }
 
+/* An OS-9 RBF or blank image is not refused by the OS check, but its sectors
+ * 308-316 are not a directory: no garbage names, the Disks screen stays. */
+TEST(boot_ignores_a_non_rsdos_directory) {
+    setup();
+    mkdsk("game.dsk", false, 0);
+    memset(img + 308u * 256u, 0xC3, 9u * 256u);
+    for (int e = 0; e < 72; e++) img[308u * 256u + (uint32_t)e * 32u + 11] = 0;   /* "BASIC" type, binary name */
+    dsk_write("game.dsk");
+    open_boot(UI_CAP_64K | UI_CAP_ECB);
+    ASSERT(row_has(1, "DISKS"));
+    ASSERT(row_has(14, "NO BAS/BIN FILES"));
+}
+
+/* The Loader's recorded DOS is dropped once any leave ends the session. */
+TEST(loader_entry_prev_is_dropped_on_a_jump_leave) {
+    setup();
+    console_init(out_cb, NULL, &dw, &store);
+    ui_init(send_cb, NULL, exec_cb, &store, &dw);
+    mkfile("hdbdos.rom", "DK", 8192);
+    ASSERT_EQ(console_exec("rom load hdbdos.rom"), 0);
+    mkfile("game.rom", "\x7E\xC0\x10", 8192);
+    ui_ctl(0xA5);
+    uint8_t load[2] = { 'L', 'L' };
+    ui_feed(load, 2, 1);
+    ASSERT(strcmp(ui_prev_rom(), "hdbdos.rom") == 0);
+    poll(2, 0, UI_CAP_64K | UI_CAP_ECB | UI_CAP_DOS, 2);
+    poll(0, UI_KEY_ENTER, -1, 5);          /* ROMS: game.rom first */
+    poll(0, UI_KEY_ENTER, -1, 6);
+    int len = reply_ok();
+    ASSERT_EQ(tx[2 + len - 2], UI_ACT_JUMP);
+    txn = 0;
+    uint8_t g = 'G';
+    ui_feed(&g, 1, 20);
+    ASSERT_EQ(tx[0], UI_GO_OK);
+    ASSERT(ui_prev_rom()[0] == '\0');
+}
+
 TEST(boot_break_returns_to_disks_with_drive_0_mounted) {
     setup();
     mkdsk("game.dsk", false, 1);
@@ -1038,6 +1075,27 @@ TEST(list_pages_counts_and_jumps) {
     ASSERT_EQ(nlines, 0);
 }
 
+/* The arrow codes are printable in the stub's key map; after G they still move. */
+TEST(g_then_an_arrow_key_moves) {
+    setup();
+    char name[16];
+    for (int i = 0; i < 30; i++) {
+        snprintf(name, sizeof name, "%c%02d.rom", 'A' + i / 10, i);
+        mkfile(name, "\x7E\xC0\x10", 8192);
+    }
+    open_roms(0);
+    poll(0, 'G', -1, 10);
+    poll(0, UI_KEY_PGDN, -1, 11);
+    ASSERT(row_has(1, "2-13 OF 30"));
+    poll(0, 'G', -1, 12);
+    poll(0, UI_KEY_PGUP, -1, 13);
+    ASSERT(row_has(1, "1-12 OF 30"));
+    poll(0, UI_KEY_DOWN, -1, 14);
+    poll(0, 'G', -1, 15);
+    poll(0, UI_KEY_UP, -1, 16);
+    ASSERT_EQ(ui_cell(2, 1), 'A' & 0x3F);    /* A00.ROM selected again (inverse) */
+}
+
 TEST(g_then_a_control_key_still_acts) {
     setup();
     mkfile("a.rom", "\x7E\xC0\x10", 8192);
@@ -1246,6 +1304,8 @@ int main(void) {
     RUN(boot_on_a_coco3_power_on_entry_cold_restarts);
     RUN(boot_program_needs_extended_basic);
     RUN(boot_on_a_loader_entry_swaps_the_dos_back);
+    RUN(boot_ignores_a_non_rsdos_directory);
+    RUN(loader_entry_prev_is_dropped_on_a_jump_leave);
     RUN(boot_break_returns_to_disks_with_drive_0_mounted);
     RUN(new_disk_keeps_case_and_adds_dsk);
     RUN(new_disk_with_an_extension_is_left_alone);
@@ -1260,6 +1320,7 @@ int main(void) {
     RUN(bad_clock_text_runs_nothing);
     RUN(timezone_is_parsed_in_minutes);
     RUN(list_pages_counts_and_jumps);
+    RUN(g_then_an_arrow_key_moves);
     RUN(g_then_a_control_key_still_acts);
     RUN(eject_arm_lasts_one_key);
     RUN(new_session_starts_without_last_sessions_message);
