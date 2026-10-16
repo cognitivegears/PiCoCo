@@ -15,6 +15,9 @@ BDATA   equ $FF42
 UICTL   equ $FF43               write $A5 begin session, $5A end
 SCREEN  equ $0400
 RSTSW   equ $71                 BASIC warm-start flag
+RVEC4   equ $016A               CONSOLE IN hook (3-byte JMP in the RAM hook table)
+CINBFL  equ $0070               console-in EOF flag
+DEVNUM  equ $006F               current I/O device, 0 = keyboard
 BUFSZ   equ 600                 largest reply the firmware sends (UI_REPLY_MAX)
 RETRIES equ 5
 
@@ -27,7 +30,9 @@ ACC     equ BUFSZ+5             2 bytes, running sum of the reply
 CNT     equ BUFSZ+7             2 bytes
 TRIES   equ BUFSZ+9
 LOADER  equ BUFSZ+10            1 = entered from the Loader (caps bit 3; 13/18 return into it)
-FRAME   equ BUFSZ+11
+SECU    equ BUFSZ+11            2 bytes: where the sector being read goes (15 retries restart here)
+ARGS    equ BUFSZ+13            9 bytes: the operands of 15 (drive, LSN, count, load, jump), or 14's hook address
+FRAME   equ BUFSZ+22
 
         org $C000
         fcc "DK"
@@ -261,7 +266,7 @@ POLLBAD jsr DRAIN
         sta FLAGS,y
         dec TRIES,y
         lbne POLL1
-        leax NORESP,pcr
+BANNER  leax NORESP,pcr
         ldu #SCREEN
 POLLB1  lda ,x+
         beq POLLB2
@@ -321,9 +326,37 @@ ACLR1   sta ,u+
         bra RUN1
 
 * leave: copy LEAVER into the reply buffer and run it there, so nothing
-* executes from the cart while the Pico swaps the ROM
+* executes from the cart while the Pico swaps the ROM. 14 and 15 carry
+* operands in the buffer, saved first: LEAVER is copied over them.
 ALEAVE  pshs a
-        leax LEAVER,pcr
+        cmpa #$15
+        bne ALV14Q
+        leau ARGS,y             15: the nine operands
+        ldb #9
+ALVC    lda ,x+
+        sta ,u+
+        decb
+        bne ALVC
+        bra ALV0
+ALV14Q  cmpa #$14
+        bne ALV0
+        leau -HOOKSZ-32,y       14: the hook and its text go below the frame (S is at Y: the
+        stu ARGS,y              32 bytes clear the pushes until the leave); BASIC's stack
+        pshs x                  does not reach them before the line is typed
+        leax HOOK,pcr
+        ldb #HTEXT
+ALVH    lda ,x+
+        sta ,u+
+        decb
+        bne ALVH
+        puls x
+        ldb ,x+                 length, then the text (ends in CR); a NUL after it
+ALVT    lda ,x+
+        sta ,u+
+        decb
+        bne ALVT
+        clr ,u
+ALV0    leax LEAVER,pcr
         tfr y,u
         ldb #LEAVEND-LEAVER
 ALV1    lda ,x+
@@ -334,8 +367,9 @@ ALV1    lda ,x+
         jmp ,y
 
 * position-independent (no absolute references to its own labels; copied to the
-* reply buffer, copy count < 256); A = action code ($10 jump, $11 cold, $13 warm, $16 CoCo 3 ROM-mode
-* jump, $17 CoCo 3 cold, $18 CoCo 3 warm). Sends 'G', waits for $06.
+* reply buffer, copy count < 256); A = action code ($10 jump, $11 cold, $12 DOS init,
+* $13 warm, $14 warm and type, $15 boot track, $16 CoCo 3 ROM-mode jump, $17 CoCo 3
+* cold, $18 CoCo 3 warm). Sends 'G', waits for $06.
 LEAVER  tfr a,b
         lda #'G
         sta BDATA
@@ -345,17 +379,23 @@ LV1     lda BSTAT
         bne LV2
         leax -1,x
         bne LV1
-        bra LVFAIL
+        lbra LVFAIL
 LV2     lda BDATA
         cmpa #$06
-        bne LVFAIL
+        lbne LVFAIL
         lda #$5A
         sta UICTL
+        cmpb #$15
+        beq LV15
         leas FRAME,y
         cmpb #$10
         beq LVJMP
+        cmpb #$12
+        beq LV12
         cmpb #$13
         beq LVWARM
+        cmpb #$14
+        beq LV14
         cmpb #$16
         beq LVJMP3
         cmpb #$17
@@ -368,6 +408,23 @@ LVWARM  tst LOADER,y
         jmp [$FFFE]
 LVJMP   andcc #$AF
         jmp $C000
+LV12    andcc #$AF              12: the swapped DOS ROM's init, as EXEC &HC002 would
+        jmp $C002
+* 14: arm the hook copied below the frame (ARGS holds its address): save
+* RVEC4 into it, point it at its text, then return into the Loader as 13.
+LV14    ldu ARGS,y
+        ldd RVEC4
+        std HSAVE,u
+        lda RVEC4+2
+        sta HSAVE+2,u
+        leax HTEXT,u
+        stx HPTR,u
+        lda #$7E
+        sta RVEC4
+        stu RVEC4+1
+        bra LVWARM
+* 15: no ROM swap, so this cart is still here and the frame is still needed
+LV15    jmp BOOT15
 * CoCo 3 exits. All three first select 0.89 MHz ($FFD8): the board cannot
 * serve cartridge reads on consecutive cycles at 1.79 MHz, and the CoCo 3's
 * DK check and cart copy are exactly that (bench 2026-10-02).
@@ -390,6 +447,114 @@ LVRET   rts
 LVFAIL  leas FRAME,y
         jmp START
 LEAVEND
+
+* RVEC4 hook (the logic of coco/hook.asm), position-independent: copied
+* below the frame with its text (offset HTEXT), where it outlives the
+* session until BASIC has read the CR. Each CONSOLE IN call from the line
+* input is answered with the next character; the CR puts the saved vector
+* back. B, X and U are kept; a NUL is handed over as CR so the text's end
+* is never run past; another device (DEVNUM not 0) passes straight through.
+HOOK    pshs b,x
+        ldb DEVNUM
+        bne HPASS
+        clr CINBFL
+        ldx HPTRL,pcr
+        lda ,x+
+        stx HPTRL,pcr
+        tsta
+        bne HNZ
+        lda #13
+HNZ     cmpa #13
+        bne HOUT
+        ldx HSAVEL,pcr
+        stx RVEC4
+        ldb HSAVEL+2,pcr
+        stb RVEC4+2
+HOUT    puls b,x
+        leas 2,s                drop the return into $A176 (the keyboard path)...
+        rts                     ...and return to $A173 with A = the character, as HDB-DOS's own handler does
+HPASS   puls b,x
+        jmp HSAVEL,pcr          the saved 3 bytes are the original JMP: run it in place
+HPTRL   fdb 0
+HSAVEL  fcb 0,0,0
+HOOKEND
+HPTR    equ HPTRL-HOOK
+HSAVE   equ HSAVEL-HOOK
+HTEXT   equ HOOKEND-HOOK
+HOOKSZ  equ HTEXT+64            room for the text (the firmware sends under 48 bytes)
+
+* 15: load the sectors named at ARGS (drive, LSN, count, load address, jump
+* address) with plain DriveWire OP_READ, the session over and the Becker
+* port the server's again. Each sector is checksummed and retried up to
+* RETRIES times; a failure shows the banner and starts a fresh session.
+BOOT15  ldu ARGS+5,y
+B15S    stu SECU,y
+        lda #RETRIES
+        sta TRIES,y
+B15R    ldu SECU,y
+        jsr DRAIN
+        lda #$52                OP_READ drive lsn(3)
+        sta BDATA
+        lda ARGS,y
+        sta BDATA
+        lda ARGS+1,y
+        sta BDATA
+        lda ARGS+2,y
+        sta BDATA
+        lda ARGS+3,y
+        sta BDATA
+        jsr GETB
+        lbcs B15BAD
+        tsta                    error code: anything but 0 is a failed read
+        lbne B15BAD
+        jsr GETB
+        lbcs B15BAD
+        sta ACC,y
+        jsr GETB
+        lbcs B15BAD
+        sta ACC+1,y
+        clr LEN,y
+        clr LEN+1,y
+        clrb                    256 bytes
+B15L    jsr GETB
+        lbcs B15BAD
+        sta ,u+
+        adda LEN+1,y
+        sta LEN+1,y
+        bcc B15N
+        inc LEN,y
+B15N    decb
+        bne B15L
+        ldd LEN,y
+        cmpd ACC,y
+        lbne B15BAD
+        inc ARGS+3,y            next LSN
+        bne B15X
+        inc ARGS+2,y
+        bne B15X
+        inc ARGS+1,y
+B15X    dec ARGS+4,y
+        lbne B15S
+        ldx ARGS+7,y
+        lda $FFFE
+        cmpa #$8C
+        bne B15GO
+* CoCo 3: the DOS command runs the boot track in RAM mode; this code may be
+* in the cart (Loader entry), so the switch runs from the reply buffer
+        tfr y,u
+        ldd #$B7FF              sta $FFDF
+        std ,u++
+        lda #$DF
+        sta ,u+
+        ldd #$6E84              jmp ,x
+        std ,u
+        leas FRAME,y
+        jmp ,y
+B15GO   leas FRAME,y
+        jmp ,x
+B15BAD  dec TRIES,y
+        lbne B15R
+        jmp BANNER
 
 * "PICOCO NOT RESPONDING" in screen codes
 NORESP  fcb $50,$49,$43,$4F,$43,$4F,$60,$4E,$4F,$54,$60

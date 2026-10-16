@@ -287,7 +287,7 @@ Bench CoCo 3 CPU: 6309  RAM: 2 MB
 | H.3.5 `dw` utility | | | |
 | H.3.6 tick loss in 10 min | | | |
 | H.3.7 reset / power cycle | RESET inside NitrOS-9 restarts the NitrOS-9 boot, not HDB-DOS; power cycle returns to HDB-DOS (mounts need `save`) | | 2026-10-01 |
-| H.3.8 manager `B` | | | |
+| H.3.8 manager `B` | Boot screen: J.6.4 | | |
 | H.3 through an MPI | | | |
 | H.4.1 EOU boot (bridge) | pass 2026-10-01 (third try): 2048k, 6309 native, boots to the prompt; 2409 sectors, 21 re-read after a checksum failure (0.9 %, open). Needed: the server dropping EOU's SDC probe (`64 64 00 64 00 ...` on `$FF42`), `COCO3FPGA=1` in the image. Still prompts for the time: root `startup` is the `.sdc` one | | 2026-10-01 |
 | H.4.2-4 clock, gshell, write | gshell loads and launches apps (trackpad), no time prompt with the `.dw` startup, saved `becker bridge` survives a power cycle; ~7935 sectors, 42 re-reads (0.5 %, open), 0 phantom reads. `dcheck` not run | | 2026-10-01 |
@@ -486,6 +486,33 @@ copied to the flash and mounted in drive 3.
    again afterwards.
 5. CoCo 2 rows (batched session): 1-3 at 0.89 MHz; the Stub runs from the cart.
 
+### J.6 Boot screen (#66: NitrOS-9 boot and the RS-DOS program handoff)
+
+CoCo 3, Pico 2 PCB, native transport. A game disk (DINORUN on it) and the
+NitrOS-9 EOU Becker disk on the flash.
+
+1. Loader entry (`DRIVE 3:RUN"PICOCO"` from HDB-DOS), DISKS, `B` on the game
+   disk: `RUN WHICH FILE? (DRIVE 0)` lists the `.BAS`/`.BIN` entries; `status`
+   shows the disk in drive 0 and it stays there after RESET (saved).
+2. ENTER on `DINORUN.BIN`: the screen clears, BASIC shows
+   `DRIVE0:LOADM"DINORUN.BIN":EXEC` typed by itself and the game runs (action
+   `14`, the RVEC4 hook; `status` shows HDB-DOS back as `rom now`).
+3. BREAK on the Boot list: back on DISKS, drive 0 still mounted.
+4. `B` on the EOU disk: NitrOS-9 boots (action `15`, 18 sectors over plain
+   OP_READ; H.3.8). `becker off` first instead: `PICOCO NOT RESPONDING`, a key
+   brings the Manager back.
+5. Power-on entry (double RESET), `B` on the game disk, ENTER on a program:
+   `STARTING DOS, THEN TYPE:` / `RUN"X"`; any key cold-restarts into HDB-DOS
+   (`$17`); the typed line runs. With `rom boot manager`: `SET A DOS ROM AS DEFAULT`.
+6. `net mode net` (Plus-W) or bridge: `B` says `BOOT NEEDS NATIVE MODE`, nothing mounted.
+7. CoCo 2 rows (batched session): 1-3; 5 uses `$12` (the DOS init at `$C002`).
+   On a 16K/32K CoCo 2, `B` on the EOU disk: `NEEDS 64K`.
+
+Emulator (XRoar `coco2bus`, `picoco-host --ui`, 2026-10-15): `B` on a disk lists
+`PICOCO.BAS`/`PICOCO.BIN` and ENTER gives `SET A DOS ROM AS DEFAULT` (no console
+on the host to set one). `14` and `15` cannot run there (no cart swap, no Becker
+boot disk).
+
 ### J.2 Results
 
 | Check | Result | Date |
@@ -513,6 +540,7 @@ copied to the flash and mounted in drive 3.
 | J.3 re-run on the head build (7ea34e6) | pass: double RESET, header `PICOCO  COCO 3`; ENTER on `HDBDW3BC3.ROM` gives HDB-DOS and `DIR`; double RESET, ENTER on `CARTTEST.ROM` prints PASS lines. These are the exits that select slow speed and clear `$FEED` | 2026-10-02 |
 | J.4.1-8 | open | |
 | J.5.1-5 | open | |
+| J.6.1-7 | open | |
 | J.3.10 CoCo 2 double RESET | pass once with the first flash-marker build (3 s window): manager loaded, `EXEC 49154`, launch carttest, single RESET back to the saved ROM. Not re-run with the final 2 s window + debounce build | 2026-10-01 |
 
 ## K. PIO bus engine

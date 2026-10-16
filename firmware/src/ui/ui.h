@@ -24,7 +24,10 @@
 #define UI_ACT_CLEAR 0x02
 #define UI_ACT_JUMP  0x10           /* after a ROM swap: JMP $C000 */
 #define UI_ACT_COLD  0x11           /* after a ROM swap: cold restart */
+#define UI_ACT_DOS   0x12           /* after a DOS ROM swap, power-on entry: JMP $C002 (its init, no restart) */
 #define UI_ACT_WARM  0x13           /* warm restart: back to BASIC */
+#define UI_ACT_TYPE  0x14           /* Loader entry: return to BASIC and type: length (1), text ending in CR */
+#define UI_ACT_BOOT  0x15           /* DriveWire OP_READ and jump: drive (1), LSN (3), count (1), load (2), jump (2) */
 #define UI_ACT_JUMP3 0x16           /* CoCo 3, after a ROM swap: slow speed, $CC -> $FF90, ROM mode, JMP $C000 */
 #define UI_ACT_COLD3 0x17           /* CoCo 3, after a ROM swap: slow speed, clear $FEED and $71, JMP $8C1B (recopies the cart to RAM) */
 #define UI_ACT_WARM3 0x18           /* CoCo 3: JMP $8C1B with $71 untouched */

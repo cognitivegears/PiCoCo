@@ -560,13 +560,235 @@ TEST(failed_change_shows_the_reason_and_does_not_save) {
     ASSERT(row_has(14, "ROM LOAD FAILED"));  /* the test exec's reason text */
 }
 
-TEST(disks_boot_waits_for_its_ticket) {
-    setup();
-    mkfile("alpha.dsk", "", 256);
-    open_disks(0);
+/* ---- Boot screen (#66) ---- */
+
+#include "console.h"
+#include "mode.h"
+
+#define DSK_SIZE (35u * 18u * 256u)
+static uint8_t img[DSK_SIZE];
+static void out_cb(void *ctx, const char *s) { (void)ctx; (void)s; }
+
+/* One RS-DOS directory entry at index i: 8+3 name, type, ASCII flag. */
+static void dirent(int i, const char *name, const char *ext, uint8_t type) {
+    uint8_t *d = img + 308u * 256u + (uint32_t)i * 32u;
+    memset(d, ' ', 11);
+    memcpy(d, name, strlen(name));
+    memcpy(d + 8, ext, strlen(ext));
+    d[11] = type;
+}
+
+static void dsk_write(const char *name) {
+    char p[600];
+    snprintf(p, sizeof p, "%s/%s", g_dir, name);
+    FILE *f = fopen(p, "wb");
+    fwrite(img, 1, sizeof img, f);
+    fclose(f);
+}
+
+/* A 35-track image in the store; nent directory entries, then the $FF end marker unless full. */
+static void mkdsk(const char *name, bool os9, int nent) {
+    memset(img, 0, sizeof img);
+    for (int i = 0; i < nent; i++) {
+        char n[9];
+        snprintf(n, sizeof n, "F%07d", i);
+        dirent(i, n, "BAS", 0);
+    }
+    if (nent < 72) img[308u * 256u + (uint32_t)nent * 32u] = 0xFF;
+    if (os9) memcpy(img + 612u * 256u, "OS", 2);
+    dsk_write(name);
+}
+
+/* Disks screen with game.dsk selected and mounted in drive 0 (the console
+ * line is faked here, so the mount is done as that line would). */
+static void open_boot(int capsv) {
+    open_disks(capsv);
+    ASSERT_EQ(dw_mount(&dw, 0, "game.dsk", false), 0);
+    nlines = 0;
     poll(0, 'B', -1, 11);
-    ASSERT(row_has(14, "NOT YET"));
+}
+
+TEST(boot_lists_programs_from_the_directory) {
+    setup();
+    mkdsk("game.dsk", false, 0);
+    dirent(0, "GAME", "BAS", 0);
+    dirent(1, "DATA", "DAT", 1);          /* data: hidden */
+    dirent(2, "DINORUN", "BIN", 2);
+    dirent(3, "OLD", "BAS", 0);
+    img[308u * 256u + 3 * 32] = 0x00;     /* deleted */
+    dirent(4, "NOTES", "TXT", 3);         /* text: hidden */
+    img[308u * 256u + 5 * 32] = 0xFF;
+    dsk_write("game.dsk");
+    open_boot(UI_CAP_64K | UI_CAP_ECB);
+    ASSERT_EQ(nlines, 2);
+    ASSERT(strcmp(lines[0], "dw disk insert 0 game.dsk") == 0);
+    ASSERT(strcmp(lines[1], "save") == 0);
+    ASSERT(row_has(1, "RUN WHICH"));
+    ASSERT(row_has(2, "GAME.BAS"));
+    ASSERT(row_has(3, "DINORUN.BIN"));
+    ASSERT(!row_has(4, "."));
+    ASSERT(!row_has(4, "RUN WHICH"));
+    ASSERT(row_has(15, "ENTER=RUN"));
+}
+
+TEST(boot_full_directory_has_no_end_marker) {
+    setup();
+    mkdsk("game.dsk", false, 72);
+    open_boot(UI_CAP_64K | UI_CAP_ECB);
+    ASSERT(row_has(1, "1-12 OF 72"));
+    poll(0, UI_KEY_PGDN, -1, 12);
+    poll(0, UI_KEY_PGDN, -1, 13);
+    poll(0, UI_KEY_PGDN, -1, 14);
+    poll(0, UI_KEY_PGDN, -1, 15);
+    poll(0, UI_KEY_PGDN, -1, 16);
+    poll(0, UI_KEY_PGDN, -1, 17);
+    ASSERT(row_has(13, "F0000071.BAS"));
+}
+
+TEST(boot_with_no_programs_stays_on_disks) {
+    setup();
+    mkdsk("game.dsk", false, 0);
+    open_boot(UI_CAP_64K | UI_CAP_ECB);
+    ASSERT(row_has(1, "DISKS"));
+    ASSERT(row_has(14, "NO BAS/BIN FILES"));
+    ASSERT_EQ(nlines, 2);                 /* the mount stays */
+}
+
+TEST(boot_refused_in_bridge_and_net_mode) {
+    setup();
+    mkdsk("game.dsk", true, 0);
+    open_disks(UI_CAP_64K | UI_CAP_ECB);
+    mode_set(MODE_NET);
+    poll(0, 'B', -1, 11);
+    ASSERT(row_has(14, "BOOT NEEDS NATIVE MODE"));
     ASSERT_EQ(nlines, 0);
+    mode_set(MODE_BRIDGE);
+    poll(0, 'B', -1, 12);
+    ASSERT(row_has(14, "BOOT NEEDS NATIVE MODE"));
+    ASSERT_EQ(nlines, 0);
+    mode_reset();
+}
+
+TEST(boot_os9_disk_loads_the_boot_track) {
+    setup();
+    mkdsk("game.dsk", true, 0);
+    open_boot(UI_CAP_64K | UI_CAP_ECB);
+    int len = reply_ok();
+    static const uint8_t want[] = { UI_ACT_CLEAR, UI_ACT_BOOT, 0, 0x00, 0x02, 0x64, 18, 0x26, 0x00, 0x26, 0x02, UI_ACT_END };
+    ASSERT_EQ(len, (int)sizeof want);
+    ASSERT_MEMEQ(tx + 2, want, sizeof want);
+    uint8_t g = 'G';
+    txn = 0;
+    ui_feed(&g, 1, 20);
+    ASSERT_EQ(tx[0], UI_GO_OK);
+    ASSERT_EQ(nlines, 2);                 /* no ROM swap for a NitrOS-9 boot */
+    ASSERT(!ui_active());
+}
+
+TEST(boot_os9_disk_needs_64k) {
+    setup();
+    mkdsk("game.dsk", true, 0);
+    open_boot(UI_CAP_32K | UI_CAP_ECB);
+    ASSERT(row_has(14, "NEEDS 64K"));
+    ASSERT(row_has(1, "DISKS"));
+}
+
+TEST(boot_cannot_read_an_unmounted_drive) {
+    setup();
+    mkdsk("game.dsk", true, 0);
+    open_disks(UI_CAP_64K | UI_CAP_ECB);
+    poll(0, 'B', -1, 11);                 /* the faked insert mounted nothing */
+    ASSERT(row_has(14, "CANNOT READ DISK"));
+}
+
+TEST(boot_on_a_loader_entry_types_the_line) {
+    setup();
+    mkdsk("game.dsk", false, 0);
+    dirent(0, "GAME", "BAS", 0);
+    dirent(1, "DINORUN", "BIN", 2);
+    img[308u * 256u + 2 * 32] = 0xFF;
+    dsk_write("game.dsk");
+    open_boot(UI_CAP_64K | UI_CAP_ECB | UI_CAP_DOS);
+    poll(0, UI_KEY_DOWN, -1, 12);
+    poll(0, UI_KEY_ENTER, -1, 13);
+    static const char text[] = "DRIVE0:LOADM\"DINORUN.BIN\":EXEC\r";
+    int len = reply_ok();
+    ASSERT_EQ(len, 4 + (int)strlen(text));
+    ASSERT_EQ(tx[2], UI_ACT_CLEAR);
+    ASSERT_EQ(tx[3], UI_ACT_TYPE);
+    ASSERT_EQ(tx[4], strlen(text));
+    ASSERT_MEMEQ(tx + 5, text, strlen(text));
+    ASSERT_EQ(tx[5 + strlen(text)], UI_ACT_END);
+    poll(0, UI_KEY_UP, -1, 14);           /* a key cancels, as for a launch */
+    poll(0, UI_KEY_ENTER, -1, 15);
+    static const char bas[] = "DRIVE0:RUN\"GAME.BAS\"\r";
+    len = reply_ok();
+    ASSERT_EQ(tx[3], UI_ACT_TYPE);
+    ASSERT_EQ(tx[4], strlen(bas));
+    ASSERT_MEMEQ(tx + 5, bas, strlen(bas));
+}
+
+TEST(boot_on_a_power_on_entry_offers_the_dos) {
+    setup();
+    console_init(out_cb, NULL, &dw, &store);
+    ui_init(send_cb, NULL, exec_cb, &store, &dw);
+    mkfile("hdbdos.rom", "DK", 8192);
+    mkdsk("game.dsk", false, 1);
+    open_boot(UI_CAP_64K | UI_CAP_ECB);
+    poll(0, UI_KEY_ENTER, -1, 12);
+    ASSERT(row_has(14, "SET A DOS ROM AS DEFAULT"));   /* next boot is the manager */
+    ASSERT_EQ(console_exec("rom boot hdbdos.rom"), 0);
+    poll(0, UI_KEY_ENTER, -1, 13);
+    ASSERT(row_has(13, "STARTING DOS, THEN TYPE:"));
+    ASSERT(row_has(14, "RUN\"F0000000.BAS\""));
+    nlines = 0;
+    poll(0, ' ', -1, 14);
+    expect_clear_then(UI_ACT_DOS);
+    uint8_t g = 'G';
+    txn = 0;
+    ui_feed(&g, 1, 20);
+    ASSERT_EQ(tx[0], UI_GO_OK);
+    ASSERT_EQ(nlines, 1);
+    ASSERT(strcmp(lines[0], "rom launch hdbdos.rom") == 0);
+}
+
+TEST(boot_on_a_coco3_power_on_entry_cold_restarts) {
+    setup();
+    console_init(out_cb, NULL, &dw, &store);
+    ui_init(send_cb, NULL, exec_cb, &store, &dw);
+    mkfile("hdbdos.rom", "DK", 8192);
+    ASSERT_EQ(console_exec("rom boot hdbdos.rom"), 0);
+    mkdsk("game.dsk", false, 1);
+    open_boot(UI_CAP_64K | UI_CAP_ECB | UI_CAP_COCO3);
+    poll(0, UI_KEY_ENTER, -1, 12);
+    poll(0, UI_KEY_ENTER, -1, 13);
+    expect_clear_then(UI_ACT_COLD3);
+}
+
+TEST(boot_program_needs_extended_basic) {
+    setup();
+    mkdsk("game.dsk", false, 1);
+    open_boot(UI_CAP_64K);
+    poll(0, UI_KEY_ENTER, -1, 12);
+    ASSERT(row_has(14, "NEEDS EXTENDED BASIC"));
+    ASSERT_EQ(reply_ok() > 0 && tx[2] != UI_ACT_CLEAR, true);
+}
+
+TEST(boot_break_returns_to_disks_with_drive_0_mounted) {
+    setup();
+    mkdsk("game.dsk", false, 1);
+    mkdsk("alpha.dsk", false, 0);
+    open_disks(UI_CAP_64K | UI_CAP_ECB);
+    poll(0, UI_KEY_DOWN, -1, 10);          /* game.dsk is second */
+    ASSERT_EQ(dw_mount(&dw, 0, "game.dsk", false), 0);
+    nlines = 0;
+    poll(0, 'B', -1, 11);
+    ASSERT(row_has(1, "RUN WHICH"));
+    poll(0, UI_KEY_BREAK, -1, 12);
+    ASSERT(row_has(1, "DISKS"));
+    ASSERT(row_has(3, "0GAME.DSK") || row_has(3, "0 GAME.DSK"));
+    ASSERT_EQ(ui_cell(3, 1), 'G' & 0x3F);  /* game.dsk still selected (inverse) */
+    ASSERT_EQ(nlines, 2);                  /* insert and save only; no eject */
 }
 
 static void open_settings(int capsv);
@@ -983,7 +1205,18 @@ int main(void) {
     RUN(disks_lists_images_not_roms_or_config);
     RUN(mount_and_eject_are_saved_and_shown);
     RUN(failed_change_shows_the_reason_and_does_not_save);
-    RUN(disks_boot_waits_for_its_ticket);
+    RUN(boot_lists_programs_from_the_directory);
+    RUN(boot_full_directory_has_no_end_marker);
+    RUN(boot_with_no_programs_stays_on_disks);
+    RUN(boot_refused_in_bridge_and_net_mode);
+    RUN(boot_os9_disk_loads_the_boot_track);
+    RUN(boot_os9_disk_needs_64k);
+    RUN(boot_cannot_read_an_unmounted_drive);
+    RUN(boot_on_a_loader_entry_types_the_line);
+    RUN(boot_on_a_power_on_entry_offers_the_dos);
+    RUN(boot_on_a_coco3_power_on_entry_cold_restarts);
+    RUN(boot_program_needs_extended_basic);
+    RUN(boot_break_returns_to_disks_with_drive_0_mounted);
     RUN(new_disk_keeps_case_and_adds_dsk);
     RUN(new_disk_with_an_extension_is_left_alone);
     RUN(editor_limit_and_cancel);

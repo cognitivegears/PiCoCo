@@ -25,7 +25,7 @@
 #define POLL_QUIET_MS 250       /* a poll cut short is dropped after this; the stub retries at ~1.3 s */
 #define JUMP_MS   1000          /* G+letter within this narrows the jump prefix */
 
-typedef enum { SCR_HOME, SCR_ROMS, SCR_DISKS, SCR_SETTINGS, SCR_WIFI } screen_t;
+typedef enum { SCR_HOME, SCR_ROMS, SCR_DISKS, SCR_SETTINGS, SCR_WIFI, SCR_BOOT } screen_t;
 
 static ui_send_fn g_send;
 static void *g_ctx;
@@ -46,6 +46,8 @@ static int menu_sel;
 static char msg[UI_COLS + 1];
 static char pending[NAME_LEN];
 static uint8_t pending_act;
+static uint8_t act_args[64];    /* operands after the leave action (UI_ACT_TYPE, UI_ACT_BOOT) */
+static int act_argn;
 static bool msg_keep;           /* a failed leave's reason is for the session the stub starts next */
 static char prev[NAME_LEN];     /* the ROM the Loader's L replaced (#60); BREAK on that entry puts it back */
 static bool want_lsum;          /* an L arrived; its sum8 (another L) is next */
@@ -60,6 +62,9 @@ static int jumpn;
 static bool jump_armed;
 static uint32_t jump_ms;
 static bool eject_armed;        /* Disks: E pressed, a digit picks the drive */
+static bool boot_ml[MAX_NAMES]; /* Boot: the list entry is ML (LOADM) rather than BASIC (RUN) */
+static bool boot_wait;          /* Boot: the DOS-start offer is on screen, any key starts it */
+static int disks_sel, disks_top;/* Disks: the selection the Boot screen returns to */
 
 static uint8_t pk[5];
 static int pkn;
@@ -343,6 +348,8 @@ static uint8_t key_roms(uint8_t key) {
 
 /* ---- Disks ---- */
 
+static uint8_t boot_start(void);
+
 static void draw_disks(void) {
     list_draw("DISKS", "NO DISK IMAGES");
     put(15, 0, "0-3=MOUNT E=EJECT N=NEW B=BOOT", false);
@@ -370,7 +377,129 @@ static uint8_t key_disks(uint8_t key) {
     }
     else if (key == 'E' || key == 'e') { eject_armed = true; set_msg("EJECT: PRESS 0-3"); }
     else if (key == 'N' || key == 'n') ui_text_begin("NAME:", "", false, 31, new_disk_cb);
-    else if (key == 'B' || key == 'b') set_msg("NOT YET");   /* #66 Boot */
+    else if (key == 'B' || key == 'b') return boot_start();
+    return 0;
+}
+
+/* ---- Boot (#66): B on a disk mounts it in drive 0 and boots or lists it ---- */
+
+#define BOOT_LSN 612u           /* NitrOS-9 boot track: track 34 sector 1, 18 sectors to $2600 */
+#define DIR_LSN  308u           /* RS-DOS directory: track 17 sectors 3-11 */
+
+static int boot_read(uint32_t lsn, uint8_t sec[256]) {
+    dw_disk *d = &g_dw->drives[0];
+    return d->mounted ? dw_disk_read(d, lsn, sec) : -1;
+}
+
+/* One RS-DOS directory sector: 32-byte entries, $FF ends the directory, $00
+ * is deleted, byte 11 is the type (0 BASIC, 2 ML). False at the end. */
+static bool rsdos_dir(const uint8_t sec[256]) {
+    for (int e = 0; e < 8; e++) {
+        const uint8_t *d = sec + e * 32;
+        if (d[0] == 0xFF) return false;
+        if (d[0] == 0x00 || (d[11] != 0 && d[11] != 2)) continue;
+        if (nnames >= MAX_NAMES) { truncated = true; return false; }
+        char *n = names[nnames];
+        int k = 0;
+        for (int i = 0; i < 8 && d[i] != ' '; i++) n[k++] = (char)d[i];
+        n[k++] = '.';
+        for (int i = 8; i < 11 && d[i] != ' '; i++) n[k++] = (char)d[i];
+        n[k] = '\0';
+        boot_ml[nnames++] = d[11] == 2;
+    }
+    return true;
+}
+
+static void disks_back(void) {
+    screen = SCR_DISKS;
+    list_load(false);
+    sel = disks_sel; top = disks_top;
+    if (sel >= nnames) sel = top = 0;
+}
+
+static uint8_t boot_start(void) {
+    uint8_t sec[256];
+    char line[24 + NAME_LEN];
+    if (!nnames) return 0;
+    /* In bridge or net mode the CoCo's drive 0 is served elsewhere. */
+    if (mode_get() == MODE_BRIDGE || mode_get() == MODE_NET) { set_msg("BOOT NEEDS NATIVE MODE"); return 0; }
+    snprintf(line, sizeof line, "dw disk insert 0 %s", names[sel]);
+    if (change(line) != 0) return 0;
+    if (boot_read(BOOT_LSN, sec) != 0) { set_msg("CANNOT READ DISK"); return 0; }
+    if (sec[0] == 'O' && sec[1] == 'S') {
+        if (!(caps & UI_CAP_64K)) { set_msg("NEEDS 64K"); return 0; }
+        /* As Disk BASIC's DOS command: drive 0, LSN 612, 18 sectors to $2600, jump $2602. */
+        static const uint8_t os9[] = { 0, 0x00, 0x02, 0x64, 18, 0x26, 0x00, 0x26, 0x02 };
+        memcpy(act_args, os9, sizeof os9);
+        act_argn = sizeof os9;
+        pending[0] = '\0';
+        return pending_act = UI_ACT_BOOT;
+    }
+    disks_sel = sel; disks_top = top;
+    nnames = sel = top = jumpn = 0;
+    truncated = jump_armed = false;
+    list_roms = true;                   /* no drive digits beside program names */
+    for (int i = 0; i < 9; i++) {
+        if (boot_read(DIR_LSN + (uint32_t)i, sec) != 0) { set_msg("CANNOT READ DIRECTORY"); disks_back(); return 0; }
+        if (!rsdos_dir(sec)) break;
+    }
+    if (!nnames) { set_msg("NO BAS/BIN FILES"); disks_back(); return 0; }
+    screen = SCR_BOOT;
+    return 0;
+}
+
+/* The line BASIC runs for the selected program; DRIVE0: because the Loader's
+ * disk may have made another drive the default. */
+static int boot_cmd(char *out, size_t cap, bool drive0) {
+    return snprintf(out, cap, "%s%s\"%s\"%s\r", drive0 ? "DRIVE0:" : "",
+                    boot_ml[sel] ? "LOADM" : "RUN", names[sel], boot_ml[sel] ? ":EXEC" : "");
+}
+
+static void draw_boot(void) {
+    list_draw("RUN WHICH FILE? (DRIVE 0)", "");
+    if (boot_wait) {
+        char line[48];
+        boot_cmd(line, sizeof line, false);
+        line[strlen(line) - 1] = '\0';
+        put(13, 0, "STARTING DOS, THEN TYPE:", false);
+        put(MSG_ROW, 0, line, false);
+        put(15, 0, "ANY KEY=START THE DOS", false);
+        return;
+    }
+    put(15, 0, "ENTER=RUN  BREAK=BACK", false);
+}
+
+static uint8_t boot_run(void) {
+    if (caps & UI_CAP_DOS) {
+        /* Loader entry: the DOS is live; put its ROM back and have BASIC type the line (RVEC4 hook in the Stub). */
+        char text[48];
+        int l = boot_cmd(text, sizeof text, true);
+        act_args[0] = (uint8_t)l;
+        memcpy(act_args + 1, text, (size_t)l);
+        act_argn = l + 1;
+        snprintf(pending, sizeof pending, "%s", prev);
+        return pending_act = UI_ACT_TYPE;
+    }
+    if (!(caps & UI_CAP_ECB)) { set_msg("NEEDS EXTENDED BASIC"); return 0; }
+    /* Power-on entry: a line armed now would not survive the DOS start (spec section 8 check 3),
+     * so offer to start the next-boot DOS and say what to type. */
+    uint8_t two[2];
+    const char *dos = console_rom_next();
+    if (!dos[0] || peek2(dos, two) != 0 || two[0] != 'D' || two[1] != 'K') { set_msg("SET A DOS ROM AS DEFAULT"); return 0; }
+    boot_wait = true;
+    return 0;
+}
+
+static uint8_t key_boot(uint8_t key) {
+    if (boot_wait) {
+        if (!key) return 0;
+        boot_wait = false;
+        snprintf(pending, sizeof pending, "%s", console_rom_next());
+        return pending_act = (caps & UI_CAP_COCO3) ? UI_ACT_COLD3 : UI_ACT_DOS;
+    }
+    if (list_key(key)) return 0;
+    if (key == UI_KEY_ENTER) return boot_run();
+    if (key == UI_KEY_BREAK) disks_back();  /* drive 0 stays mounted */
     return 0;
 }
 
@@ -539,6 +668,7 @@ static const struct { void (*draw)(void); uint8_t (*key)(uint8_t); } screens[] =
     [SCR_DISKS] = { draw_disks, key_disks },
     [SCR_SETTINGS] = { draw_settings, key_settings },
     [SCR_WIFI] = { draw_wifi, key_wifi },
+    [SCR_BOOT] = { draw_boot, key_boot },
 };
 
 static void draw(void) {
@@ -570,7 +700,7 @@ static void build_reply(bool full, uint8_t act) {
         p += n;
         i += n;
     }
-    if (act) *p++ = act;
+    if (act) { *p++ = act; memcpy(p, act_args, (size_t)act_argn); p += act_argn; }
     *p++ = UI_ACT_END;
     size_t len = (size_t)(p - (reply + 2));
     unsigned sum = 0;
@@ -582,7 +712,7 @@ static void build_reply(bool full, uint8_t act) {
 }
 
 static uint8_t on_key(uint8_t key) {
-    if (key) { msg[0] = '\0'; pending_act = 0; }
+    if (key) { msg[0] = '\0'; pending_act = 0; act_argn = 0; }
     if (ui_text_active()) { ui_text_key(key); return 0; }
     return screens[screen].key(key);
 }
@@ -594,7 +724,7 @@ static void on_poll(uint8_t flags, uint8_t key, uint8_t c) {
     if (first) {
         caps = c; screen = SCR_HOME; menu_sel = 0; scanning = false; ui_text_key(UI_KEY_BREAK);
         if (!msg_keep) msg[0] = '\0';
-        msg_keep = jump_armed = eject_armed = false;
+        msg_keep = jump_armed = eject_armed = boot_wait = false;
     }
     else { memcpy(ack, sent, sizeof ack); act = on_key(key); }   /* a new poll acknowledges the last reply */
     if (act) memset(scr, 0x60, sizeof scr);   /* leaving: the reply clears the screen, nothing to draw */
@@ -629,7 +759,7 @@ void ui_feed(const uint8_t *buf, size_t n, uint32_t now) {
 }
 
 void ui_ctl(uint8_t codev) {
-    if (codev == 0xA5) { active = true; pkn = 0; reply_len = 0; pending_act = 0; want_lsum = false; }
+    if (codev == 0xA5) { active = true; pkn = 0; reply_len = 0; pending_act = 0; act_argn = 0; want_lsum = false; }
     else if (codev == 0x5A) active = false;
 }
 
@@ -638,8 +768,8 @@ bool ui_active(void) { return active; }
 void ui_init(ui_send_fn send, void *ctx, ui_exec_fn exec, dw_store *store, dw_server *dw) {
     g_send = send; g_ctx = ctx; g_exec = exec; g_store = store; g_dw = dw;
     active = false;
-    pkn = 0; reply_len = 0; pending_act = 0;
-    screen = SCR_HOME; menu_sel = 0; scanning = false; ui_text_key(UI_KEY_BREAK);
+    pkn = 0; reply_len = 0; pending_act = 0; act_argn = 0;
+    screen = SCR_HOME; menu_sel = 0; scanning = false; boot_wait = false; ui_text_key(UI_KEY_BREAK);
     nnames = sel = top = 0; truncated = false;
     msg[0] = '\0'; pending[0] = '\0'; prev[0] = '\0'; caps = 0; want_lsum = false;
     memset(scr, 0x60, sizeof scr);
