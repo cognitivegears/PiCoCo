@@ -209,6 +209,19 @@ static int mounted_in(const char *name) {
     return -1;
 }
 
+/* Mount the selected image in drive d and save; an image sitting in another
+ * drive moves (the console refuses a second mount). 0 ok. */
+static int mount_sel(int d) {
+    char line[24 + NAME_LEN];
+    int m = mounted_in(names[sel]);
+    if (m >= 0 && m != d) {
+        snprintf(line, sizeof line, "dw disk eject %d", m);
+        if (run(line) != 0) return -1;
+    }
+    snprintf(line, sizeof line, "dw disk insert %d %s", d, names[sel]);
+    return change(line);
+}
+
 static void list_draw(const char *title, const char *empty) {
     put(1, 0, nnames ? title : empty, false);
     if (nnames > LIST_ROWS) {
@@ -218,7 +231,7 @@ static void list_draw(const char *title, const char *empty) {
         put_right(1, c);
     }
     for (int i = 0; i < LIST_ROWS && top + i < nnames; i++) {
-        put(LIST_TOP + i, 1, names[top + i], top + i == sel);
+        put(LIST_TOP + i, 2, names[top + i], top + i == sel);
         int d = list_drives ? mounted_in(names[top + i]) : -1;
         if (d >= 0) put(LIST_TOP + i, 0, (char[]){ (char)('0' + d), 0 }, false);
     }
@@ -373,10 +386,8 @@ static uint8_t key_disks(uint8_t key) {
     if (list_key(key)) return 0;
     if (key == UI_KEY_BREAK) screen = SCR_HOME;
     else if (key >= '0' && key < '0' + DW_MAX_DRIVES) {
-        if (eject) snprintf(line, sizeof line, "dw disk eject %c", key);
-        else if (nnames) snprintf(line, sizeof line, "dw disk insert %c %s", key, names[sel]);
-        else return 0;
-        change(line);
+        if (eject) { snprintf(line, sizeof line, "dw disk eject %c", key); change(line); }
+        else if (nnames) mount_sel(key - '0');
     }
     else if (key == 'E' || key == 'e') { eject_armed = true; set_msg("EJECT: PRESS 0-3"); }
     else if (key == 'N' || key == 'n') ui_text_begin("NAME:", "", false, 31, new_disk_cb);
@@ -425,12 +436,10 @@ static void disks_back(void) {
 
 static uint8_t boot_start(void) {
     uint8_t sec[256];
-    char line[24 + NAME_LEN];
     if (!nnames) return 0;
     /* In bridge or net mode the CoCo's drive 0 is served elsewhere. */
     if (mode_get() == MODE_BRIDGE || mode_get() == MODE_NET) { set_msg("BOOT NEEDS NATIVE MODE"); return 0; }
-    snprintf(line, sizeof line, "dw disk insert 0 %s", names[sel]);
-    if (change(line) != 0) return 0;
+    if (mount_sel(0) != 0) return 0;
     if (boot_read(BOOT_LSN, sec) != 0) { set_msg("CANNOT READ DISK"); return 0; }
     if (sec[0] == 'O' && sec[1] == 'S') {
         if (!(caps & UI_CAP_64K)) { set_msg("NEEDS 64K"); return 0; }

@@ -205,7 +205,7 @@ TEST(reply_never_exceeds_cap) {
     ASSERT(len > 0 && len <= UI_REPLY_MAX);
     char row[UI_COLS + 1];
     ui_row_text(13, row);
-    ASSERT(row[1] != ' ');                  /* the list really drew */
+    ASSERT(row[2] != ' ');                  /* the list really drew */
 }
 
 static void open_with(int capsv) {
@@ -513,6 +513,21 @@ static void open_disks(int capsv) {
     open_with(capsv);
     poll(0, UI_KEY_DOWN, -1, 5);
     poll(0, UI_KEY_ENTER, -1, 6);
+}
+
+/* Bench J.5.3: the Loader's disk sits in drive 3; `0` on it must move it, not refuse. */
+TEST(mounting_an_image_held_by_another_drive_moves_it) {
+    setup();
+    mkfile("picoco.dsk", "", 256);
+    ASSERT_EQ(dw_mount(&dw, 3, "picoco.dsk", false), 0);
+    open_disks(0);
+    ASSERT(row_has(2, "3 PICOCO.DSK"));
+    nlines = 0;
+    poll(0, '0', -1, 10);
+    ASSERT_EQ(nlines, 3);
+    ASSERT(strcmp(lines[0], "dw disk eject 3") == 0);
+    ASSERT(strcmp(lines[1], "dw disk insert 0 picoco.dsk") == 0);
+    ASSERT(strcmp(lines[2], "save") == 0);
 }
 
 TEST(disks_lists_images_not_roms_or_config) {
@@ -852,8 +867,8 @@ TEST(boot_break_returns_to_disks_with_drive_0_mounted) {
     ASSERT(row_has(1, "RUN WHICH"));
     poll(0, UI_KEY_BREAK, -1, 12);
     ASSERT(row_has(1, "DISKS"));
-    ASSERT(row_has(3, "0GAME.DSK"));
-    ASSERT_EQ(ui_cell(3, 1), 'G' & 0x3F);  /* game.dsk still selected (inverse) */
+    ASSERT(row_has(3, "0 GAME.DSK"));
+    ASSERT_EQ(ui_cell(3, 2), 'G' & 0x3F);  /* game.dsk still selected (inverse) */
     ASSERT_EQ(nlines, 2);                  /* insert and save only; no eject */
 }
 
@@ -1093,7 +1108,7 @@ TEST(g_then_an_arrow_key_moves) {
     poll(0, UI_KEY_DOWN, -1, 14);
     poll(0, 'G', -1, 15);
     poll(0, UI_KEY_UP, -1, 16);
-    ASSERT_EQ(ui_cell(2, 1), 'A' & 0x3F);    /* A00.ROM selected again (inverse) */
+    ASSERT_EQ(ui_cell(2, 2), 'A' & 0x3F);    /* A00.ROM selected again (inverse) */
 }
 
 TEST(g_then_a_control_key_still_acts) {
@@ -1289,6 +1304,7 @@ int main(void) {
     RUN(launch_is_not_saved);
     RUN(loader_request_launches_the_manager);
     RUN(loader_entry_break_without_previous_rom);
+    RUN(mounting_an_image_held_by_another_drive_moves_it);
     RUN(disks_lists_images_not_roms_or_config);
     RUN(mount_and_eject_are_saved_and_shown);
     RUN(failed_change_shows_the_reason_and_does_not_save);

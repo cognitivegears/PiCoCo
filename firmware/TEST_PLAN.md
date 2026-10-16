@@ -547,12 +547,15 @@ run there (no cart swap, no Becker boot disk).
 | J.3 re-run on the head build (7ea34e6) | pass: double RESET, header `PICOCO  COCO 3`; ENTER on `HDBDW3BC3.ROM` gives HDB-DOS and `DIR`; double RESET, ENTER on `CARTTEST.ROM` prints PASS lines. These are the exits that select slow speed and clear `$FEED` | 2026-10-02 |
 | J.4.1 home, J.4.7 WiFi (Plus-W on headers, net mode) | pass: header `PICOCO  COCO 3 128K   NET 1.4` on a 2 MB machine (Loader entry; the probe skip, fixed after this row by probing through MMU slot 2), `ROM NEXT HDBDW3BCK.ROM`; WiFi screen shows SSID, PSK SET, server `192.168.10.49:65505`, mode NET, state UP, IP. Note: letter keys on Settings/WiFi vs arrows on the lists, filed as #67 | 2026-10-16 |
 | J.4.1 re-run, probe through slot 2 | pass: `PICOCO  COCO 3 2M   NET 1.4` on both the Loader entry and the double-RESET entry; ENTER on `HDBDW3BCK.ROM` from the ROMs list boots HDB-DOS | 2026-10-16 |
-| J.4.2-6, J.4.8 | open | |
+| J.4.3 Disks mount, J.4.7 `M`, J.4.8 BREAK | pass: `E` then `3` ejects, `0` mounts with the digit by the name (no space before the name, fixed after this row); `M` on WiFi flips to `NATIVE (RESET TO APPLY)` and the next boot is native with no hold; BREAK on a screen goes home, on home to BASIC | 2026-10-16 |
+| J.4.2, J.4.4-6 | open | |
 | J.5.1 Loader entry (Plus-W on headers, net mode, 63585fd) | pass: `RUN"PICOCO"` from HDB-DOS enters the Manager; `status` shows `rom now load manager`, `rom prev hdbdw3bck.rom`; `becker reads 3788 writes 113 underrun 0 overrun 0`, `engine_stall 0`, `event_drop 0` | 2026-10-16 |
 | J.5.2 BREAK on a Loader entry | pass: `OK` with no banner, `LIST` shows PICOCO.BAS; `status` `rom now load hdbdw3bck.rom`, no `rom prev`; `becker reads 5164 writes 182 underrun 0 overrun 0`, `engine_stall 0` | 2026-10-16 |
 | J.5.4 Loader with no answer | bench: `becker off` then `EXEC` still enters the Manager, header `PICOCO  COCO 3 2M   OFF 1.4` (the Stub owns the port in every mode). Emulator (aee164b+): `picoco-host` without `--ui`, `LOADM"PICOCO"`, `EXEC`: `PICOCO NOT RESPONDING` then `OK` | 2026-10-16 |
-| J.5.3, J.5.5 | open | |
-| J.6.1-7 | open | |
+| J.5.3 mount from the Manager, native | pass: `0` on PICOCO.DSK (after ejecting it from drive 3: `0` on an image mounted elsewhere said `ALREADY MOUNTED`, fixed after this row to move it), BREAK, `DRIVE 0` then `DIR` lists it (the DOS keeps `DRIVE 3` as its default from the Loader's own load) | 2026-10-16 |
+| J.5.5 | open | |
+| J.6.1-3 Boot list, BREAK, ENTER on PICOCO.BIN (native, Loader entry) | pass: `RUN WHICH FILE?` lists PICOCO.BAS and PICOCO.BIN; BREAK returns to DISKS with drive 0 mounted; ENTER clears the screen, BASIC types `DRIVE0:LOADM"PICOCO.BIN":EXEC` and the Loader re-enters the Manager; `rom prev hdbdw3bck.rom`, `dw reads 21 crc_err 0`, `becker underrun 0 overrun 0`, `engine_stall 0` | 2026-10-16 |
+| J.6.4-7 | open | |
 | J.3.10 CoCo 2 double RESET | pass once with the first flash-marker build (3 s window): manager loaded, `EXEC 49154`, launch carttest, single RESET back to the saved ROM. Not re-run with the final 2 s window + debounce build | 2026-10-01 |
 
 ## K. PIO bus engine
