@@ -84,6 +84,7 @@ static void poll(uint8_t flags, uint8_t key, int caps, uint32_t now) {
 
 static void open_roms(int capsv);
 static void expect_clear_then(uint8_t act);
+static void out_cb(void *ctx, const char *s);
 
 /* Check the framing of the reply in tx; returns the action-byte count or -1. */
 static int reply_ok(void) {
@@ -452,6 +453,8 @@ TEST(coco2_codes_unchanged) {
 /* ADR 0011: every change the Manager makes is saved at once. */
 TEST(default_rom_is_set_and_saved) {
     setup();
+    console_init(out_cb, NULL, &dw, &store);
+    ui_init(send_cb, NULL, exec_cb, &store, &dw);
     mkfile("hdb.rom", "DK", 8192);
     open_roms(UI_CAP_32K | UI_CAP_ECB);
     poll(0, 'D', -1, 10);
@@ -459,6 +462,9 @@ TEST(default_rom_is_set_and_saved) {
     ASSERT(strcmp(lines[0], "rom boot hdb.rom") == 0);
     ASSERT(strcmp(lines[1], "save") == 0);
     ASSERT(row_has(14, "NEXT BOOT SET"));
+    ASSERT_EQ(console_exec("rom boot hdb.rom"), 0);   /* what the faked line would have done */
+    poll(0, 0, -1, 11);
+    ASSERT(row_has(2, "* HDB.ROM"));           /* the mark by the next-boot ROM */
     ASSERT(ui_active());
 }
 
