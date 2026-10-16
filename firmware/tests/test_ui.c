@@ -5,6 +5,8 @@
 #include "net.h"
 #include "dw_store.h"
 #include "dw.h"
+#include "console.h"
+#include "mode.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -562,9 +564,6 @@ TEST(failed_change_shows_the_reason_and_does_not_save) {
 
 /* ---- Boot screen (#66) ---- */
 
-#include "console.h"
-#include "mode.h"
-
 #define DSK_SIZE (35u * 18u * 256u)
 static uint8_t img[DSK_SIZE];
 static void out_cb(void *ctx, const char *s) { (void)ctx; (void)s; }
@@ -771,7 +770,37 @@ TEST(boot_program_needs_extended_basic) {
     open_boot(UI_CAP_64K);
     poll(0, UI_KEY_ENTER, -1, 12);
     ASSERT(row_has(14, "NEEDS EXTENDED BASIC"));
-    ASSERT_EQ(reply_ok() > 0 && tx[2] != UI_ACT_CLEAR, true);
+    ASSERT(tx[2] != UI_ACT_CLEAR);           /* no leave */
+}
+
+/* The Loader's L recorded the DOS it replaced; ENTER on a program puts it back on G. */
+TEST(boot_on_a_loader_entry_swaps_the_dos_back) {
+    setup();
+    console_init(out_cb, NULL, &dw, &store);
+    ui_init(send_cb, NULL, exec_cb, &store, &dw);
+    mkfile("hdbdos.rom", "DK", 8192);
+    ASSERT_EQ(console_exec("rom load hdbdos.rom"), 0);
+    mkdsk("game.dsk", false, 1);
+    ui_ctl(0xA5);
+    uint8_t load[2] = { 'L', 'L' };
+    ui_feed(load, 2, 1);
+    ASSERT(strcmp(ui_prev_rom(), "hdbdos.rom") == 0);
+    poll(2, 0, UI_CAP_64K | UI_CAP_ECB | UI_CAP_DOS, 2);
+    poll(0, UI_KEY_DOWN, -1, 5);
+    poll(0, UI_KEY_ENTER, -1, 6);
+    ASSERT_EQ(dw_mount(&dw, 0, "game.dsk", false), 0);
+    poll(0, 'B', -1, 11);
+    poll(0, UI_KEY_ENTER, -1, 12);
+    ASSERT_EQ(tx[3], UI_ACT_TYPE);
+    nlines = 0;
+    uint8_t g = 'G';
+    txn = 0;
+    ui_feed(&g, 1, 20);
+    ASSERT_EQ(tx[0], UI_GO_OK);
+    ASSERT_EQ(nlines, 1);
+    ASSERT(strcmp(lines[0], "rom launch hdbdos.rom") == 0);
+    ASSERT(ui_prev_rom()[0] == '\0');
+    ASSERT(!ui_active());
 }
 
 TEST(boot_break_returns_to_disks_with_drive_0_mounted) {
@@ -786,7 +815,7 @@ TEST(boot_break_returns_to_disks_with_drive_0_mounted) {
     ASSERT(row_has(1, "RUN WHICH"));
     poll(0, UI_KEY_BREAK, -1, 12);
     ASSERT(row_has(1, "DISKS"));
-    ASSERT(row_has(3, "0GAME.DSK") || row_has(3, "0 GAME.DSK"));
+    ASSERT(row_has(3, "0GAME.DSK"));
     ASSERT_EQ(ui_cell(3, 1), 'G' & 0x3F);  /* game.dsk still selected (inverse) */
     ASSERT_EQ(nlines, 2);                  /* insert and save only; no eject */
 }
@@ -1216,6 +1245,7 @@ int main(void) {
     RUN(boot_on_a_power_on_entry_offers_the_dos);
     RUN(boot_on_a_coco3_power_on_entry_cold_restarts);
     RUN(boot_program_needs_extended_basic);
+    RUN(boot_on_a_loader_entry_swaps_the_dos_back);
     RUN(boot_break_returns_to_disks_with_drive_0_mounted);
     RUN(new_disk_keeps_case_and_adds_dsk);
     RUN(new_disk_with_an_extension_is_left_alone);

@@ -509,9 +509,11 @@ NitrOS-9 EOU Becker disk on the flash.
    On a 16K/32K CoCo 2, `B` on the EOU disk: `NEEDS 64K`.
 
 Emulator (XRoar `coco2bus`, `picoco-host --ui`, 2026-10-15): `B` on a disk lists
-`PICOCO.BAS`/`PICOCO.BIN` and ENTER gives `SET A DOS ROM AS DEFAULT` (no console
-on the host to set one). `14` and `15` cannot run there (no cart swap, no Becker
-boot disk).
+`PICOCO.BAS`/`PICOCO.BIN`; ENTER gives `SET A DOS ROM AS DEFAULT` with no next-boot
+DOS, and with `rom boot HDB.ROM` in `picoco.cfg` the offer, a key and the `12`
+leave round-trip (the host swaps, `JMP $C002` re-enters the Manager since XRoar
+cannot swap its cart; the home screen shows `D0 GAMES.DSK`). `14` and `15` cannot
+run there (no cart swap, no Becker boot disk).
 
 ### J.2 Results
 

@@ -429,7 +429,7 @@ static uint8_t boot_start(void) {
     if (sec[0] == 'O' && sec[1] == 'S') {
         if (!(caps & UI_CAP_64K)) { set_msg("NEEDS 64K"); return 0; }
         /* As Disk BASIC's DOS command: drive 0, LSN 612, 18 sectors to $2600, jump $2602. */
-        static const uint8_t os9[] = { 0, 0x00, 0x02, 0x64, 18, 0x26, 0x00, 0x26, 0x02 };
+        static const uint8_t os9[] = { 0, BOOT_LSN >> 16, (BOOT_LSN >> 8) & 0xFF, BOOT_LSN & 0xFF, 18, 0x26, 0x00, 0x26, 0x02 };
         memcpy(act_args, os9, sizeof os9);
         act_argn = sizeof os9;
         pending[0] = '\0';
@@ -474,6 +474,7 @@ static uint8_t boot_run(void) {
         /* Loader entry: the DOS is live; put its ROM back and have BASIC type the line (RVEC4 hook in the Stub). */
         char text[48];
         int l = boot_cmd(text, sizeof text, true);
+        if (l > (int)sizeof text - 1) l = (int)sizeof text - 1;
         act_args[0] = (uint8_t)l;
         memcpy(act_args + 1, text, (size_t)l);
         act_argn = l + 1;

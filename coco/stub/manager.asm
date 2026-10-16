@@ -1,7 +1,8 @@
 * PiCoCo manager stub (spec 2026-10-01-rom-manager-design.md section 4).
 * Thin client: the Pico's ui module decides what is on the screen. This ROM
 * polls it with the last key, checks the reply's checksum, then carries out
-* the action list: draw text, clear, or leave (jump / restart).
+* the action list: draw text, clear, or leave (jump, restart, return and
+* type a line, or load a boot track and jump).
 *
 * Entry is $C002 on every path (the image starts with "DK"):
 *   Extended BASIC cold start, EXEC 49154 from Color BASIC, or the Loader
