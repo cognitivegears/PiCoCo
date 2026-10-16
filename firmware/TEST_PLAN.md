@@ -133,7 +133,7 @@ bus selftest net: not supported by this engine`.
 | G.1 reconnect after a Pico reboot with picoco-host (af12f4d) | pass 2026-09-30: the server replaces the stale client on the new accept; `bus selftest net` passes right after the reboot (dwinit 5 ms, worst 19 ms) without restarting the server. `bus selftest net` is not supported by the PIO engine | |
 | G.1 first-auth rejection (Plus-W on headers, 3e32f3a+) | Over 4 reboots: 2 joins clean at 3.0-3.1 s; 2 saw `BADAUTH` on the first auth and the driver re-authed itself 2.0-2.1 s later (total 5.4 s). The 2 s is the AP/driver, not our retry timer: `net.c` now waits `NET_BADAUTH_GRACE_MS` (3 s) before calling it `bad password`, and a `NONET` first scan rejoins at once instead of after `NET_RETRY_MS` (one boot missed the 10 s hold that way: `no such network` at 4.5 s, up at 15.1 s, native fallback) | 2026-10-15 |
 | G.2 boot hold with CoCo | pass (Plus-W on headers, `plusw_hdr`): HDB-DOS banner with the cursor after the hold, drive 0 served by `picoco-host` on the Mac. The `plusw` PCB build served the ROM but saw no Becker events (its event SM waits on pad-grid E, absent on headers): HDB-DOS banner, no cursor | 2026-10-15 |
-| G.2 DIR/LOADM from DW4 | | |
+| G.2 DIR/LOADM from DW4 | pass with `picoco-host` on the Mac (DW4 not tried): `DIR` of PICOCO.DSK in drive 0, `LOADM"PICOCO"` then `RUN`; `net bytes up 98 down 3598 overrun 0 retries 0` | 2026-10-16 |
 | G.2 DIR/LOADM from FujiNet-PC | | |
 | G.2 fallback, server stopped | | |
 | G.2 manager WiFi screen | | |
@@ -476,8 +476,8 @@ CoCo 3, Pico 2 PCB, HDB-DOS as the saved ROM; `PICOCO.DSK` (`make -C coco`)
 copied to the flash and mounted in drive 3.
 
 1. `DRIVE 3:RUN"PICOCO"`: the home screen with `COCO 3 128K` in the header (the
-   RAM probe is skipped on a Loader entry: ROM mode); `status` shows
-   `rom now load manager` and `rom prev HDBDW3BC3.ROM`.
+   RAM size probed through MMU slot 2, so it reads in ROM mode too); `status`
+   shows `rom now load manager` and `rom prev HDBDW3BC3.ROM`.
 2. BREAK on the home screen: back at `OK` with the BASIC program still listable
    (`LIST`), no banner (no restart); `status` shows `rom now load HDBDW3BC3.ROM`
    and no `rom prev`.
@@ -542,8 +542,12 @@ run there (no cart swap, no Becker boot disk).
 | J.3 re-run on 1d86869 (screen clear, RAM size) | pass: header `PICOCO  COCO 3 2M` on the 2 MB machine (RAM probe through MMU slot 4), arrows, `TEMPLE.ROM`/`DAGGORATH.ROM` start on a clean screen, HDB-DOS launch and `DIR` | 2026-10-02 |
 | ROM trials from the manager, CoCo 3 | work: Daggorath, Microbes, Temple of ROM, Thexder. Corrupt graphics: Tetris (16K: selects 1.79 MHz with `$FFD9` and runs from the cart, i.e. back-to-back cart cycles in fast mode), Silpheed and Super Pitfall (32K: need A14, and fast mode too) | 2026-10-02 |
 | J.3 re-run on the head build (7ea34e6) | pass: double RESET, header `PICOCO  COCO 3`; ENTER on `HDBDW3BC3.ROM` gives HDB-DOS and `DIR`; double RESET, ENTER on `CARTTEST.ROM` prints PASS lines. These are the exits that select slow speed and clear `$FEED` | 2026-10-02 |
-| J.4.1-8 | open | |
-| J.5.1-5 | open | |
+| J.4.1 home, J.4.7 WiFi (Plus-W on headers, net mode) | pass: header `PICOCO  COCO 3 128K   NET 1.4` on a 2 MB machine (Loader entry; the probe skip, fixed after this row by probing through MMU slot 2), `ROM NEXT HDBDW3BCK.ROM`; WiFi screen shows SSID, PSK SET, server `192.168.10.49:65505`, mode NET, state UP, IP. Note: letter keys on Settings/WiFi vs arrows on the lists, filed as #67 | 2026-10-16 |
+| J.4.1 re-run, probe through slot 2 | pass: `PICOCO  COCO 3 2M   NET 1.4` on both the Loader entry and the double-RESET entry; ENTER on `HDBDW3BCK.ROM` from the ROMs list boots HDB-DOS | 2026-10-16 |
+| J.4.2-6, J.4.8 | open | |
+| J.5.1 Loader entry (Plus-W on headers, net mode, 63585fd) | pass: `RUN"PICOCO"` from HDB-DOS enters the Manager; `status` shows `rom now load manager`, `rom prev hdbdw3bck.rom`; `becker reads 3788 writes 113 underrun 0 overrun 0`, `engine_stall 0`, `event_drop 0` | 2026-10-16 |
+| J.5.2 BREAK on a Loader entry | pass: `OK` with no banner, `LIST` shows PICOCO.BAS; `status` `rom now load hdbdw3bck.rom`, no `rom prev`; `becker reads 5164 writes 182 underrun 0 overrun 0`, `engine_stall 0` | 2026-10-16 |
+| J.5.3-5 | open | |
 | J.6.1-7 | open | |
 | J.3.10 CoCo 2 double RESET | pass once with the first flash-marker build (3 s window): manager loaded, `EXEC 49154`, launch carttest, single RESET back to the saved ROM. Not re-run with the final 2 s window + debounce build | 2026-10-01 |
 

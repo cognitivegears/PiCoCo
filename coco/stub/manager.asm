@@ -82,8 +82,6 @@ DET1    lda $FFFE
         cmpa #$8C
         bne DET2
         orb #$12                CoCo 3, and 64K with it
-        tst LOADER,y            the Loader leaves us in ROM mode: $8000 reads ROM, MEM3 cannot probe
-        bne DET2
         pshs b
         jsr MEM3
         ora ,s+
@@ -113,13 +111,15 @@ DET4    tfr b,a
 
 * CoCo 3 RAM size, in caps bits 6-7: A = $00 128K, $40 512K, $80 1 MB, $C0 2 MB.
 * MMU block numbers wrap at the amount of RAM fitted, so block $00 is the same
-* RAM as $30 on 128K, as $40 on 512K, as $80 on 1 MB. Tested through slot 4
-* ($8000-$9FFF, register $FFA4): our code runs from the RAM copy at $C100 (slot 6),
-* the stack is below $8000, and nothing executes from slot 4 meanwhile.
+* RAM as $30 on 128K, as $40 on 512K, as $80 on 1 MB. Tested through slot 2
+* ($4000-$5FFF, register $FFA2): RAM in ROM mode too (a Loader entry), while our
+* code runs at $C100 (slot 6), the stack is in slot 3 and the Loader in slot 1.
 * If the MMU is off or task 1 is selected the writes do not move the CPU's map,
 * the probe reads its own cell back and the answer is 2M: display only, no damage.
-MEM3    lda $FFA4
+MEM3    lda $FFA2
         pshs a                  what was mapped there; put back at the end
+        lda $4000
+        pshs a                  the byte there now, to check that restore
         ldb #$30
         bsr SAME
         beq MEM128
@@ -136,25 +136,26 @@ MEM1M   lda #$80
 MEM512  lda #$40
         bra MEM3X
 MEM128  clra
-MEM3X   puls b
-        stb $FFA4
-        ldx $8000               the Extended BASIC copy starts "EX"; if the read-back
-        cmpx #$4558             value was not the real block number, use the default
+MEM3X   ldb 1,s
+        stb $FFA2
+        ldb ,s                  the same byte again means the read-back value was the
+        cmpb $4000              real block number; otherwise use BASIC's default map
+        leas 2,s
         beq MEM3Y
-        ldb #$3C
-        stb $FFA4
+        ldb #$3A
+        stb $FFA2
 MEM3Y   rts
 
 * Z set if MMU blocks $00 and B are the same RAM. Restores both bytes it
 * touches (the saved bytes are the originals, so the order does not matter).
 SAME    stb ,-s                 S: blk
         clra
-        sta $FFA4
-        lda $8000
+        sta $FFA2
+        lda $4000
         sta ,-s                 S: byte0, blk
         lda 1,s
-        sta $FFA4
-        lda $8000
+        sta $FFA2
+        lda $4000
         sta ,-s                 S: byteB, byte0, blk
         ldb #$5A
         bsr PROBE
@@ -163,13 +164,13 @@ SAME    stb ,-s                 S: blk
         bsr PROBE
 SAME9   tfr cc,b                keep the answer (and the interrupt masks) while restoring
         lda 2,s
-        sta $FFA4
+        sta $FFA2
         lda ,s
-        sta $8000
+        sta $4000
         clra
-        sta $FFA4
+        sta $FFA2
         lda 1,s
-        sta $8000
+        sta $4000
         leas 3,s
         tfr b,cc
         rts
@@ -177,11 +178,11 @@ SAME9   tfr cc,b                keep the answer (and the interrupt masks) while 
 * Write B to block blk, then see whether block $00 shows it. Z set if it does.
 * Called from SAME: the stack is return (2), byteB, byte0, blk.
 PROBE   lda 4,s
-        sta $FFA4
-        stb $8000
+        sta $FFA2
+        stb $4000
         clra
-        sta $FFA4
-        cmpb $8000
+        sta $FFA2
+        cmpb $4000
         rts
 
 * discard whatever the Pico had queued
