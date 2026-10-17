@@ -1,16 +1,12 @@
-# PiCoCo manager (CoCo side)
+# PiCoCo Manager (CoCo side)
 
-Build: `make` (needs CMOC, LWTOOLS, ToolShed `decb`). Host tests: `make test`.
+Build: `make` (needs lwasm from LWTOOLS and ToolShed `decb`). It builds the
+Loader disk `PICOCO.DSK` and the Stub, and regenerates
+`firmware/src/ui/manager_rom.h`.
 
 ## Toolchain
 
 - **LWTOOLS** (`lwasm`, `lwlink`, `lwar`) and **XRoar** via `brew install lwtools xroar`.
-- **CMOC** (0.1.100) built from source from `http://sarrazip.com/dev/cmoc.html`
-  and installed to `/opt/homebrew` (`./configure --prefix=/opt/homebrew && make
-  && make install`). CMOC's `configure` detects `lwasm`/`lwlink`/`lwar`, so
-  LWTOOLS must already be on `PATH`. The tarball's `doc/cmoc-manual.markdown`
-  (checked against `--org`, `asm {}`, `inkey()` syntax in later tasks) is kept
-  at `/opt/homebrew/share/doc/cmoc/cmoc-manual.markdown`.
 - **ToolShed** (`decb`, for building `.DSK` images) built from
   `https://github.com/nitros9project/toolshed.git` via `make -C build/unix`,
   then `decb` and `os9` copied by hand into `/opt/homebrew/bin` (no `sudo`).
@@ -318,135 +314,30 @@ before `xrscreen.py` when `-type` has several keys.
 4. On the CoCo: `DRIVE 3:RUN"PICOCO"`. The `DRIVE 3:` prefix matters —
    the `PICOCO.BAS` loader `LOADM`s from BASIC's default drive.
 
-## Using the manager
+## Using the Manager
 
-On startup the program runs `version` to check the link; if it times out,
-it shows `PICOCO NOT RESPONDING` and `(BECKER NATIVE? FIRMWARE >= 1.2?)`,
-then `R=RETRY  BREAK=EXIT` — press `R` to try again (e.g. after switching
-the board to `becker native`) or `BREAK` to give up and return to BASIC.
+The Manager is the firmware's screens, drawn on the CoCo by the Stub
+(`firmware/src/ui/ui.c`). Ways in:
 
-Main screen keys:
-- `0`-`3`: mount the selected image in that drive.
-- `E` then `0`-`3`: eject that drive.
-- `N`: prompt for a name (`.DSK` appended if there's no extension),
-  `fs new` a blank image. Refused (with the firmware's error text) if the
-  name already exists, is 32 characters or longer, is `picoco.cfg`, or
-  holds a `/`, `\`, `:` or control byte.
-- `B`: boot the selected image (see Boot below).
-- `S`: settings screen.
-- `V`: save (`save`) — persists mounts, next-boot ROM choice, and
-  HDB-DOS drive mode.
-- Up/Down arrows: move the selection; `SHIFT`+arrows: page up/down.
-- `G` then a letter: jump to the first file name starting with that
-  letter (`G`+letter again within a second narrows to the two-letter
-  prefix, up to four). Letters are case-folded, so the bindings work in
-  either keyboard mode.
-- `BREAK`: exit to BASIC (warm start, no hardware reset). If anything
-  changed since the last save, offers save-then-exit or stay.
+- Power on with the Manager as the saved ROM.
+- CoCo 3: double RESET.
+- CoCo 2: double RESET, then `EXEC 49154`.
+- From HDB-DOS with `PICOCO.DSK` mounted: `RUN"PICOCO"` (the Loader).
 
-The file list excludes `*.ROM` and `picoco.cfg`. If the firmware's reply
-was too big to fit (its `...` truncation marker) or the flash holds more
-than 128 matching files, the program shows `LIST TRUNCATED` once after
-loading — not every file may be listed.
+Console verbs are in `firmware/README.md`.
 
-A CoCo reset after `V` (save) keeps the mounts; a reset without
-saving drops them, since every `/RESET` reboots the Pico, which replays
-`picoco.cfg` from scratch. `save` writes a `dw disk insert <n> <file>`
-line for each read-write mount (so a name with spaces, e.g. "my
-disk.dsk", survives the round trip — `dw mount` only takes one token) and
-a `dw mount <n> <file> ro` line for each read-only mount.
+Home: drives D0-D3 and `ROM NEXT`, then the menu ROMS, DISKS, SETTINGS,
+WIFI. Up/Down move, ENTER opens, BREAK returns to BASIC.
 
-### Settings screen (S)
-
-- `R`: pick a `.ROM` file for the *next* boot (`rom boot`) — does not
-  swap the ROM currently driving `/CTS`. Shows `SAVE, THEN RESET`
-  afterward. Hides any `.ROM` file whose name contains a space, since
-  `rom boot` takes a single token and couldn't be sent one.
-- `Z`: timezone for SNTP (`+HH:MM`, `-HH`, or `OFF`), sent as `net tz <minutes>`.
-  With a zone set, WiFi SNTP sets the clock on every update instead of only
-  seeding a stopped one. The row shows `OFF` or e.g. `UTC-05:00`.
-- `H`: toggle HDB-DOS drive-by-LSN addressing (`dw hdbdos on|off`).
-- `T`: set the clock (`YYYY-MM-DD HH:MM`), converted to Unix seconds and
-  sent as `time set`. Shows `(LOST AT RESET)` under the current time if
-  the firmware reports `clock lost` (see
-  `docs/superpowers/specs/2026-09-23-coco-manager-design.md` §4.5; the
-  AON bench check is still pending).
-- `W`: WiFi screen (below).
-- `V`: save. `BREAK`: back to the main screen.
-
-#### WiFi screen (W)
-
-Rows: SSID, PSK (shown as `********` when set), SERVER, MODE (`NET` or
-`NATIVE`), then the link STATE, IP and any error.
-
-- `S`: scan and pick a network, then type its passphrase (empty for an
-  open network).
-- `P`: set the passphrase.
-- `H`: server host, then port (empty keeps the default 65504).
-- `M`: toggle the NEXT-BOOT DriveWire transport between net and native
-  (`net mode` sets the boot mode only). The row shows `(SAVE, THEN RESET)`
-  while it differs from the running mode. Press `V`, then reset. Leaving
-  net mode live is a USB-console action (`becker native`).
-- Entries (SSID, PSK, host) run over two rows, about 57 characters.
-- `V`: save. Settings do not survive a reset until saved.
-- `BREAK`: back.
-
-`SHIFT+0` toggles lowercase, which SSIDs and passphrases need. On a
-Pico 2 board (`net radio no`) the screen shows `NO RADIO ON THIS BOARD` and returns.
-
-### Boot (B)
-
-1. Mounts the selected image to drive 0.
-2. Reads track 34 sector 1 (LSN 612).
-3. If it starts with `OS`: loads all 18 sectors of track 34 to
-   $2600-$37FF and jumps to $2602, as Disk BASIC's `DOS` command does
-   (OS-9 boot; not exercised in XRoar — no Becker OS-9 boot disk
-   available there — so this path is bench-only).
-4. Otherwise: reads the RS-DOS directory (track 17, sectors 3-11), lists
-   the `.BAS`/`.BIN` entries, and hands the picked one to BASIC as
-   `DRIVE0:RUN"NAME"` or `DRIVE0:LOADM"NAME":EXEC`. Always `DRIVE0:`:
-   the booted image is in drive 0, but the manager itself may have been
-   launched from another drive (step 4 of "On the bench" above uses
-   drive 3), which would otherwise be BASIC's default drive for the
-   handoff command.
-
-## Memory layout
-
-- The 2-line `PICOCO.BAS` loader sits at $2601: line 10
-  (`CLEAR200:IF PEEK(65534)=140 THEN WIDTH32`) pins string space to 200
-  bytes and sets 32-column mode on a CoCo 3,
-  line 20 (`LOADM"PICOCO":EXEC`) loads and runs the program.
-- The `fs ls` reply buffer (`LSBUF`, 3096 bytes: a 23-byte `OK` header
-  plus a 3072-byte body plus a NUL) lives at a fixed $2700-$3317 instead
-  of BSS, between the loader and the program. The firmware's `...`
-  marker is lost for bodies of 3073-4096 bytes (roughly 100 files at
-  30-char names); `ls_cut` drops the cut last line and the list shows
-  `LIST TRUNCATED` whenever the buffer fills. Right after it, in the same window, sit `files[]`
-  (128 entries x 4 bytes, $3318-$3517) and the command reply buffer
-  (736 bytes, $3518-$37F7). All three share one lifetime: they are dead
-  by the time boot.c overwrites the window. `ui_run()` refuses to start
-  (`BASIC PROGRAM TOO BIG`) if BASIC's array-end pointer (`ARYEND`,
-  $001F) already reaches past $2700.
-- `PICOCO.BIN` loads at $3800 (`ORG` in `coco/Makefile`) and must end
-  below $7B80; the Makefile passes `--limit=7B80`, so an overrun fails the
-  build. The loader's `CLEAR 200` pins BASIC's string space to the top 200
-  bytes, leaving about 0.9 KB of stack above the program. Current end:
-  $7B80. (The $7A00 target did not fit once the timezone row landed.)
-- OS-9 boot (track 34 -> $2600-$37FF) and the `RUN"X"`/`LOADM"X"`
-  handoff both overwrite $2700-$37FF, but only after the picked file's
-  name has already been copied out of `LSBUF`, so the overlap is safe.
-
-## Developer notes
-
-- **CMOC 0.1.100 miscompiles `!func(...)` used as a value** (verified
-  on-device): `if (!f())` is fine, but assigning the negation of a
-  direct function-call result (e.g. `keep = !ends_with_ci(...)`) is not.
-  Write `f() == 0` instead. See the `ponytail:` comment in
-  `coco/parse.c`'s `parse_ls`.
-- **`cls` clashes with CMOC's `coco.h`**, which already declares one;
-  this program's screen-clear function is named `clear_screen` instead.
-- Keep using the headless XRoar recipe above for anything that doesn't
-  need real hardware. `picoco-host` doesn't exercise the OS-9 boot
-  branch or go past what the RVEC4 handoff spike already covers — see
-  `docs/superpowers/specs/2026-09-23-coco-manager-design.md` §5.5, which
-  passed in XRoar on both the CoCo 2 and CoCo 3 profiles.
+- **ROMS**: ENTER launches the selected ROM. `D` sets it as the next-boot
+  ROM (`rom boot`); `*` marks the current next-boot ROM. BREAK goes back.
+- **DISKS**: a digit mounts the selected image in that drive. `E` then a
+  digit ejects that drive. `N` creates a new blank disk image. `B` opens
+  the Boot list for the selected image. BREAK goes back.
+- **BOOT**: ENTER runs the selected `.BAS`/`.BIN` through HDB-DOS, or boots
+  an OS-9 disk. BREAK goes back to DISKS.
+- **SETTINGS**: `H` toggles HDB-DOS drive mode, `T` sets the clock, `Z` the
+  timezone. BREAK goes back.
+- **WIFI** (Plus-W only): `S` scans for an SSID, `P` sets the PSK, `H` sets
+  the server host, `M` toggles the next-boot transport (net or native).
+  BREAK goes back.

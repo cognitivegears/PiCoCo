@@ -1,8 +1,10 @@
 # PiCoCo Loader: lwasm builds PICOCO.BIN, ToolShed decb puts it on the .DSK
-# with PICOCO.BAS. The CoCo-side manager's C sources are retired by #61.
+# with PICOCO.BAS. The Stub (stub/) is built too, and regenerates
+# firmware/src/ui/manager_rom.h.
 DECB ?= decb
 
 all: PICOCO.DSK
+	$(MAKE) -C stub
 
 PICOCO.BIN: loader.asm
 	lwasm --format=decb -o $@ --list=loader.lst $<
@@ -17,13 +19,7 @@ PICOCO.DSK: PICOCO.BIN PICOCO.BAS
 carttest.rom: carttest.asm
 	lwasm --raw -o $@ $<
 
-test: test_parse
-	./test_parse
-
-test_parse: test_parse.c parse.c parse.h
-	cc -std=c99 -Wall -Wextra -fsanitize=address,undefined -o $@ test_parse.c parse.c
-
 clean:
-	rm -f PICOCO.BIN PICOCO.DSK *.o *.map *.lst *.s test_parse
+	rm -f PICOCO.BIN PICOCO.DSK *.o *.map *.lst *.s
 
-.PHONY: all test clean
+.PHONY: all clean

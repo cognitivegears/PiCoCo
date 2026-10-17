@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.20)
 option(PICOCO_HOST "Build host library, tests and picoco-host instead of Pico firmware" OFF)
 option(PICOCO_BENCH "Register tools/bench.py as a ctest. It drives the bus pins: only with the board unplugged from the CoCo." OFF)
-set(PICOCO_VERSION "1.4")
+set(PICOCO_VERSION "1.5")
 # PiCoCo board: "pico2" (Pico 2 / RP2350A, default), "plusw" (Waveshare
 # RP2350B-Plus-W, flat on its pad grid) or "plusw_hdr" (a Plus-W on pin
 # headers: pad grid unconnected, boards/plusw_hdr.h). Picks both the PiCoCo

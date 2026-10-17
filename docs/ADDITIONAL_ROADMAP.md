@@ -293,7 +293,7 @@ touching `bus_core1.c` again; the timing census there is the best public one.
 ### Not worth chasing
 - HDMI video: his renderer is VDG-only, whole-frame, CoCo 1/2, and cannot sit behind
   an MPI. Our HDMI corner stays a keepout for a variant that moves the address bus.
-- OLED + encoder: PICOCO.BIN on the CoCo and the USB console cover selection; WiFi
+- OLED + encoder: the Manager on the CoCo and the USB console cover selection; WiFi
   (Plus-W) is the eventual remote UI.
 
 ## 7. ROM manager follow-ups (from the 2026-10-01 design)

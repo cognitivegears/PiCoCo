@@ -348,7 +348,7 @@ hides any name starting with `.`, so these don't show up and are harmless.
 ## Console commands added in 1.2
 
 DW4-compatible disk commands (used by NitrOS-9's `dw` utility and the
-`coco/` manager program equally):
+Manager equally):
 
 - `dw disk show [n]`: with no argument, lists every mounted drive in DW4's
   wire format; with `n`, shows just that drive's file.
@@ -481,7 +481,7 @@ socket) is at tag `fw-1.4-cpu-loop` if a bare-module check is ever wanted.
 
 `firmware/src/dw/dw_vser.c` implements DW4's virtual-serial command mode
 (channels 1-13; one session at a time) so any DW4 client — NitrOS-9's
-`dw`, DwTerm, or the `coco/` manager program — can run console commands
+`dw` or DwTerm — can run console commands
 over the same Becker/DriveWire link used for disk I/O, framed exactly as
 DW4 Java 4.3.3p (`OK command successful` / `FAIL nnn <msg>`, both
 terminated `\n\r`). Reopening a channel after a reply was already queued

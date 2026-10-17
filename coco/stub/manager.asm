@@ -457,7 +457,7 @@ LVFAIL1 leas FRAME,y
         jmp START
 LEAVEND
 
-* RVEC4 hook (the logic of coco/hook.asm), position-independent: copied
+* RVEC4 hook (the hook lives here), position-independent: copied
 * below the frame with its text (offset HTEXT), where it outlives the
 * session until BASIC has read the CR. Each CONSOLE IN call from the line
 * input is answered with the next character; the CR puts the saved vector
