@@ -11,6 +11,9 @@ void console_init(console_out_fn out, void *ctx, dw_server *dw, dw_store *store)
 void console_feed(const uint8_t *buf, size_t n);   /* accumulates up to 127 chars; executes on \r or \n */
 int  console_exec(const char *line);               /* 0 ok (printed "ok"), -1 err (printed "err <msg>") */
 void console_set_boot_mode(picoco_mode m);         /* pending next-boot mode used by save */
+picoco_mode console_boot_mode(void);               /* what save would write: the pending one, else the running one */
+const char *console_rom_now(void);                 /* the ROM in the bus table now, same forms */
+const char *console_rom_next(void);                /* the next-boot ROM: a file name, "pattern", "off", or "" for the manager */
 int  console_run_config(void);                      /* plat_cfg_read, exec each line; lines executed, or <0 */
 void console_boot_manager(void);   /* double RESET: load the built-in manager for this boot; rom_cmd (the saved choice) is untouched */
 

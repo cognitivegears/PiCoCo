@@ -131,8 +131,10 @@ bus selftest net: not supported by this engine`.
 | G.1 cold-boot SNTP seeding | pass 2026-09-30: after a USB power cycle the boot log shows `net: sntp seeded 1790778946`, `time` reports it with `clock kept`, `net up in 8329 ms` | |
 | G.1 `net tz` (firmware 1.3, 25517de) | pass 2026-09-30: `net tz -240` + `save` + reboot logs `net: sntp set 1790765675 (utc 1790780075 tz -240)`, exactly Mac UTC minus 14400; `net tz 0` then `net tz -240` move `time` at once, no hourly wait | |
 | G.1 reconnect after a Pico reboot with picoco-host (af12f4d) | pass 2026-09-30: the server replaces the stale client on the new accept; `bus selftest net` passes right after the reboot (dwinit 5 ms, worst 19 ms) without restarting the server. `bus selftest net` is not supported by the PIO engine | |
-| G.2 boot hold with CoCo | | |
-| G.2 DIR/LOADM from DW4 | | |
+| G.1 first-auth rejection (Plus-W on headers, 3e32f3a+) | Over 4 reboots: 2 joins clean at 3.0-3.1 s; 2 saw `BADAUTH` on the first auth and the driver re-authed itself 2.0-2.1 s later (total 5.4 s). The 2 s is the AP/driver, not our retry timer: `net.c` now waits `NET_BADAUTH_GRACE_MS` (3 s) before calling it `bad password`, and a `NONET` first scan rejoins at once instead of after `NET_RETRY_MS` (one boot missed the 10 s hold that way: `no such network` at 4.5 s, up at 15.1 s, native fallback) | 2026-10-15 |
+| G.1 first scan misses the AP (63585fd, immediate rejoin) | `no such network` at 4.5 s, rejoin up at 11.4 s: 0.5 s after the 10 s hold had fallen back to native, so HDB-DOS got `?IO ERROR` on drive 0. The hold now runs to `NET_BOOT_HOLD_MAX_MS` (16 s) while the join is still in progress; a refused server still falls back at 10 s | 2026-10-16 |
+| G.2 boot hold with CoCo | pass (Plus-W on headers, `plusw_hdr`): HDB-DOS banner with the cursor after the hold, drive 0 served by `picoco-host` on the Mac. The `plusw` PCB build served the ROM but saw no Becker events (its event SM waits on pad-grid E, absent on headers): HDB-DOS banner, no cursor | 2026-10-15 |
+| G.2 DIR/LOADM from DW4 | pass with `picoco-host` on the Mac (DW4 not tried): `DIR` of PICOCO.DSK in drive 0, `LOADM"PICOCO"` then `RUN`; `net bytes up 98 down 3598 overrun 0 retries 0` | 2026-10-16 |
 | G.2 DIR/LOADM from FujiNet-PC | | |
 | G.2 fallback, server stopped | | |
 | G.2 manager WiFi screen | | |
@@ -287,7 +289,7 @@ Bench CoCo 3 CPU: 6309  RAM: 2 MB
 | H.3.5 `dw` utility | | | |
 | H.3.6 tick loss in 10 min | | | |
 | H.3.7 reset / power cycle | RESET inside NitrOS-9 restarts the NitrOS-9 boot, not HDB-DOS; power cycle returns to HDB-DOS (mounts need `save`) | | 2026-10-01 |
-| H.3.8 manager `B` | | | |
+| H.3.8 manager `B` | Boot screen: J.6.4 | | |
 | H.3 through an MPI | | | |
 | H.4.1 EOU boot (bridge) | pass 2026-10-01 (third try): 2048k, 6309 native, boots to the prompt; 2409 sectors, 21 re-read after a checksum failure (0.9 %, open). Needed: the server dropping EOU's SDC probe (`64 64 00 64 00 ...` on `$FF42`), `COCO3FPGA=1` in the image. Still prompts for the time: root `startup` is the `.sdc` one | | 2026-10-01 |
 | H.4.2-4 clock, gshell, write | gshell loads and launches apps (trackpad), no time prompt with the `.dw` startup, saved `becker bridge` survives a power cycle; ~7935 sectors, 42 re-reads (0.5 %, open), 0 phantom reads. `dcheck` not run | | 2026-10-01 |
@@ -344,9 +346,9 @@ CoCo off, board in, USB to the Mac, CoCo on.
 1. `POKE &HFF42,65:PRINT PEEK(&HFF41);PEEK(&HFF41);PEEK(&HFF42)` under
    `becker loop` → `0 2 65`; back to `becker native` after.
 2. `DIR`, `LOADM"DINORUN":EXEC`, a `SAVE` + power cycle + `DIR`.
-3. `DRIVE 3:RUN"PICOCO"`: manager draws in uppercase (no inverse-video
-   garbage), E/N/V/S/B keys work, BREAK exits. First real-hardware run of
-   the CoCo 2 path; only XRoar so far.
+3. The Manager on a CoCo 2: section J (J.1 for a Color BASIC machine,
+   J.5 and J.6.7 for the Loader entry from HDB-DOS). The CoCo-side manager
+   this step once covered is retired (#61).
 4. `status` / `dw stats`: `crc_err 0`, `underrun 0`, `event_drop 0`.
 5. Soak: `10 DIR:GOTO 10` for 10 minutes, counters unchanged.
 
@@ -450,6 +452,74 @@ BASIC):
     flash-marker build (3 s window); not re-run with the final 2 s window
     and debounce.
 
+### J.4 Manager screens (#58: home, Disks, Settings, WiFi, save on every change)
+
+CoCo 3, Pico 2 PCB, unless noted. Every change is saved at once (ADR 0011):
+there is no save key.
+
+1. Double RESET: the home screen. Row 0 `PICOCO  COCO 3 <RAM>   NATIVE <version>`;
+   `D0`-`D3` match `status`'s drive lines; `ROM NEXT` matches `rom next`.
+2. ROMS: ENTER launches as before; `D` on `HDBDW3BC3.ROM` shows `NEXT BOOT SET`,
+   `picoco.cfg` now holds `rom load HDBDW3BC3.ROM` (check with `fs export` or `rom next`).
+3. DISKS: `1` on an image mounts it in drive 1 (digit shown by the name);
+   `E` then `1` ejects. RESET: the mount is still there (`status`), no `save` typed.
+4. SHIFT+UP/DOWN page a long list; `G` then a letter jumps; the title row counts.
+5. SETTINGS: `H` toggles the HDB-DOS mode; the clock row shows the date; `T`/`Z`
+   say `NOT YET` until #59.
+6. WIFI on the Pico 2 PCB: `NO RADIO ON THIS BOARD`.
+7. WIFI on the Plus-W header build: SSID, PSK, SERVER, MODE, STATE, IP rows match
+   `net status`; `M` flips the next-boot transport and shows `(RESET TO APPLY)`.
+8. BREAK on a screen returns home; BREAK on the home screen returns to BASIC.
+
+### J.5 Loader (#60: into the Manager from a running DOS, and back)
+
+CoCo 3, Pico 2 PCB, HDB-DOS as the saved ROM; `PICOCO.DSK` (`make -C coco`)
+copied to the flash and mounted in drive 3.
+
+1. `DRIVE 3:RUN"PICOCO"`: the home screen with the fitted RAM size in the header (`COCO 3 2M` on the bench machine; the
+   RAM size probed through MMU slot 2, so it reads in ROM mode too); `status`
+   shows `rom now load manager` and `rom prev HDBDW3BC3.ROM`.
+2. BREAK on the home screen: back at `OK` with the BASIC program still listable
+   (`LIST`), no banner (no restart); `status` shows `rom now load HDBDW3BC3.ROM`
+   and no `rom prev`.
+3. Mount a disk from the Manager, BREAK, `DIR` on it: the mount took and the
+   DOS is live.
+4. `becker off` does not make the Loader fail: the Stub owns the Becker port in
+   every transport mode, so the Manager comes up with `OFF` in the header. The
+   failure path is an emulator check: XRoar `coco2bus` with `picoco-host`
+   started without `--ui`, `LOADM"PICOCO"` then `EXEC`: `PICOCO NOT RESPONDING`
+   at the top left, then `OK` (the Loader gives up after ~1.3 s).
+5. CoCo 2 rows (batched session): 1-3 at 0.89 MHz; the Stub runs from the cart.
+
+### J.6 Boot screen (#66: NitrOS-9 boot and the RS-DOS program handoff)
+
+CoCo 3, Pico 2 PCB, native transport. A game disk (DINORUN on it) and the
+NitrOS-9 EOU Becker disk on the flash.
+
+1. Loader entry (`DRIVE 3:RUN"PICOCO"` from HDB-DOS), DISKS, `B` on the game
+   disk: `RUN WHICH FILE?` lists the `.BAS`/`.BIN` entries; `status`
+   shows the disk in drive 0 and it stays there after RESET (saved).
+2. ENTER on `DINORUN.BIN`: the screen clears, BASIC shows
+   `DRIVE0:LOADM"DINORUN.BIN":EXEC` typed by itself and the game runs (action
+   `14`, the RVEC4 hook; `status` shows HDB-DOS back as `rom now`).
+3. BREAK on the Boot list: back on DISKS, drive 0 still mounted.
+4. `B` on the EOU disk: NitrOS-9 boots (action `15`, 18 sectors over plain
+   OP_READ; H.3.8). `becker off` first instead: `PICOCO NOT RESPONDING`, a key
+   brings the Manager back.
+5. Power-on entry (double RESET), `B` on the game disk, ENTER on a program:
+   `STARTING DOS, THEN TYPE:` / `RUN"X"`; any key cold-restarts into HDB-DOS
+   (`$17`); the typed line runs. With `rom boot manager`: `SET A DOS ROM AS DEFAULT`.
+6. `net mode net` (Plus-W) or bridge: `B` says `BOOT NEEDS NATIVE MODE`, nothing mounted.
+7. CoCo 2 rows (batched session): 1-3; 5 uses `$12` (the DOS init at `$C002`).
+   On a 16K/32K CoCo 2, `B` on the EOU disk: `NEEDS 64K`.
+
+Emulator (XRoar `coco2bus`, `picoco-host --ui`, 2026-10-15): `B` on a disk lists
+`PICOCO.BAS`/`PICOCO.BIN`; ENTER gives `SET A DOS ROM AS DEFAULT` with no next-boot
+DOS, and with `rom boot HDB.ROM` in `picoco.cfg` the offer, a key and the `12`
+leave round-trip (the host swaps, `JMP $C002` re-enters the Manager since XRoar
+cannot swap its cart; the home screen shows `D0 GAMES.DSK`). `14` and `15` cannot
+run there (no cart swap, no Becker boot disk).
+
 ### J.2 Results
 
 | Check | Result | Date |
@@ -475,7 +545,23 @@ BASIC):
 | J.3 re-run on 1d86869 (screen clear, RAM size) | pass: header `PICOCO  COCO 3 2M` on the 2 MB machine (RAM probe through MMU slot 4), arrows, `TEMPLE.ROM`/`DAGGORATH.ROM` start on a clean screen, HDB-DOS launch and `DIR` | 2026-10-02 |
 | ROM trials from the manager, CoCo 3 | work: Daggorath, Microbes, Temple of ROM, Thexder. Corrupt graphics: Tetris (16K: selects 1.79 MHz with `$FFD9` and runs from the cart, i.e. back-to-back cart cycles in fast mode), Silpheed and Super Pitfall (32K: need A14, and fast mode too) | 2026-10-02 |
 | J.3 re-run on the head build (7ea34e6) | pass: double RESET, header `PICOCO  COCO 3`; ENTER on `HDBDW3BC3.ROM` gives HDB-DOS and `DIR`; double RESET, ENTER on `CARTTEST.ROM` prints PASS lines. These are the exits that select slow speed and clear `$FEED` | 2026-10-02 |
+| J.4.1 home, J.4.7 WiFi (Plus-W on headers, net mode) | pass: header `PICOCO  COCO 3 128K   NET 1.4` on a 2 MB machine (Loader entry; the probe skip, fixed after this row by probing through MMU slot 2), `ROM NEXT HDBDW3BCK.ROM`; WiFi screen shows SSID, PSK SET, server `192.168.10.49:65505`, mode NET, state UP, IP. Note: letter keys on Settings/WiFi vs arrows on the lists, filed as #67 | 2026-10-16 |
+| J.4.1 re-run, probe through slot 2 | pass: `PICOCO  COCO 3 2M   NET 1.4` on both the Loader entry and the double-RESET entry; ENTER on `HDBDW3BCK.ROM` from the ROMs list boots HDB-DOS | 2026-10-16 |
+| J.4.3 Disks mount, J.4.7 `M`, J.4.8 BREAK | pass: `E` then `3` ejects, `0` mounts with the digit by the name (no space before the name, fixed after this row); `M` on WiFi flips to `NATIVE (RESET TO APPLY)` and the next boot is native with no hold; BREAK on a screen goes home, on home to BASIC | 2026-10-16 |
+| J.4.2 `D`, J.4.5 Settings | pass: `D` says `NEXT BOOT SET`, `rom next` follows, and the `*` marks the row (91034ac); `H` toggles the HDB-DOS mode both ways; `T` with `2026-10-16 10:30` and `Z` with `-04:00` land in `time` and `net tz -240`. Entry found clumsy: #68 | 2026-10-16 |
+| J.4.4 long list, J.4.6 WiFi (Pico 2 PCB, 91034ac) | pass: the ROMs list of 11 entries counts in the title row, SHIFT+UP/DOWN page, `G` `T` jumps; WiFi screen says `NO RADIO`; J.4.1 home and `D` on `HDBDW3BCK.ROM` as on the Plus-W | 2026-10-16 |
+| Pico 2 PCB re-run: J.5.1, J.6.3, J.6.5, J.6.4 | pass: Loader entry, ENTER on `PICOCO.BIN` types the line and re-enters (9 reads, no errors), power-on entry offer and `RUN"PICOCO.BAS"`, `B` on `NOS9.DSK` boots NitrOS-9 (312 reads, crc_err 0, OP_READ 18, `becker underrun 0 overrun 0`, `engine_stall 0`, `event_drop 0`). Notes: the board still had the September PICOCO.DSK (old CoCo-side manager came up as `PICOCO MANAGER`), replaced over `fs export`; the first J.6.3 attempt ended in a RUN-pin reset of the Pico with no RESET pressed, not reproduced on the retry | 2026-10-16 |
+| J.5.1 Loader entry (Plus-W on headers, net mode, 63585fd) | pass: `RUN"PICOCO"` from HDB-DOS enters the Manager; `status` shows `rom now load manager`, `rom prev hdbdw3bck.rom`; `becker reads 3788 writes 113 underrun 0 overrun 0`, `engine_stall 0`, `event_drop 0` | 2026-10-16 |
+| J.5.2 BREAK on a Loader entry | pass: `OK` with no banner, `LIST` shows PICOCO.BAS; `status` `rom now load hdbdw3bck.rom`, no `rom prev`; `becker reads 5164 writes 182 underrun 0 overrun 0`, `engine_stall 0` | 2026-10-16 |
+| J.5.4 Loader with no answer | bench: `becker off` then `EXEC` still enters the Manager, header `PICOCO  COCO 3 2M   OFF 1.4` (the Stub owns the port in every mode). Emulator (aee164b+): `picoco-host` without `--ui`, `LOADM"PICOCO"`, `EXEC`: `PICOCO NOT RESPONDING` then `OK` | 2026-10-16 |
+| J.5.3 mount from the Manager, native | pass: `0` on PICOCO.DSK (after ejecting it from drive 3: `0` on an image mounted elsewhere said `ALREADY MOUNTED`, fixed after this row to move it), BREAK, `DRIVE 0` then `DIR` lists it (the DOS keeps `DRIVE 3` as its default from the Loader's own load) | 2026-10-16 |
+| J.5.5 CoCo 2 Loader rows | not runnable on the bench CoCo 2 (26-3026, 16K, no Extended BASIC: no Disk BASIC to enter from); covered by XRoar `coco2bus` (J.5.4 emulator check and the #60 rows) | 2026-10-17 |
+| J.6.1-3 Boot list, BREAK, ENTER on PICOCO.BIN (native, Loader entry) | pass: `RUN WHICH FILE?` lists PICOCO.BAS and PICOCO.BIN; BREAK returns to DISKS with drive 0 mounted; ENTER clears the screen, BASIC types `DRIVE0:LOADM"PICOCO.BIN":EXEC` and the Loader re-enters the Manager; `rom prev hdbdw3bck.rom`, `dw reads 21 crc_err 0`, `becker underrun 0 overrun 0`, `engine_stall 0` | 2026-10-16 |
+| J.6.5 power-on entry, J.6.6 net mode (Plus-W on headers, 91034ac) | pass: double RESET, `PICOCO  COCO 3 2M   NATIVE 1.4`; `B` on PICOCO.DSK, ENTER on `PICOCO.BAS` shows `STARTING DOS, THEN TYPE:` / `RUN"PICOCO.BAS"`; a key cold-restarts into HDB-DOS (`$17`) and the typed line enters the Manager through the Loader. Typing the line found clunky: #69. In net mode `B` says `BOOT NEEDS NATIVE MODE` | 2026-10-16 |
+| J.6.4 NitrOS-9 boot and no answer (Plus-W on headers, native, 91034ac) | pass: `B` on `NOS9BECK.DSK` (stock L2 6309 Becker floppy from flash) boots NitrOS-9 to the shell; `dw reads 498 crc_err 0 timeouts 0`, OP_READ 18 (the Stub), OP_READEX 480, `becker underrun 0 overrun 0`, `engine_stall 0`, `event_drop 0`. The boot saves `dw hdbdos off` with the disk in drive 0. With `becker off` saved: header `OFF`, `B` shows `PICOCO NOT RESPONDING`, a key brings the Manager back | 2026-10-16 |
+| J.6.7 CoCo 2 (16K, no ECB, Pico 2 PCB, 5ff0c49) | pass: `B` on `PICOCO.DSK` lists PICOCO.BAS/PICOCO.BIN, ENTER on `PICOCO.BAS` says `NEEDS EXTENDED BASIC`; `B` on `NOS9.DSK` says `NEEDS 64K` (the disk is still mounted in drive 0 afterwards, as after BREAK). Rows 1-3 and 5 need Disk BASIC: XRoar only on this machine. Counters after the batch: `engine_stall 0`, `event_drop 0`, `becker underrun 0 overrun 0` | 2026-10-17 |
 | J.3.10 CoCo 2 double RESET | pass once with the first flash-marker build (3 s window): manager loaded, `EXEC 49154`, launch carttest, single RESET back to the saved ROM. Not re-run with the final 2 s window + debounce build | 2026-10-01 |
+| J.3.10 re-run, final debounce build (5ff0c49), with J.1.1-4 and J.1.6 | pass: double RESET logs `double reset: manager for this boot` and loads the manager, but a CoCo 2 RESET is a warm start that skips the cartridge check, so `EXEC 49154` is still needed (#71); `EXEC 49154` gives `PICOCO  16K NO ECB   NATIVE 1.4` with `D0`/`D3`, arrows, ENTER on `HDBDW3BCK.ROM` says `NEEDS EXTENDED BASIC`, `CARTTEST.ROM` prints PASS lines, BREAK on home returns to `OK` | 2026-10-17 |
 
 ## K. PIO bus engine
 

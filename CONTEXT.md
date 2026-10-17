@@ -107,7 +107,7 @@ The small program on a disk that enters the Manager from a running DOS.
 _Avoid_: PICOCO.BIN (a file name, and the old program's)
 
 **CoCo-side manager**:
-The retired program, loaded from disk, that did the Manager's job before the Stub. Deleted once the Manager has all of its features.
+The retired program, loaded from disk, that did the Manager's job before the Stub. Deleted in #61 (firmware 1.5).
 _Avoid_: old manager, PICOCO
 
 ### The virtual Multi-Pak

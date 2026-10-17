@@ -12,7 +12,9 @@ typedef enum { NET_OFF, NET_JOINING, NET_CONNECTING, NET_UP, NET_FAILED } net_st
 #define NET_HOST_MAX 64
 #define NET_DEFAULT_PORT 65504
 #define NET_BOOT_HOLD_MS 10000
+#define NET_BOOT_HOLD_MAX_MS 16000  /* while the join is still in progress: a first scan that misses the AP comes up at ~11.5 s (G.3) */
 #define NET_RETRY_MS 2000
+#define NET_BADAUTH_GRACE_MS 3000   /* the AP often rejects the first auth and the driver re-auths about 2.1 s later (G.3) */
 #define NET_JOIN_TIMEOUT_MS 15000
 
 typedef struct {
@@ -54,6 +56,8 @@ extern struct dw_server *net_dw;   /* main.c sets it: SNTP updates this server's
 
 #ifdef PICOCO_HOST
 void   net_stub_set_state(net_state_t s);
+void   net_stub_set_available(bool a);                     /* net_available() result */
+void   net_stub_set_scan(const char *const *ssids, int n); /* canned net_scan results; n < 0 fails */
 void   net_stub_push_from_server(const uint8_t *b, size_t n);
 size_t net_stub_take_to_server(uint8_t *b, size_t n);
 #endif

@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.20)
 option(PICOCO_HOST "Build host library, tests and picoco-host instead of Pico firmware" OFF)
 option(PICOCO_BENCH "Register tools/bench.py as a ctest. It drives the bus pins: only with the board unplugged from the CoCo." OFF)
-set(PICOCO_VERSION "1.4")
+set(PICOCO_VERSION "1.5")
 # PiCoCo board: "pico2" (Pico 2 / RP2350A, default), "plusw" (Waveshare
 # RP2350B-Plus-W, flat on its pad grid) or "plusw_hdr" (a Plus-W on pin
 # headers: pad grid unconnected, boards/plusw_hdr.h). Picks both the PiCoCo
@@ -12,7 +12,7 @@ set(PICOCO_BOARD "pico2" CACHE STRING "PiCoCo board: pico2, plusw or plusw_hdr")
 set(CORE_SRC
   src/dw/dw_util.c src/dw/dw_disk.c src/dw/dw_server.c src/dw/dw_vser.c
   src/bus/bus.c src/dev/device.c src/dev/rom.c src/dev/becker.c
-  src/log.c src/console/console.c src/console/mode.c src/ui/ui.c)
+  src/log.c src/console/console.c src/console/mode.c src/ui/ui.c src/ui/ui_text.c)
 # dw_store_posix.c is the host filesystem backend (fopen/unistd); it also
 # collides with newlib's own posix_close() declaration under arm-none-eabi.
 # Host-only: added to picoco_core below, never to the picoco (Pico) target.

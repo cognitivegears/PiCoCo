@@ -170,7 +170,7 @@ static int run_server(dw_server *srv, int port, bool ui_mode) {
                 } else printf("picoco-host: client connected\n");
                 client_fd = fd;
                 srv->send_ctx = &client_fd;
-                if (ui_mode) { ui_init(send_sock, &client_fd, console_exec_capture, srv->store); ui_ctl(0xA5); }
+                if (ui_mode) { ui_init(send_sock, &client_fd, console_exec_capture, srv->store, srv); ui_ctl(0xA5); }
             }
         }
         if (client_idx >= 0 && (pfds[client_idx].revents & (POLLIN | POLLHUP | POLLERR))) {
@@ -289,7 +289,7 @@ int main(int argc, char **argv) {
     console_init(print_stdout, NULL, &srv, &store);
     /* XRoar's Becker cart carries only $FF41/$FF42, so the stub's $FF43
      * write never arrives: --ui makes the whole connection a UI session. */
-    if (ui_mode) ui_init(send_sock, &dummy_fd, console_exec_capture, &store);
+    if (ui_mode) ui_init(send_sock, &dummy_fd, console_exec_capture, &store, &srv);
     /* Before the config runs, so a `time set` there wins; a replay never asks the time: OP_TIME answers Mac local time. */
     time_t now = time(NULL); struct tm lt; localtime_r(&now, &lt);
     dw_time_set(&srv, (int64_t)now + lt.tm_gmtoff, plat_now_ms());

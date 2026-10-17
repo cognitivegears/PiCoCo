@@ -623,7 +623,7 @@ TEST(rom_boot_records_without_loading) {
 TEST(version_is_current) {
     setup();
     ASSERT_EQ(remote("version"), 0);
-    ASSERT(strcmp(rbuf, "version 1.4\n") == 0);
+    ASSERT(strcmp(rbuf, "version 1.5\n") == 0);
 }
 
 TEST(bus_selftest_is_pico_only_on_host) {

@@ -118,6 +118,75 @@ TEST(exec_capture_returns_the_error_text) {
     ASSERT_EQ(console_exec_capture("rom pattern", msg, sizeof msg), 0);
 }
 
+/* #60: the Loader's L swaps the manager in and remembers the ROM it replaced;
+ * BREAK on that entry (capability bit 3) puts it back before the return. */
+TEST(loader_entry_restores_the_previous_rom_on_break) {
+    setup(MODE_NATIVE);
+    char path[400];
+    snprintf(path, sizeof path, "%s/game.rom", g_dir);
+    FILE *f = fopen(path, "wb");
+    uint8_t img[8192] = { 0x7E, 0xC0, 0x10 };
+    fwrite(img, 1, sizeof img, f);
+    fclose(f);
+    ASSERT_EQ(console_exec("rom load game.rom"), 0);
+    ASSERT(!rom_is_dos());
+    sim_write(BUS_IDX_BECKER_CTL, 0xA5);
+    const uint8_t load[2] = { 'L', 'L' };
+    coco_writes(load, sizeof load);
+    uint8_t got[700];
+    ASSERT_EQ(coco_reads(got, sizeof got), 1);
+    ASSERT_EQ(got[0], UI_GO_OK);
+    ASSERT(rom_is_dos());                           /* the manager image starts with DK */
+    ASSERT(strcmp(ui_prev_rom(), "game.rom") == 0);
+    const uint8_t first[6] = { 'P', 2, 0, UI_CAP_32K | UI_CAP_ECB | UI_CAP_DOS, 0, 0 };
+    uint8_t p[5] = { first[0], first[1], first[2], first[3], (uint8_t)(first[0] + first[1] + first[2] + first[3]) };
+    coco_writes(p, sizeof p);
+    size_t n = coco_reads(got, sizeof got);
+    ASSERT(n > 4);
+    uint8_t brk[4] = { 'P', 0, UI_KEY_BREAK, (uint8_t)('P' + UI_KEY_BREAK) };
+    coco_writes(brk, sizeof brk);
+    n = coco_reads(got, sizeof got);
+    size_t len = ((size_t)got[0] << 8) | got[1];
+    ASSERT_EQ(n, len + 4);
+    ASSERT_EQ(got[2 + len - 2], UI_ACT_WARM);
+    const uint8_t go = 'G';
+    coco_writes(&go, 1);
+    ASSERT_EQ(coco_reads(got, sizeof got), 1);
+    ASSERT_EQ(got[0], UI_GO_OK);
+    ASSERT(!rom_is_dos());                          /* game.rom is back */
+    ASSERT(ui_prev_rom()[0] == '\0');
+    ASSERT(!ui_active());
+}
+
+/* A WiFi scan blocks core0 for seconds; the stub's poll retries sent meanwhile
+ * must not each earn a copy of the reply, or the next keys read stale screens. */
+TEST(poll_retries_sent_during_a_scan_are_dropped) {
+    static const char *const found[] = { "Home" };
+    setup(MODE_NATIVE);
+    net_stub_set_available(true);
+    net_stub_set_scan(found, 1);
+    sim_write(BUS_IDX_BECKER_CTL, 0xA5);
+    coco_writes(first_poll, sizeof first_poll);
+    uint8_t got[700];
+    ASSERT(coco_reads(got, sizeof got) > 4);
+    const uint8_t keys[4] = { UI_KEY_DOWN, UI_KEY_DOWN, UI_KEY_DOWN, UI_KEY_ENTER };   /* home menu: WIFI */
+    for (int i = 0; i < 4; i++) {
+        uint8_t p[4] = { 'P', 0, keys[i], (uint8_t)('P' + keys[i]) };
+        coco_writes(p, sizeof p);
+        ASSERT(coco_reads(got, sizeof got) > 4);
+    }
+    uint8_t burst[4 + 20 * 4] = { 'P', 0, 'S', (uint8_t)('P' + 'S') };
+    for (int i = 0; i < 20; i++) {                     /* 20 retries: more than one 64-byte read */
+        uint8_t *p = burst + 4 + i * 4;
+        p[0] = 'P'; p[1] = 1; p[2] = 'S'; p[3] = (uint8_t)('P' + 1 + 'S');
+    }
+    coco_writes(burst, sizeof burst);
+    size_t n = coco_reads(got, sizeof got);
+    size_t len = ((size_t)got[0] << 8) | got[1];
+    ASSERT_EQ(n, len + 4);                             /* one reply, no copies */
+    ASSERT_EQ(coco_reads(got, sizeof got), 0);
+}
+
 int main(void) {
     char tmpl[300];
     const char *tmpdir = getenv("TMPDIR");
@@ -132,5 +201,7 @@ int main(void) {
     RUN(session_begin_drops_earlier_bytes);
     RUN(drivewire_works_again_after_the_session);
     RUN(exec_capture_returns_the_error_text);
+    RUN(loader_entry_restores_the_previous_rom_on_break);
+    RUN(poll_retries_sent_during_a_scan_are_dropped);
     TEST_MAIN_END
 }

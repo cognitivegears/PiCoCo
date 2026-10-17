@@ -106,10 +106,13 @@ int main(void) {
     /* becker net in the config: hold /HALT (already asserted by the boot
      * pull-up) until the server socket is up, at most NET_BOOT_HOLD_MS, so a
      * CoCo never sees a half-connected board. Fall back to native otherwise:
-     * the saved config still says net and the next boot tries again. */
+     * the saved config still says net and the next boot tries again. A join
+     * still in progress at the limit gets until NET_BOOT_HOLD_MAX_MS. */
     if (mode_get() == MODE_NET) {
         uint32_t t0 = plat_now_ms();
-        while (net_state() != NET_UP && plat_now_ms() - t0 < NET_BOOT_HOLD_MS) {
+        while (net_state() != NET_UP) {
+            uint32_t t = plat_now_ms() - t0;
+            if (t >= NET_BOOT_HOLD_MS && (t >= NET_BOOT_HOLD_MAX_MS || net_state() != NET_JOINING)) break;
             plat_double_reset_tick(plat_now_ms());
             tud_task();
             net_poll(plat_now_ms());

@@ -3,6 +3,7 @@
 #include <stdbool.h>
 #include <stddef.h>
 #include "dw_store.h"
+#include "dw.h"
 
 /* On-board manager UI (spec 2026-10-01-rom-manager-design.md). core0 only.
  * The CoCo stub polls with the last key; ui answers with an action list. */
@@ -23,7 +24,10 @@
 #define UI_ACT_CLEAR 0x02
 #define UI_ACT_JUMP  0x10           /* after a ROM swap: JMP $C000 */
 #define UI_ACT_COLD  0x11           /* after a ROM swap: cold restart */
+#define UI_ACT_DOS   0x12           /* after a DOS ROM swap, power-on entry: JMP $C002 (its init, no restart) */
 #define UI_ACT_WARM  0x13           /* warm restart: back to BASIC */
+#define UI_ACT_TYPE  0x14           /* Loader entry: return to BASIC and type: length (1), text ending in CR */
+#define UI_ACT_BOOT  0x15           /* DriveWire OP_READ and jump: drive (1), LSN (3), count (1), load (2), jump (2) */
 #define UI_ACT_JUMP3 0x16           /* CoCo 3, after a ROM swap: slow speed, $CC -> $FF90, ROM mode, JMP $C000 */
 #define UI_ACT_COLD3 0x17           /* CoCo 3, after a ROM swap: slow speed, clear $FEED and $71, JMP $8C1B (recopies the cart to RAM) */
 #define UI_ACT_WARM3 0x18           /* CoCo 3: JMP $8C1B with $71 untouched */
@@ -32,6 +36,8 @@
 #define UI_KEY_DOWN  0x0A
 #define UI_KEY_ENTER 0x0D
 #define UI_KEY_UP    0x5E
+#define UI_KEY_PGUP  0x5F           /* SHIFT+UP */
+#define UI_KEY_PGDN  0x5B           /* SHIFT+DOWN */
 
 #define UI_GO_OK   0x06             /* reply to the stub's 'G' */
 #define UI_GO_FAIL 0x15
@@ -39,8 +45,12 @@
 typedef void (*ui_send_fn)(void *ctx, const uint8_t *buf, size_t n);
 typedef int  (*ui_exec_fn)(const char *line, char *msg, size_t cap);   /* 0 ok, else msg = reason */
 
-void ui_init(ui_send_fn send, void *ctx, ui_exec_fn exec, dw_store *store);
+void ui_init(ui_send_fn send, void *ctx, ui_exec_fn exec, dw_store *store, dw_server *dw);
 void ui_ctl(uint8_t code);          /* a write to $FF43: 0xA5 begin, 0x5A end */
 bool ui_active(void);
 void ui_feed(const uint8_t *buf, size_t n, uint32_t now_ms);   /* bytes from the CoCo during a session */
+bool ui_input_stale(void);          /* true once after ui_feed blocked: discard what the CoCo wrote meanwhile */
 void ui_row_text(int row, char out[UI_COLS + 1]);              /* tests: one model row as ASCII */
+const char *ui_prev_rom(void);      /* the ROM the Loader's L replaced; "" once the session has left (status shows it) */
+uint8_t ui_cell(int row, int col);                             /* tests: one raw screen code */
+void ui_set_cell(int row, int col, uint8_t screen_code);       /* for the line editor's overlay */

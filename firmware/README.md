@@ -348,7 +348,7 @@ hides any name starting with `.`, so these don't show up and are harmless.
 ## Console commands added in 1.2
 
 DW4-compatible disk commands (used by NitrOS-9's `dw` utility and the
-`coco/` manager program equally):
+Manager equally):
 
 - `dw disk show [n]`: with no argument, lists every mounted drive in DW4's
   wire format; with `n`, shows just that drive's file.
@@ -387,8 +387,9 @@ then `save` once. A config that has a `rom load ...` line is unaffected.
 
 Press RESET twice within 2 seconds to load the manager for that boot only; the
 saved ROM is unchanged. On a CoCo 3 nothing needs typing (a hardware RESET
-makes the CoCo 3 recopy the cart); on a CoCo 1/2 without Extended BASIC then
-type `EXEC 49154`. The marker is a small byte log in one flash sector just
+makes the CoCo 3 recopy the cart); on a CoCo 2 then
+type `EXEC 49154` (a CoCo 2 RESET is a warm start; #71 tracks starting it
+through /CART). The marker is a small byte log in one flash sector just
 below the filesystem: two single-byte writes per boot and one sector erase
 about every 2000 boots. A 150 ms debounce at boot ignores contact bounce. The
 boot log shows `boot, reset log N` (odd N means a double RESET was seen) and
@@ -481,7 +482,7 @@ socket) is at tag `fw-1.4-cpu-loop` if a bare-module check is ever wanted.
 
 `firmware/src/dw/dw_vser.c` implements DW4's virtual-serial command mode
 (channels 1-13; one session at a time) so any DW4 client — NitrOS-9's
-`dw`, DwTerm, or the `coco/` manager program — can run console commands
+`dw` or DwTerm — can run console commands
 over the same Becker/DriveWire link used for disk I/O, framed exactly as
 DW4 Java 4.3.3p (`OK command successful` / `FAIL nnn <msg>`, both
 terminated `\n\r`). Reopening a channel after a reply was already queued
