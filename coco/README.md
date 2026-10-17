@@ -1,4 +1,4 @@
-# PiCoCo Manager (CoCo side)
+# coco/: the Loader, the Stub and the CoCo-side test tools
 
 Build: `make` (needs lwasm from LWTOOLS and ToolShed `decb`). It builds the
 Loader disk `PICOCO.DSK` and the Stub, and regenerates
@@ -44,7 +44,7 @@ build-host/picoco-host --dir /tmp/picoco-pcdisk --mount 0=PICOCO.DSK &
 xroar -machine coco2bus -becker -rompath ~/.xroar/roms
 ```
 
-At the `OK` prompt type `RUN"PICOCO"`. Expect `PICOCO HELLO` then `OK`.
+At the `OK` prompt type `RUN"PICOCO"`. The Loader enters the Manager, or prints `PICOCO NOT RESPONDING` then `OK` when the firmware does not answer.
 
 For the CoCo 3 profile, add `-cart-rom hdbdw3bc3` (see below for why):
 
@@ -52,7 +52,7 @@ For the CoCo 3 profile, add `-cart-rom hdbdw3bc3` (see below for why):
 xroar -machine coco3 -cart-rom hdbdw3bc3 -becker -rompath ~/.xroar/roms
 ```
 
-Same result: `RUN"PICOCO"` prints `PICOCO HELLO` then `OK`. (If a local
+Same result: `RUN"PICOCO"` enters the Manager or prints `PICOCO NOT RESPONDING`. (If a local
 sandbox or firewall blocks `picoco-host` or XRoar's becker port from
 listening/connecting on localhost, allow local TCP for this session or run
 outside it — the exact mechanism depends on your environment.)
@@ -201,7 +201,7 @@ watching a window. Two pieces make that possible:
 
    OK
    RUN"PICOCO"
-   PICOCO HELLO
+   PICOCO NOT RESPONDING
    OK
    #
    ```
@@ -321,7 +321,7 @@ The Manager is the firmware's screens, drawn on the CoCo by the Stub
 
 - Power on with the Manager as the saved ROM.
 - CoCo 3: double RESET.
-- CoCo 2: double RESET, then `EXEC 49154`.
+- CoCo 2: double RESET, then `EXEC 49154` (a CoCo 2 RESET is a warm start; #71 tracks starting it through /CART).
 - From HDB-DOS with `PICOCO.DSK` mounted: `RUN"PICOCO"` (the Loader).
 
 Console verbs are in `firmware/README.md`.
@@ -331,13 +331,27 @@ WIFI. Up/Down move, ENTER opens, BREAK returns to BASIC.
 
 - **ROMS**: ENTER launches the selected ROM. `D` sets it as the next-boot
   ROM (`rom boot`); `*` marks the current next-boot ROM. BREAK goes back.
-- **DISKS**: a digit mounts the selected image in that drive. `E` then a
-  digit ejects that drive. `N` creates a new blank disk image. `B` opens
-  the Boot list for the selected image. BREAK goes back.
-- **BOOT**: ENTER runs the selected `.BAS`/`.BIN` through HDB-DOS, or boots
-  an OS-9 disk. BREAK goes back to DISKS.
+- **DISKS**: a digit mounts the selected image in that drive. `E` (the
+  screen shows `EJECT: PRESS 0-3`) then a digit ejects that drive. `N`
+  prompts `NAME:` and creates a new blank disk image. `B` boots the
+  selected image (below). BREAK goes back.
+- **BOOT**: `B` in DISKS mounts the selected image in drive 0 (replacing
+  what was there; it needs native transport, else `BOOT NEEDS NATIVE MODE`).
+  An OS-9 disk boots at once (`NEEDS 64K` on a smaller machine). Any other
+  disk opens the Boot list of its BAS/BIN files. ENTER on a file:
+  after a Loader entry, BASIC types `DRIVE0:RUN"X"` or
+  `DRIVE0:LOADM"X":EXEC` itself; after a power-on entry the Manager shows
+  `STARTING DOS, THEN TYPE:` and the line, and any key cold-starts the
+  default DOS ROM (the one `D` marked in ROMS, not necessarily HDB-DOS).
+  With no DOS ROM set it says `SET A DOS ROM AS DEFAULT`; on a Color BASIC
+  machine, `NEEDS EXTENDED BASIC`. BREAK goes back to DISKS with drive 0
+  still mounted.
 - **SETTINGS**: `H` toggles HDB-DOS drive mode, `T` sets the clock, `Z` the
   timezone. BREAK goes back.
 - **WIFI** (Plus-W only): `S` scans for an SSID, `P` sets the PSK, `H` sets
-  the server host, `M` toggles the next-boot transport (net or native).
-  BREAK goes back.
+  the server host, `M` toggles the next-boot transport (net or native) and
+  shows `(RESET TO APPLY)`. BREAK goes back.
+
+In every list, SHIFT+UP/DOWN pages, and `G` then up to 4 letters jumps to
+the first name with that prefix. Every change saves at once; there is no
+save key. In the line editor (SSID, PSK, host), SHIFT+0 toggles lowercase.

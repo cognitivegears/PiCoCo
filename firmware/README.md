@@ -387,8 +387,9 @@ then `save` once. A config that has a `rom load ...` line is unaffected.
 
 Press RESET twice within 2 seconds to load the manager for that boot only; the
 saved ROM is unchanged. On a CoCo 3 nothing needs typing (a hardware RESET
-makes the CoCo 3 recopy the cart); on a CoCo 1/2 without Extended BASIC then
-type `EXEC 49154`. The marker is a small byte log in one flash sector just
+makes the CoCo 3 recopy the cart); on a CoCo 2 then
+type `EXEC 49154` (a CoCo 2 RESET is a warm start; #71 tracks starting it
+through /CART). The marker is a small byte log in one flash sector just
 below the filesystem: two single-byte writes per boot and one sector erase
 about every 2000 boots. A 150 ms debounce at boot ignores contact bounce. The
 boot log shows `boot, reset log N` (odd N means a double RESET was seen) and

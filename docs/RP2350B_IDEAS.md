@@ -1089,7 +1089,7 @@ next to A13) and holds JP2 at 1-2.
 
 **What it buys.** Stock HDB-DOS on the cheapest CoCo 2s and on a CoCo 1
 with plain Color BASIC, with no chip to source. 16K RAM still limits
-them: the Manager runs on 16K, but booting some disks needs 32K or 64K.
+them: the Manager and the Loader run on 16K; an OS-9 boot needs 64K, and a disk's own programs may need more.
 
 **Until then.** `coco/carttest.asm` is the no-ECB test path: an 8 KB ROM
 started with `EXEC 49152` that runs from the cart and reads the whole of
