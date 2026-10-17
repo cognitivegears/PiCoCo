@@ -346,9 +346,9 @@ CoCo off, board in, USB to the Mac, CoCo on.
 1. `POKE &HFF42,65:PRINT PEEK(&HFF41);PEEK(&HFF41);PEEK(&HFF42)` under
    `becker loop` → `0 2 65`; back to `becker native` after.
 2. `DIR`, `LOADM"DINORUN":EXEC`, a `SAVE` + power cycle + `DIR`.
-3. `DRIVE 3:RUN"PICOCO"`: manager draws in uppercase (no inverse-video
-   garbage), E/N/V/S/B keys work, BREAK exits. First real-hardware run of
-   the CoCo 2 path; only XRoar so far.
+3. The Manager on a CoCo 2: section J (J.1 for a Color BASIC machine,
+   J.5 and J.6.7 for the Loader entry from HDB-DOS). The CoCo-side manager
+   this step once covered is retired (#61).
 4. `status` / `dw stats`: `crc_err 0`, `underrun 0`, `event_drop 0`.
 5. Soak: `10 DIR:GOTO 10` for 10 minutes, counters unchanged.
 
