@@ -476,7 +476,7 @@ there is no save key.
 CoCo 3, Pico 2 PCB, HDB-DOS as the saved ROM; `PICOCO.DSK` (`make -C coco`)
 copied to the flash and mounted in drive 3.
 
-1. `DRIVE 3:RUN"PICOCO"`: the home screen with `COCO 3 128K` in the header (the
+1. `DRIVE 3:RUN"PICOCO"`: the home screen with the fitted RAM size in the header (`COCO 3 2M` on the bench machine; the
    RAM size probed through MMU slot 2, so it reads in ROM mode too); `status`
    shows `rom now load manager` and `rom prev HDBDW3BC3.ROM`.
 2. BREAK on the home screen: back at `OK` with the BASIC program still listable

@@ -69,6 +69,13 @@ static void setup(void) {
     ui_init(send_cb, NULL, exec_cb, &store, &dw);
 }
 
+static void out_cb(void *ctx, const char *s);
+/* setup, then the console the Manager runs its verbs through (its home screen reads rom next). */
+static void setup_console(void) {
+    setup();
+    console_init(out_cb, NULL, &dw, &store); ui_init(send_cb, NULL, exec_cb, &store, &dw);
+}
+
 /* Send one poll the way the stub does. caps < 0: not a first poll. */
 static void poll(uint8_t flags, uint8_t key, int caps, uint32_t now) {
     uint8_t p[5];
@@ -84,7 +91,6 @@ static void poll(uint8_t flags, uint8_t key, int caps, uint32_t now) {
 
 static void open_roms(int capsv);
 static void expect_clear_then(uint8_t act);
-static void out_cb(void *ctx, const char *s);
 
 /* Check the framing of the reply in tx; returns the action-byte count or -1. */
 static int reply_ok(void) {
@@ -452,9 +458,7 @@ TEST(coco2_codes_unchanged) {
 
 /* ADR 0011: every change the Manager makes is saved at once. */
 TEST(default_rom_is_set_and_saved) {
-    setup();
-    console_init(out_cb, NULL, &dw, &store);
-    ui_init(send_cb, NULL, exec_cb, &store, &dw);
+    setup_console();
     mkfile("hdb.rom", "DK", 8192);
     open_roms(UI_CAP_32K | UI_CAP_ECB);
     poll(0, 'D', -1, 10);
@@ -530,10 +534,11 @@ TEST(mounting_an_image_held_by_another_drive_moves_it) {
     ASSERT(row_has(2, "3 PICOCO.DSK"));
     nlines = 0;
     poll(0, '0', -1, 10);
-    ASSERT_EQ(nlines, 3);
+    ASSERT_EQ(nlines, 4);
     ASSERT(strcmp(lines[0], "dw disk eject 3") == 0);
-    ASSERT(strcmp(lines[1], "dw disk insert 0 picoco.dsk") == 0);
-    ASSERT(strcmp(lines[2], "save") == 0);
+    ASSERT(strcmp(lines[1], "save") == 0);
+    ASSERT(strcmp(lines[2], "dw disk insert 0 picoco.dsk") == 0);
+    ASSERT(strcmp(lines[3], "save") == 0);
 }
 
 TEST(disks_lists_images_not_roms_or_config) {
@@ -749,9 +754,7 @@ TEST(boot_on_a_loader_entry_types_the_line) {
 }
 
 TEST(boot_on_a_power_on_entry_offers_the_dos) {
-    setup();
-    console_init(out_cb, NULL, &dw, &store);
-    ui_init(send_cb, NULL, exec_cb, &store, &dw);
+    setup_console();
     mkfile("hdbdos.rom", "DK", 8192);
     mkdsk("game.dsk", false, 1);
     open_boot(UI_CAP_64K | UI_CAP_ECB);
@@ -773,9 +776,7 @@ TEST(boot_on_a_power_on_entry_offers_the_dos) {
 }
 
 TEST(boot_on_a_coco3_power_on_entry_cold_restarts) {
-    setup();
-    console_init(out_cb, NULL, &dw, &store);
-    ui_init(send_cb, NULL, exec_cb, &store, &dw);
+    setup_console();
     mkfile("hdbdos.rom", "DK", 8192);
     ASSERT_EQ(console_exec("rom boot hdbdos.rom"), 0);
     mkdsk("game.dsk", false, 1);
@@ -796,9 +797,7 @@ TEST(boot_program_needs_extended_basic) {
 
 /* The Loader's L recorded the DOS it replaced; ENTER on a program puts it back on G. */
 TEST(boot_on_a_loader_entry_swaps_the_dos_back) {
-    setup();
-    console_init(out_cb, NULL, &dw, &store);
-    ui_init(send_cb, NULL, exec_cb, &store, &dw);
+    setup_console();
     mkfile("hdbdos.rom", "DK", 8192);
     ASSERT_EQ(console_exec("rom load hdbdos.rom"), 0);
     mkdsk("game.dsk", false, 1);
@@ -839,9 +838,7 @@ TEST(boot_ignores_a_non_rsdos_directory) {
 
 /* The Loader's recorded DOS is dropped once any leave ends the session. */
 TEST(loader_entry_prev_is_dropped_on_a_jump_leave) {
-    setup();
-    console_init(out_cb, NULL, &dw, &store);
-    ui_init(send_cb, NULL, exec_cb, &store, &dw);
+    setup_console();
     mkfile("hdbdos.rom", "DK", 8192);
     ASSERT_EQ(console_exec("rom load hdbdos.rom"), 0);
     mkfile("game.rom", "\x7E\xC0\x10", 8192);

@@ -20,7 +20,7 @@ static net_state_t s_state = NET_OFF;
 static const char *s_err = "";
 static bool s_radio, s_wanted;            /* s_wanted: net_start called, not net_stop */
 static uint32_t s_since_ms, s_retry_at_ms;
-static bool s_badauth;                    /* this join saw a BADAUTH poll; the AP's first auth reply is often a rejection it then retracts */
+static bool s_badauth, s_nonet;                    /* this join saw a BADAUTH poll; the AP's first auth reply is often a rejection it then retracts */
 static uint32_t s_badauth_ms;
 static struct tcp_pcb *s_pcb;
 static ip_addr_t s_addr;
@@ -164,6 +164,7 @@ void net_poll(uint32_t now_ms) {
             int ls = cyw43_tcpip_link_status(&cyw43_state, CYW43_ITF_STA);
             if (ls == CYW43_LINK_UP) {
                 if (s_badauth) LOG_I(LOG_M_NET, "net: auth retried, joined %u ms after the rejection", (unsigned)(now_ms - s_badauth_ms));
+                s_nonet = false;
                 cyw43_wifi_pm(&cyw43_state, cyw43_pm_value(CYW43_NO_POWERSAVE_MODE, 200, 1, 1, 10));
                 ip_refresh();
                 s_state = NET_CONNECTING;
@@ -172,7 +173,10 @@ void net_poll(uint32_t now_ms) {
                 err_t r = dns_gethostbyname(s_host, &s_addr, on_dns, (void *)(uintptr_t)s_dns_gen);
                 if (r == ERR_OK) { s_addr_ok = true; }
                 else if (r != ERR_INPROGRESS) fail(3, now_ms);
-            } else if (ls == CYW43_LINK_NONET) { fail(0, now_ms); s_retry_at_ms = now_ms; }   /* the first scan often misses the AP: rejoin at once, as the SDK's connect loop does */
+            } else if (ls == CYW43_LINK_NONET) {
+                fail(0, now_ms);
+                if (!s_nonet) { s_nonet = true; s_retry_at_ms = now_ms; }   /* the first scan often misses the AP: rejoin at once, as the SDK's connect loop does; later misses back off */
+            }
             else if (ls == CYW43_LINK_BADAUTH) {
                 if (!s_badauth) { s_badauth = true; s_badauth_ms = now_ms; }
                 else if (now_ms - s_badauth_ms > NET_BADAUTH_GRACE_MS) fail(1, now_ms);

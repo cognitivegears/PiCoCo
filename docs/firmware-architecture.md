@@ -787,7 +787,7 @@ for join+DHCP and for connect. `MODE_NET` is the bridge case with the
 platform read/write swapped for `net_read`/`net_write` (writes return n when
 not up, the bridge rule). Core1 is untouched: it still only sees the
 Becker ring, so it stays flash-free. With `becker net` saved, `main.c` holds
-/HALT until the socket is up or 10 s, then falls back to native. SNTP starts
+/HALT until the socket is up or 10 s (16 s while a join is still in progress), then falls back to native. SNTP starts
 once per boot on link-up and seeds the clock only when it is stopped. Host
 builds link `net_stub.c`. A remote server must answer within about 200 ms.
 See `firmware/README.md` and `docs/superpowers/specs/2026-09-29-wifi-transport-design.md`.
@@ -899,7 +899,7 @@ Power‑on sequence:
 4. `bus_engine_init()` arms the PIO state machines and DMA channels,
    core1 is launched, `picoco.cfg` is replayed (its `rom load` and `bus
    drive on`), and with `becker net` saved the board waits up to 10 s for
-   the server socket.
+   the server socket (16 s while the WiFi join is still in progress).
 5. `main()` then calls `gpio_put(PIN_HALT, 0)` and logs `core1 up, halt
    released`. Q2 turns OFF, R1 pulls /HALT high on the CoCo side, and
    the CPU runs.

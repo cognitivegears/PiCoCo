@@ -331,7 +331,7 @@ WIFI. Up/Down move, ENTER opens, BREAK returns to BASIC.
 
 - **ROMS**: ENTER launches the selected ROM. `D` sets it as the next-boot
   ROM (`rom boot`); `*` marks the current next-boot ROM. BREAK goes back.
-- **DISKS**: a digit mounts the selected image in that drive. `E` (the
+- **DISKS**: a digit mounts the selected image in that drive (an image another drive holds moves; so does `B`). `E` (the
   screen shows `EJECT: PRESS 0-3`) then a digit ejects that drive. `N`
   prompts `NAME:` and creates a new blank disk image. `B` boots the
   selected image (below). BREAK goes back.

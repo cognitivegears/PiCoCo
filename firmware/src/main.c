@@ -112,7 +112,7 @@ int main(void) {
         uint32_t t0 = plat_now_ms();
         while (net_state() != NET_UP) {
             uint32_t t = plat_now_ms() - t0;
-            if (t >= NET_BOOT_HOLD_MS && (t >= NET_BOOT_HOLD_MAX_MS || net_state() == NET_FAILED)) break;
+            if (t >= NET_BOOT_HOLD_MS && (t >= NET_BOOT_HOLD_MAX_MS || net_state() != NET_JOINING)) break;
             plat_double_reset_tick(plat_now_ms());
             tud_task();
             net_poll(plat_now_ms());

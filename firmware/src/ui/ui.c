@@ -216,7 +216,7 @@ static int mount_sel(int d) {
     int m = mounted_in(names[sel]);
     if (m >= 0 && m != d) {
         snprintf(line, sizeof line, "dw disk eject %d", m);
-        if (run(line) != 0) return -1;
+        if (change(line) != 0) return -1;
     }
     snprintf(line, sizeof line, "dw disk insert %d %s", d, names[sel]);
     return change(line);
@@ -233,8 +233,8 @@ static void list_draw(const char *title, const char *empty) {
     for (int i = 0; i < LIST_ROWS && top + i < nnames; i++) {
         put(LIST_TOP + i, 2, names[top + i], top + i == sel);
         int d = list_drives ? mounted_in(names[top + i]) : -1;
-        char mark = d >= 0 ? (char)('0' + d)
-                  : screen == SCR_ROMS && strcasecmp(names[top + i], console_rom_next()) == 0 ? '*' : 0;   /* the next-boot ROM */
+        char mark = d >= 0 ? (char)('0' + d) : 0;
+        if (screen == SCR_ROMS && strcasecmp(names[top + i], console_rom_next()) == 0) mark = '*';   /* the next-boot ROM */
         if (mark) put(LIST_TOP + i, 0, (char[]){ mark, 0 }, false);
     }
     put(MSG_ROW, 0, msg[0] ? msg : truncated ? "LIST TRUNCATED" : "", false);
