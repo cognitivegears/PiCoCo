@@ -465,7 +465,8 @@ there is no save key.
    `E` then `1` ejects. RESET: the mount is still there (`status`), no `save` typed.
 4. SHIFT+UP/DOWN page a long list; `G` then a letter jumps; the title row counts.
 5. SETTINGS: `H` toggles the HDB-DOS mode; the clock row shows the date; `T`/`Z`
-   say `NOT YET` until #59.
+   say `NOT YET` until #59. UP/DOWN move the inverse cursor row, ENTER does what
+   the row's letter does (#67); the same on WIFI.
 6. WIFI on the Pico 2 PCB: `NO RADIO ON THIS BOARD`.
 7. WIFI on the Plus-W header build: SSID, PSK, SERVER, MODE, STATE, IP rows match
    `net status`; `M` flips the next-boot transport and shows `(RESET TO APPLY)`.

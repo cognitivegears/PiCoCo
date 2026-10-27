@@ -1192,6 +1192,50 @@ TEST(settings_toggle_hdbdos_is_saved) {
     ASSERT(strcmp(lines[1], "save") == 0);
 }
 
+TEST(settings_rows_are_a_cursor_menu) {
+    setup();
+    open_settings(0);
+    ASSERT_EQ(ui_cell(3, 0), 'H' & 0x3F);            /* first row selected (inverse) */
+    ASSERT_EQ(ui_cell(4, 0), 'T');
+    ASSERT(row_has(15, "ENTER=SELECT"));
+    poll(0, UI_KEY_DOWN, -1, 10);
+    poll(0, UI_KEY_DOWN, -1, 11);
+    poll(0, UI_KEY_DOWN, -1, 12);                    /* stops on the last row */
+    ASSERT_EQ(ui_cell(5, 0), 'Z' & 0x3F);
+    poll(0, UI_KEY_ENTER, -1, 13);
+    ASSERT(row_has(12, "UTC OFFSET"));
+    poll(0, UI_KEY_BREAK, -1, 14);                   /* editor cancelled, cursor kept */
+    ASSERT_EQ(ui_cell(5, 0), 'Z' & 0x3F);
+    poll(0, UI_KEY_PGUP, -1, 15);
+    ASSERT_EQ(ui_cell(3, 0), 'H' & 0x3F);
+    poll(0, UI_KEY_ENTER, -1, 16);
+    ASSERT_EQ(nlines, 2);
+    ASSERT(strcmp(lines[0], "dw hdbdos off") == 0);
+    poll(0, UI_KEY_PGDN, -1, 17);
+    ASSERT_EQ(ui_cell(5, 0), 'Z' & 0x3F);
+    poll(0, UI_KEY_BREAK, -1, 18);
+    poll(0, UI_KEY_ENTER, -1, 19);                   /* reopened: the cursor is on the first row again */
+    ASSERT_EQ(ui_cell(3, 0), 'H' & 0x3F);
+}
+
+TEST(wifi_rows_are_a_cursor_menu) {
+    setup();
+    open_wifi();
+    ASSERT_EQ(ui_cell(3, 0), 'S' & 0x3F);
+    ASSERT(row_has(15, "ENTER=SELECT"));
+    poll(0, UI_KEY_PGDN, -1, 10);
+    ASSERT_EQ(ui_cell(6, 0), 'M' & 0x3F);
+    poll(0, UI_KEY_ENTER, -1, 11);
+    ASSERT_EQ(nlines, 2);
+    ASSERT(strcmp(lines[0], "net mode net") == 0);
+    ASSERT(strcmp(lines[1], "save") == 0);
+    poll(0, UI_KEY_UP, -1, 12);
+    poll(0, UI_KEY_UP, -1, 13);
+    ASSERT_EQ(ui_cell(4, 0), 'P' & 0x3F);
+    poll(0, UI_KEY_ENTER, -1, 14);
+    ASSERT(row_has(12, "PSK:"));
+}
+
 TEST(wifi_screen_without_a_radio_is_one_line) {
     setup();
     open_with(0);
@@ -1346,6 +1390,8 @@ int main(void) {
     RUN(disks_lists_image_files_only);
     RUN(home_long_read_only_name_keeps_ro);
     RUN(settings_toggle_hdbdos_is_saved);
+    RUN(settings_rows_are_a_cursor_menu);
+    RUN(wifi_rows_are_a_cursor_menu);
     RUN(wifi_screen_without_a_radio_is_one_line);
     RUN(bad_size_refused_before_leaving);
     RUN(go_failure_keeps_session_and_shows_reason);

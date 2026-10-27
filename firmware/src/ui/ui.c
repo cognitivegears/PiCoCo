@@ -67,6 +67,7 @@ static bool eject_armed;        /* Disks: E pressed, a digit picks the drive */
 static bool boot_ml[MAX_NAMES]; /* Boot: the list entry is ML (LOADM) rather than BASIC (RUN) */
 static bool boot_wait;          /* Boot: the DOS-start offer is on screen, any key starts it */
 static int disks_sel, disks_top;/* Disks: the selection the Boot screen returns to */
+static int row_sel;             /* Settings, WiFi: the cursor row; ENTER acts as its letter */
 
 static uint8_t pk[5];
 static int pkn;
@@ -314,8 +315,19 @@ static uint8_t key_home(uint8_t key) {
         screen = (screen_t)(SCR_ROMS + menu_sel);
         if (screen == SCR_ROMS || screen == SCR_DISKS) list_load(screen == SCR_ROMS);
         eject_armed = false;
+        row_sel = 0;
     }
     return 0;
+}
+
+/* A short fixed menu with the lists' cursor keys (#67). */
+static bool menu_key(uint8_t key, int n) {
+    if (key == UI_KEY_UP) { if (row_sel > 0) row_sel--; }
+    else if (key == UI_KEY_DOWN) { if (row_sel + 1 < n) row_sel++; }
+    else if (key == UI_KEY_PGUP) row_sel = 0;
+    else if (key == UI_KEY_PGDN) row_sel = n - 1;
+    else return false;
+    return true;
 }
 
 /* ---- ROMs ---- */
@@ -553,20 +565,22 @@ static void draw_settings(void) {
     clock_text(when);
     put(1, 0, "SETTINGS", false);
     snprintf(line, sizeof line, "H:HDB-DOS DRIVE MODE %s", g_dw->hdbdos ? "ON" : "OFF");
-    put(3, 0, line, false);
+    put(3, 0, line, row_sel == 0);
     snprintf(line, sizeof line, "T:CLOCK %s", when);
-    put(4, 0, line, false);
+    put(4, 0, line, row_sel == 1);
     int tz = net_tz();
     if (tz == NET_TZ_OFF) snprintf(line, sizeof line, "Z:TIMEZONE OFF");
     else snprintf(line, sizeof line, "Z:TIMEZONE UTC%c%02d:%02d", tz < 0 ? '-' : '+', abs(tz) / 60, abs(tz) % 60);
-    put(5, 0, line, false);
+    put(5, 0, line, row_sel == 2);
     int64_t dummy;
     if (!plat_rtc_get(&dummy)) put(6, 2, "(CLOCK LOST AT RESET)", false);
     put(MSG_ROW, 0, msg, false);
-    put(15, 0, "BREAK=BACK", false);
+    put(15, 0, "ENTER=SELECT  BREAK=BACK", false);
 }
 
 static uint8_t key_settings(uint8_t key) {
+    if (menu_key(key, 3)) return 0;
+    if (key == UI_KEY_ENTER) key = (uint8_t)"HTZ"[row_sel];
     if (key == UI_KEY_BREAK) screen = SCR_HOME;
     else if (key == 'H' || key == 'h') change(g_dw->hdbdos ? "dw hdbdos off" : "dw hdbdos on");
     else if (key == 'T' || key == 't') {
@@ -645,14 +659,14 @@ static void draw_wifi(void) {
     put(1, 0, "WIFI", false);
     if (!net_available()) { put(3, 0, "NO RADIO ON THIS BOARD", false); put(15, 0, "BREAK=BACK", false); return; }
     snprintf(line, sizeof line, "S:SSID %s", net_ssid());
-    put(3, 0, line, false);
+    put(3, 0, line, row_sel == 0);
     snprintf(line, sizeof line, "P:PSK %s", net_psk_set() ? "********" : "");
-    put(4, 0, line, false);
+    put(4, 0, line, row_sel == 1);
     snprintf(line, sizeof line, "H:SERVER %s %u", net_host(), (unsigned)net_port());
-    put(5, 0, line, false);
+    put(5, 0, line, row_sel == 2);
     picoco_mode boot = console_boot_mode();
     snprintf(line, sizeof line, "M:MODE %s", boot == MODE_NET ? "NET" : "NATIVE");
-    put(6, 0, line, false);
+    put(6, 0, line, row_sel == 3);
     if (boot != mode_get()) put(7, 2, "(RESET TO APPLY)", false);
     snprintf(line, sizeof line, "STATE %s", net_state_name(net_state()));
     put(9, 0, line, false);
@@ -660,7 +674,7 @@ static void draw_wifi(void) {
     put(10, 0, line, false);
     put(11, 0, net_last_error(), false);
     put(MSG_ROW, 0, msg, false);
-    put(15, 0, "BREAK=BACK", false);
+    put(15, 0, "ENTER=SELECT  BREAK=BACK", false);
 }
 
 static uint8_t key_wifi(uint8_t key) {
@@ -674,6 +688,8 @@ static uint8_t key_wifi(uint8_t key) {
         }
         return 0;
     }
+    if (menu_key(key, 4)) return 0;
+    if (key == UI_KEY_ENTER) key = (uint8_t)"SPHM"[row_sel];
     if (key == UI_KEY_BREAK) screen = SCR_HOME;
     else if (!net_available()) return 0;
     else if (key == 'M' || key == 'm') change(console_boot_mode() == MODE_NET ? "net mode native" : "net mode net");

@@ -346,11 +346,12 @@ WIFI. Up/Down move, ENTER opens, BREAK returns to BASIC.
   With no DOS ROM set it says `SET A DOS ROM AS DEFAULT`; on a Color BASIC
   machine, `NEEDS EXTENDED BASIC`. BREAK goes back to DISKS with drive 0
   still mounted.
-- **SETTINGS**: `H` toggles HDB-DOS drive mode, `T` sets the clock, `Z` the
-  timezone. BREAK goes back.
-- **WIFI** (Plus-W only): `S` scans for an SSID, `P` sets the PSK, `H` sets
-  the server host, `M` toggles the next-boot transport (net or native) and
-  shows `(RESET TO APPLY)`. BREAK goes back.
+- **SETTINGS**: a cursor menu like the lists (UP/DOWN, SHIFT+UP/DOWN);
+  ENTER acts on the row, or its letter does: `H` toggles HDB-DOS drive mode,
+  `T` sets the clock, `Z` the timezone. BREAK goes back.
+- **WIFI** (Plus-W only): the same cursor menu. `S` scans for an SSID, `P`
+  sets the PSK, `H` sets the server host, `M` toggles the next-boot transport
+  (net or native) and shows `(RESET TO APPLY)`. BREAK goes back.
 
 In every list, SHIFT+UP/DOWN pages, and `G` then up to 4 letters jumps to
 the first name with that prefix. Every change saves at once; there is no
