@@ -638,6 +638,7 @@ TEST(pin34_setting_replays_and_gates_cart) {
     outn = 0;
     ASSERT_EQ(console_exec("pin34"), 0);
     ASSERT(strstr(out, "pin34 off"));                     /* default: drives nothing, matches an open JP5 */
+    outn = 0;
     ASSERT_EQ(console_exec("cart auto"), -1);             /* host has the Pico 2 behaviour: no /CART drive without the jumper */
     ASSERT(strstr(out, "pin34"));                         /* the refusal names the setting */
     ASSERT_EQ(console_exec("cart on"), -1);
@@ -659,9 +660,11 @@ TEST(pin34_setting_replays_and_gates_cart) {
     ASSERT(strstr(out, "pin34 cart\n"));
     ASSERT_EQ(rom_cart_get(), CART_ON);
     ASSERT_EQ(console_exec("pin34 off"), 0);
+    ASSERT_EQ(rom_cart_get(), CART_AUTO);                 /* leaving cart drops the policy: a saved "cart on" would fail on replay */
     ASSERT_EQ(console_exec("save"), 0);
     n = plat_cfg_read(cfg, sizeof cfg - 1); cfg[n] = 0;
     ASSERT(!strstr(cfg, "pin34"));                        /* default is omitted */
+    ASSERT(!strstr(cfg, "cart "));
 }
 
 TEST(cart_command_and_save) {

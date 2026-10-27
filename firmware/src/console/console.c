@@ -274,7 +274,7 @@ static int cmd_crash(int argc, char **argv) {
 }
 
 static const char *const pin34_names[] = { "off", "cart", "sound" };
-static int g_pin34;   /* PIN34_OFF */
+static int g_pin34 = PIN34_OFF;
 
 static int cmd_status(void) {
     outf("mode %s\n", mode_name(mode_get()));
@@ -553,7 +553,12 @@ int console_pin34(void) {
 static int cmd_pin34(int argc, char **argv) {
 #ifdef PIN34_LIVE
     if (argc < 2) { outf("pin34 %s\n", pin34_names[g_pin34]); return 0; }
-    for (int i = 0; i < 3; i++) if (strcasecmp(argv[1], pin34_names[i]) == 0) { g_pin34 = i; return 0; }
+    for (int i = 0; i < 3; i++) {
+        if (strcasecmp(argv[1], pin34_names[i]) != 0) continue;
+        g_pin34 = i;
+        if (i != PIN34_CART) rom_cart_set(CART_AUTO);   /* a cart policy without a drive would be refused on replay */
+        return 0;
+    }
     return cerr("usage: pin34 off|cart|sound");
 #else
     (void)argc; (void)argv;

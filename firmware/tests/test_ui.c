@@ -1196,7 +1196,7 @@ TEST(settings_toggle_hdbdos_is_saved) {
  * real console here to see the row follow the saved value (test_console covers
  * the verb itself). */
 TEST(settings_pin34_cycles_and_saves) {
-    setup();
+    setup_console();                                   /* console_init resets the setting */
     open_settings(0);
     ASSERT(row_has(6, "P:PIN 34  OFF"));
     poll(0, 'P', -1, 10);
@@ -1215,6 +1215,7 @@ TEST(settings_pin34_cycles_and_saves) {
     ASSERT_EQ(nlines, 6);
     ASSERT(strcmp(lines[4], "pin34 off") == 0);
     ASSERT(strcmp(lines[5], "save") == 0);
+    ASSERT_EQ(console_exec(lines[4]), 0);               /* leave the default for the tests after this one */
 }
 
 TEST(wifi_screen_without_a_radio_is_one_line) {

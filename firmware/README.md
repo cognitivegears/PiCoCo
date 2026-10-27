@@ -130,7 +130,8 @@ board has a cutout for it), but it works there on 2x20 pin headers with
 15 pad-grid pins reach nothing, so this build ends each bus cycle on OE_BUS
 instead of the pad-grid E, and has no `CART_DRV`: `/CART` comes from header
 pin 34 (GP42) when `pin34 cart` is saved, as on a Pico 2. The bus, Becker
-port, DriveWire and Wi-Fi are the same as the flat build. Checked on a CoCo 3 (Becker loop echo, firmware 1.4).
+port, DriveWire and Wi-Fi are the same as the flat build. Checked on a
+CoCo 3 (Becker loop echo, firmware 1.4).
 
 Every build runs `firmware/tools/check_core1_flash_free.py` as a POST_BUILD
 step, failing the build if any code core1's event loop can reach (directly,
