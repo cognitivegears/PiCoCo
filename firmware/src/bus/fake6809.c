@@ -1,6 +1,7 @@
 #include "fake6809.h"
 #include "bus.h"
 #include "bus_engine.h"
+#include "bus_timing.h"
 #include "rom.h"
 #include "becker.h"
 #include "net.h"
@@ -50,7 +51,7 @@ static void decode_start(void) {
     sm_config_set_in_pin_count(&c, 2);               /* mov x, pins = /SCS:/CTS only */
     sm_config_set_jmp_pin(&c, PIN_E);
     sm_config_set_set_pins(&c, PIN_OE_BUS, 1);
-    sm_config_set_clkdiv(&c, 1.0f);
+    sm_config_set_clkdiv(&c, BUS_PIO_CLKDIV);
     pio_sm_init(dpio, (uint)dsm, doff, &c);
     pio_sm_set_pins_with_mask64(dpio, (uint)dsm, 1ull << PIN_OE_BUS, 1ull << PIN_OE_BUS);   /* high before the pad is ours */
     pio_sm_set_pindirs_with_mask64(dpio, (uint)dsm, 1ull << PIN_OE_BUS, 1ull << PIN_OE_BUS);
@@ -531,7 +532,7 @@ static void probe_arm(void) {
     sm_config_set_in_pins(&c, PIN_SCS);
     sm_config_set_in_shift(&c, true, true, 32);      /* shift right, autopush: sample 1 in [15:0], sample 2 in [31:16] */
     sm_config_set_fifo_join(&c, PIO_FIFO_JOIN_RX);
-    sm_config_set_clkdiv(&c, 1.0f);
+    sm_config_set_clkdiv(&c, BUS_PIO_CLKDIV);
     pio_sm_init(dpio, (uint)psm, poff, &c);
     /* both edges unsynchronised, so the probe sees pad to pad; GP40 goes back
      * to the engine's setting (synchronised) in probe_done. The helper shares
@@ -620,7 +621,7 @@ static void wdata_arm(void) {
     sm_config_set_out_pins(&c, PIN_D0, 8);
     sm_config_set_jmp_pin(&c, PIN_RW);
     sm_config_set_out_shift(&c, true, false, 32);
-    sm_config_set_clkdiv(&c, 1.0f);
+    sm_config_set_clkdiv(&c, BUS_PIO_CLKDIV);
     pio_sm_init(p0, (uint)wd_sm, wd_off, &c);
     wd_dma = dma_claim_unused_channel(true);
     dma_channel_config dc = dma_channel_get_default_config((uint)wd_dma);
@@ -896,7 +897,7 @@ int fake6809_fast(int opts, void (*line)(const char *s)) {
     sm_config_set_in_pins(&c, PIN_D0);
     sm_config_set_out_shift(&c, true, false, 32);
     sm_config_set_in_shift(&c, false, false, 32);
-    sm_config_set_clkdiv(&c, 1.0f);
+    sm_config_set_clkdiv(&c, BUS_PIO_CLKDIV);
     uint32_t bypass_was = pio->input_sync_bypass;
     pio->input_sync_bypass = bypass_was | D_MASK;   /* sample D0-D7 at the stated clk, not 2 clk later */
     pio_sm_init(pio, sm, offset, &c);
