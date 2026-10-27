@@ -1,5 +1,6 @@
 #include "bus.h"
 #include "bus_engine.h"
+#include "bus_timing.h"
 #include "log.h"
 #include "hardware/sync.h"
 #include "hardware/pio.h"
@@ -30,6 +31,7 @@
  * Everything here runs on core0 except the bank calls. */
 
 _Static_assert(PIN_D0 == 0 && PIN_A0 == 8 && PIN_RW == 22, "event word layout (bus.h) is GP0..GP22");
+_Static_assert(BUS_SYS_CLK_HZ == SYS_CLK_HZ, "bus_timing.h is at another clock: run tests/test_timing.c, then update it");
 
 static PIO const epio = pio0;
 static int esm = -1, edma_a, edma_b;
@@ -61,7 +63,7 @@ static void event_init(void) {
     sm_config_set_in_pins(&c, PIN_D0);
     sm_config_set_in_pin_count(&c, 23);              /* D0-D7, A0-A13, R/W; bits 23-31 read 0 */
     sm_config_set_fifo_join(&c, PIO_FIFO_JOIN_RX);
-    sm_config_set_clkdiv(&c, 1.0f);
+    sm_config_set_clkdiv(&c, BUS_PIO_CLKDIV);
     pio_sm_init(epio, (uint)evsm, off, &c);
 
     /* The ring must hold only empty slots before DMA C writes its first word:
@@ -92,7 +94,7 @@ static void engine_init(void) {
     sm_config_set_jmp_pin(&c, PIN_RW);
     sm_config_set_in_shift(&c, false, false, 32);    /* shift left: isr = y << 17 | x << 14 | A13..A0 */
     sm_config_set_out_shift(&c, true, false, 32);
-    sm_config_set_clkdiv(&c, 1.0f);
+    sm_config_set_clkdiv(&c, BUS_PIO_CLKDIV);
     pio_sm_init(epio, (uint)esm, eoff, &c);
     pio_sm_set_enabled(epio, (uint)esm, false);
     /* The whole register, so the strobe's bit (GP26) is known to be clear.
@@ -115,7 +117,7 @@ static void engine_init(void) {
     hoff = pio_add_program(hpio, &bus_sel_pw_program);
     pio_sm_config hc = bus_sel_pw_program_get_default_config(hoff);
 #endif
-    sm_config_set_clkdiv(&hc, 1.0f);
+    sm_config_set_clkdiv(&hc, BUS_PIO_CLKDIV);
     pio_sm_init(hpio, (uint)hsm, hoff, &hc);
     pio_sm_set_enabled(hpio, (uint)hsm, false);
 #endif

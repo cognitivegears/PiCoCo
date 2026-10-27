@@ -517,7 +517,9 @@ hook is registered before the launch.
 
 ## 4. PIO programs
 
-All in `firmware/src/bus/bus_engine.pio`, clock divider 1 (150 MHz).
+All in `firmware/src/bus/bus_engine.pio`, clock divider 1 (150 MHz): both
+are constants in `bus_timing.h`, and `tests/test_timing.c` recomputes the
+serve budget from them (`-DBUS_SYS_CLK_HZ=...` tries another); run it before any clock change.
 The listings below drop the source comments; the file has them.
 
 ### 4.1 `bus_read` (PIO0)
