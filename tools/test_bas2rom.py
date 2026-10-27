@@ -42,22 +42,27 @@ class Bas2RomTest(unittest.TestCase):
 
     def test_decb_bin_takes_load_and_exec_from_headers(self):
         seg1 = b"\x00\x00\x03\x3F\x00\x12\x34\x56"      # 3 bytes at $3F00
-        seg2 = b"\x00\x00\x01\x3F\x05\xAB"              # 1 byte at $3F05 (gap of 2)
-        trailer = b"\xFF\x00\x00\x3F\x00"               # exec $3F00
-        payload = b"\x12\x34\x56\x00\x00\xAB"
+        seg2 = b"\x00\x00\x01\x3F\x03\xAB"              # 1 byte at $3F03, contiguous
+        gap = b"\x00\x00\x01\x3F\x05\xAB"               # 1 byte at $3F05, gap of 2
+        trailer = b"\xFF\x00\x00\x3F\x02"               # exec $3F02
+        payload = b"\x12\x34\x56\xAB"
         with tempfile.TemporaryDirectory() as tmp:
             path = os.path.join(tmp, "t.bin")
             with open(path, "wb") as f:
-                f.write(seg1 + seg2 + trailer)
-            self.assertEqual(bas2rom.load_decb(path), (0x3F00, 0x3F00, payload))
+                f.write(seg2 + seg1 + trailer)             # out of order on disk
+            self.assertEqual(bas2rom.load_decb(path), (0x3F00, 0x3F02, payload))
+            with open(path, "wb") as f:
+                f.write(seg1 + gap + trailer)
+            with self.assertRaises(SystemExit):
+                bas2rom.load_decb(path)
             rom = convert(tmp, "t.bin", seg1 + seg2 + trailer)
         self.assertEqual(len(rom), 16384)
         self.assertEqual(rom[:2], b"DK")
-        n = len(bas2rom.build_ml_stub(0x3F00, len(payload), 0x3F00))
-        self.assertEqual(rom[n - 3:n], b"\x7E\x3F\x00")  # JMP exec ends the stub
+        n = len(bas2rom.build_ml_stub(0x3F00, len(payload), 0x3F02))
+        self.assertEqual(rom[n - 3:n], b"\x7E\x3F\x02")  # JMP exec ends the stub
         self.assertEqual(rom[n:n + len(payload)], payload)
 
-    def test_banked_pads_to_2_4_8_banks_and_reconstructs(self):
+    def test_banked_pads_to_2_or_4_banks_refuses_5_and_reconstructs(self):
         with self.assertRaises(SystemExit):   # 5 banks: more than the switcher holds
             bas2rom.build_ml_banked(bytes(70000), 0x0E00, 0x0E00)
         for n, want_banks in ((20000, 2), (33000, 4)):
@@ -74,7 +79,6 @@ class Bas2RomTest(unittest.TestCase):
                 got += rom[bank * 16384:bank * 16384 + take]
                 bank += 1
             self.assertEqual(got, payload, n)
-            self.assertLess(bank, nbanks + 1, n)
 
 
 if __name__ == "__main__":

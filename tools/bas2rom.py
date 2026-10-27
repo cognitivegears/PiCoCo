@@ -146,8 +146,8 @@ def load_cas(path):
 
 
 # --- read a DECB LOADM .bin: 00 len16 addr16 data..., trailer FF 00 00 exec16
-# Returns (load, exec, payload). Segments are flattened from the lowest to
-# the highest address; a gap between segments is zero-filled.
+# Returns (load, exec, payload). Segments must be contiguous: the loader copies
+# one range, and filling a gap would overwrite whatever RAM lies between.
 def load_decb(path):
     d = open(path, "rb").read()
     segs = []
@@ -167,12 +167,15 @@ def load_decb(path):
     if exec_a is None or not segs:
         print("error: %s: no DECB exec trailer (not a LOADM .bin?)" % path,
               file=sys.stderr); sys.exit(1)
-    lo = min(a for a, _ in segs)
-    hi = max(a + len(b) for a, b in segs)
-    img = bytearray(hi - lo)
+    segs.sort()
+    img = bytearray()
     for a, b in segs:
-        img[a - lo:a - lo + len(b)] = b
-    return lo, exec_a, bytes(img)
+        if img and a != segs[0][0] + len(img):
+            print("error: %s: segment at $%04X is not contiguous with the one before "
+                  "(ends $%04X); flatten it yourself and use --ml --load --run"
+                  % (path, a, segs[0][0] + len(img)), file=sys.stderr); sys.exit(1)
+        img += b
+    return segs[0][0], exec_a, bytes(img)
 
 
 # original load address = firstline_link - firstline_length
@@ -710,8 +713,7 @@ def build_ml_banked(payload, load, exec_addr):
               % nbanks, file=sys.stderr); sys.exit(1)
 
     # assemble the multi-bank image
-    # PiCoCo's `rom load` takes 32K/64K/128K only: pad 3 banks to 4 (5-7 would be 8).
-    nbanks = 2 if nbanks <= 2 else 4 if nbanks <= 4 else 8
+    nbanks = 2 if nbanks <= 2 else 4       # PiCoCo's `rom load` takes 32K/64K/128K only
     img = bytearray(b"\xFF" * (nbanks * BANK_BYTES))
     img[0:2]            = b"DK"
     img[2:2 + la]       = partA
