@@ -564,7 +564,7 @@ static void draw_settings(void) {
     static const char *const p34[] = { "OFF", "CART (JP5 1-2)", "SOUND (JP3 1-2)" };
     if (console_pin34() >= 0) { snprintf(line, sizeof line, "P:PIN 34  %s", p34[console_pin34()]); put(6, 0, line, false); }
     int64_t dummy;
-    if (!plat_rtc_get(&dummy)) put(7, 2, "(CLOCK LOST AT RESET)", false);
+    if (!plat_rtc_get(&dummy)) put(console_pin34() >= 0 ? 7 : 6, 2, "(CLOCK LOST AT RESET)", false);
     put(MSG_ROW, 0, msg, false);
     put(15, 0, "BREAK=BACK", false);
 }

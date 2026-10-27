@@ -556,7 +556,7 @@ static int cmd_pin34(int argc, char **argv) {
     for (int i = 0; i < 3; i++) {
         if (strcasecmp(argv[1], pin34_names[i]) != 0) continue;
         g_pin34 = i;
-        if (i != PIN34_CART) rom_cart_set(CART_AUTO);   /* a cart policy without a drive would be refused on replay */
+        if (i != PIN34_CART && rom_cart_get() == CART_ON) rom_cart_set(CART_AUTO);   /* "cart on" without a drive would be refused on replay; "cart off" stays */
         return 0;
     }
     return cerr("usage: pin34 off|cart|sound");

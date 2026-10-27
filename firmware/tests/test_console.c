@@ -665,6 +665,9 @@ TEST(pin34_setting_replays_and_gates_cart) {
     n = plat_cfg_read(cfg, sizeof cfg - 1); cfg[n] = 0;
     ASSERT(!strstr(cfg, "pin34"));                        /* default is omitted */
     ASSERT(!strstr(cfg, "cart "));
+    ASSERT_EQ(console_exec("cart off"), 0);
+    ASSERT_EQ(console_exec("pin34 sound"), 0);
+    ASSERT_EQ(rom_cart_get(), CART_OFF);                  /* an explicit opt-out survives: it replays on any build */
 }
 
 TEST(cart_command_and_save) {
