@@ -369,7 +369,7 @@ static int cmd_rom(int argc, char **argv) {
         /* Next boot only: a live swap would change the DOS under a running CoCo. */
         if (argc < 3) return cerr("usage: rom boot <file>");
         int r = strcasecmp(argv[2], "manager") == 0 ? 0 : rom_check_file(g_store, argv[2]);
-        if (r == -2) return cerr("rom must be 8192 or 16384 bytes");
+        if (r == -2) return cerr("rom boot: size must be 8K, 16K, or banked 32K/64K/128K");
         if (r != 0) return cerr("rom not found");
         snprintf(rom_cmd, sizeof(rom_cmd), "load %s", argv[2]);
         return 0;

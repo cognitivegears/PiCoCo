@@ -39,4 +39,9 @@ Attribution-ShareAlike 4.0 International (CC-BY-SA-4.0):
 
   https://creativecommons.org/licenses/by-sa/4.0/
 
-SPDX-License-Identifier: CERN-OHL-S-2.0 AND MIT AND CC-BY-SA-4.0
+tools/bas2rom.py is adopted from Scott M Baker's CoCo multicart
+(https://github.com/sbelectronics/coco), Copyright 2026 Scott M Baker,
+and stays under the Apache License, Version 2.0; the licence text is in
+tools/LICENSE-bas2rom.
+
+SPDX-License-Identifier: CERN-OHL-S-2.0 AND MIT AND CC-BY-SA-4.0 AND Apache-2.0

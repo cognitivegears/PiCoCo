@@ -174,6 +174,26 @@ a Pico 2)`; `auto` and the bare query still work on both boards);
 or 128 KB, switched by writes to `$FF40`), refusing any other size with
 `err rom load: size must be 8K, 16K, or banked 32K/64K/128K`.
 
+#### Making an autostart ROM from a program
+
+`tools/bas2rom.py` (Scott M Baker's converter, Apache 2.0, licence text in
+`tools/LICENSE-bas2rom`) wraps a tokenized `.bas`, a `.cas` holding BASIC or
+machine code, or a DECB `.bin` in a 6809 loader that copies the program to
+RAM and starts it, behind the `DK` signature BASIC autostarts from on reset:
+
+```
+python3 tools/bas2rom.py GAME.BAS game.rom
+python3 tools/bas2rom.py GAME.CAS game.rom
+python3 tools/bas2rom.py GAME.BIN game.rom
+python3 tools/bas2rom.py raw.img game.rom --ml --load 2600 --run 2900
+```
+
+A machine-language program that does not fit one 16 KB bank becomes a banked
+image padded to 32 KB or 64 KB, sizes `rom load` and the Manager accept; the
+loader walks the banks through `$FF40` (four banks is the loader's limit).
+The loader needs Extended BASIC. `fs import` the `.rom`, then pick it in the
+Manager or `rom load` it. `python3 tools/test_bas2rom.py` checks the layouts.
+
 #### Self-test without a CoCo
 
 `bus selftest [stress] [radio] [restarts] [switches]` drives the real PIO
@@ -365,8 +385,8 @@ existing name, a name 32 characters or longer, a name that fails
 `\`, `:`), and `picoco.cfg` (see below).
 
 `rom boot <file>`: records the ROM to load on the *next* boot only (no
-live swap under a running DOS); checks the file exists and is 8192 or
-16384 bytes. `status` now shows both `rom now` (what's currently driving
+live swap under a running DOS); checks the file exists and is a size
+`rom load` takes. `status` now shows both `rom now` (what's currently driving
 `/CTS`) and `rom next` (what `rom boot` + `save` will load at the next
 reset).
 

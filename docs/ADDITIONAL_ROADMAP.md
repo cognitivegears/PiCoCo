@@ -281,7 +281,7 @@ touching `bus_core1.c` again; the timing census there is the best public one.
   are otherwise one. Relevant to item 7 of §5.
 
 ### Worth adopting
-- `tools/bas2rom.py` (Apache 2.0, stdlib Python): .cas/.bas/.bin -> autostart ROM,
+- `tools/bas2rom.py` (Apache 2.0, stdlib Python; adopted, #52): .cas/.bas/.bin -> autostart ROM,
   banked layouts for >16 KB, one ROM runs on CoCo 1/2/3. Works with any ROM cart.
 - The 6809 warm-start stub (clears BASIC's `$0071` flag for one boot so a selected ROM
   gets a true cold start) and "insertion-style" start (stay invisible until READY,
