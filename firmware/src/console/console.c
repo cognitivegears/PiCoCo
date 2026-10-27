@@ -273,6 +273,9 @@ static int cmd_crash(int argc, char **argv) {
 #endif
 }
 
+static const char *const pin34_names[] = { "off", "cart", "sound" };
+static int g_pin34 = PIN34_OFF;
+
 static int cmd_status(void) {
     outf("mode %s\n", mode_name(mode_get()));
     outf("mode reply_overflow %u\n", mode_stats.reply_overflow);
@@ -283,6 +286,7 @@ static int cmd_status(void) {
     outf("bus whooks %u\n", bus_stats.whooks_run);
     outf("bus drive %s\n", bus_drive_get() ? "on" : "off");
     outf("last reset %s\n", plat_last_reset());
+    if (console_pin34() >= 0) outf("pin34 %s\n", pin34_names[g_pin34]);
     outf("dw hdbdos %s\n", g_dw->hdbdos ? "on" : "off"); /* DWINIT can flip this remotely */
     outf("rom now %s\n", rom_now[0] ? rom_now : "none");
     outf("rom next %s\n", rom_cmd[0] ? rom_cmd : "none");
@@ -530,26 +534,49 @@ static int cmd_dw_disk(int argc, char **argv) {
     return cerr(usage);
 }
 
+/* Header pin 34 is a solder choice the firmware cannot sense (JP3 1-2 audio,
+ * JP5 1-2 CART_DRV, JP5 2-3 NMI_DRV): the user tells us. The host build keeps
+ * the Pico 2 behaviour so the tests can drive it; the pad-grid Plus-W has its
+ * own CART_DRV and audio pins, so there the verb is n/a (#70). */
+#if !defined(PICOCO_BOARD_H) || defined(PIN_P34)
+#define PIN34_LIVE 1
+#endif
+
+int console_pin34(void) {
+#ifdef PIN34_LIVE
+    return g_pin34;
+#else
+    return -1;
+#endif
+}
+
+static int cmd_pin34(int argc, char **argv) {
+#ifdef PIN34_LIVE
+    if (argc < 2) { outf("pin34 %s\n", pin34_names[g_pin34]); return 0; }
+    for (int i = 0; i < 3; i++) {
+        if (strcasecmp(argv[1], pin34_names[i]) != 0) continue;
+        g_pin34 = i;
+        if (i != PIN34_CART && rom_cart_get() == CART_ON) rom_cart_set(CART_AUTO);   /* "cart on" without a drive would be refused on replay; "cart off" stays */
+        return 0;
+    }
+    return cerr("usage: pin34 off|cart|sound");
+#else
+    (void)argc; (void)argv;
+    outf("pin34 n/a\n");
+    return 0;
+#endif
+}
+
 static int cmd_cart(int argc, char **argv) {
     if (argc < 2) { outf("cart %s\n", rom_cart_get() == CART_ON ? "on" : rom_cart_get() == CART_OFF ? "off" : "auto"); return 0; }
-    if (strcasecmp(argv[1], "on") == 0) {
-#if defined(PICOCO_BOARD_H) && !defined(PIN_CART_DRV)
-        return cerr("cart: needs Plus-W (JP5 on a Pico 2)");
-#else
-        rom_cart_set(CART_ON);
-        return 0;
+    if (strcasecmp(argv[1], "off") == 0) { rom_cart_set(CART_OFF); return 0; }
+    bool on = strcasecmp(argv[1], "on") == 0;
+    if (!on && strcasecmp(argv[1], "auto") != 0) return cerr("usage: cart on|off|auto");
+#ifdef PIN34_LIVE
+    if (g_pin34 != PIN34_CART) return cerr("cart: no /CART drive; set pin34 cart (JP5 1-2)");
 #endif
-    }
-    if (strcasecmp(argv[1], "off") == 0) {
-#if defined(PICOCO_BOARD_H) && !defined(PIN_CART_DRV)
-        return cerr("cart: needs Plus-W (JP5 on a Pico 2)");
-#else
-        rom_cart_set(CART_OFF);
-        return 0;
-#endif
-    }
-    if (strcasecmp(argv[1], "auto") == 0) { rom_cart_set(CART_AUTO); return 0; }
-    return cerr("usage: cart on|off|auto");
+    rom_cart_set(on ? CART_ON : CART_AUTO);
+    return 0;
 }
 
 static int cmd_dw(int argc, char **argv) {
@@ -766,6 +793,8 @@ static int cmd_save(void) {
         return cerr("config too large");
     if (rom_cmd[0] && !cfg_append(cfg, sizeof(cfg), &len, "rom %s\n", rom_cmd))
         return cerr("config too large");
+    if (g_pin34 != PIN34_OFF && !cfg_append(cfg, sizeof(cfg), &len, "pin34 %s\n", pin34_names[g_pin34]))
+        return cerr("config too large");
     if (rom_cart_get() != CART_AUTO && !cfg_append(cfg, sizeof(cfg), &len, "cart %s\n", rom_cart_get() == CART_ON ? "on" : "off"))
         return cerr("config too large");
     if (bus_drive_get() && !cfg_append(cfg, sizeof(cfg), &len, "bus drive on\n"))
@@ -800,7 +829,7 @@ static int cmd_save(void) {
 static int dispatch(int argc, char **argv) {
     const char *v = argv[0];
     if (strcasecmp(v, "help") == 0) {
-        outf("commands: help status version smoke halt trace rom becker net cart bus crash dw fs time log stats save reboot bootsel\n");
+        outf("commands: help status version smoke halt trace rom becker net cart pin34 bus crash dw fs time log stats save reboot bootsel\n");
         return 0;
     }
     if (strcasecmp(v, "status") == 0) return cmd_status();
@@ -823,6 +852,7 @@ static int dispatch(int argc, char **argv) {
     if (strcasecmp(v, "becker") == 0) return cmd_becker(argc, argv);
     if (strcasecmp(v, "net") == 0) return cmd_net(argc, argv);
     if (strcasecmp(v, "cart") == 0) return cmd_cart(argc, argv);
+    if (strcasecmp(v, "pin34") == 0) return cmd_pin34(argc, argv);
     if (strcasecmp(v, "dw") == 0) return cmd_dw(argc, argv);
     if (strcasecmp(v, "fs") == 0) return cmd_fs(argc, argv);
     if (strcasecmp(v, "time") == 0) return cmd_time(argc, argv);
@@ -841,6 +871,7 @@ void console_init(console_out_fn out, void *ctx, dw_server *dw, dw_store *store)
     g_store = store;
     linelen = 0;
     g_boot_mode = -1;
+    g_pin34 = PIN34_OFF;
     rom_cmd[0] = '\0';
     rom_now[0] = '\0';
     cap_open = false;

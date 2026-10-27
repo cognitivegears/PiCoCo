@@ -560,8 +560,11 @@ static void draw_settings(void) {
     if (tz == NET_TZ_OFF) snprintf(line, sizeof line, "Z:TIMEZONE OFF");
     else snprintf(line, sizeof line, "Z:TIMEZONE UTC%c%02d:%02d", tz < 0 ? '-' : '+', abs(tz) / 60, abs(tz) % 60);
     put(5, 0, line, false);
+    /* The jumper name is the only help: header pin 34 is a solder choice the firmware cannot sense (#70). */
+    static const char *const p34[] = { "OFF", "CART (JP5 1-2)", "SOUND (JP3 1-2)" };
+    if (console_pin34() >= 0) { snprintf(line, sizeof line, "P:PIN 34  %s", p34[console_pin34()]); put(6, 0, line, false); }
     int64_t dummy;
-    if (!plat_rtc_get(&dummy)) put(6, 2, "(CLOCK LOST AT RESET)", false);
+    if (!plat_rtc_get(&dummy)) put(console_pin34() >= 0 ? 7 : 6, 2, "(CLOCK LOST AT RESET)", false);
     put(MSG_ROW, 0, msg, false);
     put(15, 0, "BREAK=BACK", false);
 }
@@ -569,6 +572,10 @@ static void draw_settings(void) {
 static uint8_t key_settings(uint8_t key) {
     if (key == UI_KEY_BREAK) screen = SCR_HOME;
     else if (key == 'H' || key == 'h') change(g_dw->hdbdos ? "dw hdbdos off" : "dw hdbdos on");
+    else if ((key == 'P' || key == 'p') && console_pin34() >= 0) {
+        static const char *const next[] = { "pin34 cart", "pin34 sound", "pin34 off" };
+        change(next[console_pin34()]);
+    }
     else if (key == 'T' || key == 't') {
         char when[20];
         clock_text(when);

@@ -16,6 +16,9 @@ const char *console_rom_now(void);                 /* the ROM in the bus table n
 const char *console_rom_next(void);                /* the next-boot ROM: a file name, "pattern", "off", or "" for the manager */
 int  console_run_config(void);                      /* plat_cfg_read, exec each line; lines executed, or <0 */
 void console_boot_manager(void);   /* double RESET: load the built-in manager for this boot; rom_cmd (the saved choice) is untouched */
+/* Header pin 34 function (issue #70): what the user soldered. -1 on the pad-grid Plus-W (n/a). */
+enum { PIN34_OFF = 0, PIN34_CART, PIN34_SOUND };
+int  console_pin34(void);
 
 /* DriveWire vserial command handler (vser_exec_fn): allowlisted commands only,
  * output captured into out. 0 ok, else DW4 result code with out = message. */

@@ -128,9 +128,10 @@ A Plus-W can't sit flat on a v2.3.1 board (its underside flash; the v2.4
 board has a cutout for it), but it works there on 2x20 pin headers with
 `-DPICOCO_BOARD=plusw_hdr` (`firmware/boards/plusw_hdr.h`). On headers the
 15 pad-grid pins reach nothing, so this build ends each bus cycle on OE_BUS
-instead of the pad-grid E, and has no `CART_DRV` (`cart on`/`auto` are
-refused, as on a Pico 2). The bus, Becker port, DriveWire and Wi-Fi are the
-same as the flat build. Checked on a CoCo 3 (Becker loop echo, firmware 1.4).
+instead of the pad-grid E, and has no `CART_DRV`: `/CART` comes from header
+pin 34 (GP42) when `pin34 cart` is saved, as on a Pico 2. The bus, Becker
+port, DriveWire and Wi-Fi are the same as the flat build. Checked on a
+CoCo 3 (Becker loop echo, firmware 1.4).
 
 Every build runs `firmware/tools/check_core1_flash_free.py` as a POST_BUILD
 step, failing the build if any code core1's event loop can reach (directly,
@@ -165,10 +166,26 @@ writes, the trace and the counters keep working); `bus engine` prints which
 PIO state machines and DMA channels the engine and everything else hold;
 `cart on|off|auto`
 sets the firmware `/CART` pulse policy (`auto`, the default, pulses for
-500 ms after `/HALT` release when a loaded ROM is not DK-signature DOS;
-Plus-W only today — a Pico 2 build has no `PIN_CART_DRV`, so `cart on`
-and `cart off` are refused there with `err cart: needs Plus-W (JP5 on
-a Pico 2)`; `auto` and the bare query still work on both boards);
+500 ms after `/HALT` release when a loaded ROM is not DK-signature DOS).
+The pad-grid Plus-W build drives the pulse on its own `CART_DRV` (GP33).
+A Pico 2 or `plusw_hdr` build drives it on header pin 34 only after
+`pin34 cart` (below); with `pin34 off` or `sound`, `cart on` and `cart
+auto` are refused with `err cart: no /CART drive; set pin34 cart (JP5
+1-2)`, while `cart off` and the bare query always work;
+`pin34 off|cart|sound`
+tells the firmware what header pin 34 is soldered to on a Pico 2 or
+`plusw_hdr` build, a choice it cannot sense: `off` (the default; the pin
+is left uninitialised, matching an open JP5), `cart` (JP5 1-2: the
+`/CART` pulse above goes out this pin to Q4), or `sound` (JP3 1-2, the
+v2.3.1 default: the pin is reserved for the audio PWM; the sound
+firmware, when it lands, keys off this value). Saved by `save` and
+replayed before the `/HALT` release so the boot pulse can use it; the
+Manager's SETTINGS screen cycles it with `P`. The pad-grid Plus-W build
+answers `pin34 n/a` (its `CART_DRV` and audio have their own pins).
+Safety: `pin34 cart` with JP3 still bridged 1-2 sends the 500 ms, 500 Hz
+boot pulse into the audio RC filter, a brief buzz and nothing else; the
+reverse mistake (`sound` with JP5 1-2 bridged) drives nothing today, and
+the default `off` never drives the pin;
 `rom load <file>` accepts a plain
 8 KB/16 KB image or a banked Games Master Cartridge image (32 KB, 64 KB
 or 128 KB, switched by writes to `$FF40`), refusing any other size with

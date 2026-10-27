@@ -633,8 +633,46 @@ TEST(bus_selftest_is_pico_only_on_host) {
     ASSERT(strstr(out, "pico only"));
 }
 
+TEST(pin34_setting_replays_and_gates_cart) {
+    setup();
+    outn = 0;
+    ASSERT_EQ(console_exec("pin34"), 0);
+    ASSERT(strstr(out, "pin34 off"));                     /* default: drives nothing, matches an open JP5 */
+    outn = 0;
+    ASSERT_EQ(console_exec("cart auto"), -1);             /* host has the Pico 2 behaviour: no /CART drive without the jumper */
+    ASSERT(strstr(out, "pin34"));                         /* the refusal names the setting */
+    ASSERT_EQ(console_exec("cart on"), -1);
+    ASSERT_EQ(console_exec("cart off"), 0);
+    ASSERT_EQ(console_exec("pin34 sideways"), -1);
+    ASSERT_EQ(console_exec("pin34 sound"), 0);
+    ASSERT_EQ(console_exec("cart auto"), -1);
+    ASSERT_EQ(console_exec("pin34 cart"), 0);
+    ASSERT_EQ(console_exec("cart auto"), 0);
+    ASSERT_EQ(console_exec("cart on"), 0);
+    ASSERT_EQ(console_exec("save"), 0);
+    char cfg[1024]; int n = plat_cfg_read(cfg, sizeof cfg - 1); ASSERT(n > 0); cfg[n] = 0;
+    ASSERT(strstr(cfg, "pin34 cart\n"));
+    ASSERT(strstr(cfg, "pin34 cart\n") < strstr(cfg, "cart on\n"));   /* replay order: the gate before the gated */
+    setup();                                              /* the next boot */
+    ASSERT(console_run_config() > 0);
+    outn = 0;
+    console_exec("status");
+    ASSERT(strstr(out, "pin34 cart\n"));
+    ASSERT_EQ(rom_cart_get(), CART_ON);
+    ASSERT_EQ(console_exec("pin34 off"), 0);
+    ASSERT_EQ(rom_cart_get(), CART_AUTO);                 /* leaving cart drops the policy: a saved "cart on" would fail on replay */
+    ASSERT_EQ(console_exec("save"), 0);
+    n = plat_cfg_read(cfg, sizeof cfg - 1); cfg[n] = 0;
+    ASSERT(!strstr(cfg, "pin34"));                        /* default is omitted */
+    ASSERT(!strstr(cfg, "cart "));
+    ASSERT_EQ(console_exec("cart off"), 0);
+    ASSERT_EQ(console_exec("pin34 sound"), 0);
+    ASSERT_EQ(rom_cart_get(), CART_OFF);                  /* an explicit opt-out survives: it replays on any build */
+}
+
 TEST(cart_command_and_save) {
     setup();
+    ASSERT_EQ(console_exec("pin34 cart"), 0);
     ASSERT_EQ(console_exec("cart on"), 0);
     ASSERT_EQ(rom_cart_get(), CART_ON);
     ASSERT_EQ(console_exec("cart off"), 0);
@@ -859,6 +897,7 @@ int main(void) {
     RUN(rom_boot_records_without_loading);
     RUN(version_is_current);
     RUN(bus_selftest_is_pico_only_on_host);
+    RUN(pin34_setting_replays_and_gates_cart);
     RUN(cart_command_and_save);
     RUN(net_join_keeps_spaces);
     RUN(becker_net_refused_without_config);

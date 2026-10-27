@@ -24,7 +24,7 @@
  * (bus_core1.c) uses /R/W and, through its helper in a GPIO-base-16 PIO block,
  * OE_BUS (GP40); E only in its calibration mode. PIN_OE_FW stays high (U10
  * enabled by OE_BUS only: JP2 1-2; 2-3 is not supported by the engine). GP34/GP42 (audio) are
- * left untouched: not driven, not pulled. */
+ * left untouched: not driven, not pulled (plusw_hdr.h drives GP42 as PIN_P34 after `pin34 cart`). */
 #define PIN_CTS     24
 #define PIN_SCS     25
 #define PIN_E       26

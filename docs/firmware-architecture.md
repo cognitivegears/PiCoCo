@@ -128,7 +128,7 @@ load`'s unbank/publish and the engine's start/stop.
 | GP22      | 29               | /R/W (input from U12; also drives U10 DIR) |
 | GP26      | 31               | **OE_BUS** — cart‑selected (U15 output) |
 | GP27      | 32               | **HALT_GATE** — output; drives Q2 → /HALT |
-| GP28      | 34               | AUDIO_PWM by default (JP3 1-2, v2.3.1); E (input from U13) if JP3 is cut to 2-3. Firmware does not initialise this pin (no sound firmware yet, `docs/ADDITIONAL_ROADMAP.md` §5 item 4) — neither driven nor pulled. |
+| GP28      | 34               | `PIN_P34`: AUDIO_PWM by default (JP3 1-2, v2.3.1); CART_DRV (JP5 1-2) or NMI_DRV (JP5 2-3); E (input from U13) if JP3 is cut to 2-3. The firmware cannot sense the jumpers, so it drives this pin only as the saved `pin34` setting says (`cart`: the /CART pulse in `main.c`; `sound`: reserved for the audio PWM, no sound firmware yet; `off`, the default: neither driven nor pulled). Issue #70. |
 | RUN       | 30               | CoCo /RESET (via R9 series; R10 pull‑up footprint is DNP by default) |
 | VSYS      | 39               | +5V via D2 Schottky |
 
@@ -178,7 +178,7 @@ read with `mov y, status`, instead of on E, and there is no `CART_DRV`.
 | GP30 | A15_BUF | capture |
 | GP31 | OE_FW | Firmware U10 `/OE`, reached only with JP2 at 2-3. The PIO engine holds it high, so **JP2 must stay at 1-2** (hardware `/OE`) until the respin (`docs/ADDITIONAL_ROADMAP.md` §8) |
 | GP32 | NMI_DRV | Q3 gate (DNP stage — R15/R17 also DNP); also reachable from a Pico 2 via JP5 2-3 (shares header pin 34, see below); no firmware drives this pin yet |
-| GP33 | CART_DRV | Firmware-driven `/CART` pulse (bus-engine spec, §4.5-equivalent in `main.c`): toggled ~500 Hz for 500 ms after `/HALT` release when `rom_cart_wanted()` is true; also reachable from a Pico 2 via JP5 1-2, but no Pico 2 board header defines `PIN_CART_DRV` today, so the pulse is Plus-W only |
+| GP33 | CART_DRV | Firmware-driven `/CART` pulse (bus-engine spec, §4.5-equivalent in `main.c`): toggled ~500 Hz for 500 ms after `/HALT` release when `rom_cart_wanted()` is true; also reachable from a Pico 2 (GP28) or a `plusw_hdr` build (GP42) via JP5 1-2, where `main.c` drives `PIN_P34` instead once the saved `pin34 cart` setting says the jumper is bridged |
 | GP34 | AUDIO_PWM | sound output stage |
 | GP35 | EXP_GP35 → J1 pin 1 | Plus-W only; on a Pico 2 this is where the module's own SWDIO pad lands instead (see the debug-pad note in `hardware-design.md` §7) |
 | GP43, GP44, GP45 | EXP_GP43/44/45 → J1 pins 2-4 | Plus-W only |
@@ -194,8 +194,10 @@ jumper for the Q3/Q4 drive stages above: pad 1 = `CART_DRV`, pad 2 =
 and mutually exclusive with JP3 (both bridge onto header pin 34) — a
 Pico 2 build picks at most one of audio (JP3), a firmware `/CART` pulse
 (JP5 1-2), or a firmware `/NMI` drive (JP5 2-3, needs R15/R17 fitted).
-No firmware for either JP5 position exists yet (item 5 of the firmware
-backlog, `docs/ADDITIONAL_ROADMAP.md` §5).
+The firmware cannot sense which is bridged: the saved `pin34
+off|cart|sound` setting (console verb, Manager SETTINGS `P` row) tells
+it, and only `cart` drives the pin today. No firmware for JP5 2-3 exists
+yet (item 5 of the firmware backlog, `docs/ADDITIONAL_ROADMAP.md` §5).
 
 **Plus-W board header trap, avoided:** `PICO_DEFAULT_LED_PIN` is `GP25` on
 a Pico 2. On a Plus-W, pad-grid `GP25` is `SCS_BUF` — a U13 **output**,

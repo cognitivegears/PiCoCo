@@ -128,9 +128,18 @@ int main(void) {
     }
     int64_t rtc;
     if (plat_rtc_get(&rtc)) dw_time_set(&g_dw, rtc, plat_now_ms());
+#ifdef PIN_P34
+    /* Header pin 34 is driven only when the saved `pin34` setting (replayed by
+     * console_run_config above) says the user bridged JP5 1-2; `sound` is the
+     * audio ticket's hook, `off` leaves the pin untouched (#70). */
+    int cart_drv = console_pin34() == PIN34_CART ? PIN_P34 : -1;
+    if (cart_drv >= 0) { gpio_init(cart_drv); gpio_set_dir(cart_drv, GPIO_OUT); gpio_put(cart_drv, 0); }
+#elif defined(PIN_CART_DRV)
+    int cart_drv = PIN_CART_DRV;
+#endif
     gpio_put(PIN_HALT, 0);   /* release /HALT: spec 8.1 */
     LOG_I(LOG_M_MAIN, "core1 up, halt released, bus cycles %u", (unsigned)bus_stats.cycles);   /* nonzero: selects during the hold */
-#ifdef PIN_CART_DRV
+#if defined(PIN_CART_DRV) || defined(PIN_P34)
     /* Autostart paks expect /CART pulsing after reset (a real pak ties it to
      * Q). Toggle Q4 for 500 ms after the /HALT release so Color BASIC's
      * cart check sees an edge after it has initialised the PIA; DOS ROMs
@@ -139,7 +148,7 @@ int main(void) {
      * reset-button press reboots the Pico too and repeats this whole boot
      * sequence, pulse included — this is not power-on/Pico-reboot only. */
     /* Not after a double RESET: the manager is a DK image, and /CART would send BASIC to $C000. */
-    uint32_t cart_until = (rom_cart_wanted() && !dbl_reset) ? plat_now_ms() + 500 : 0;
+    uint32_t cart_until = (cart_drv >= 0 && rom_cart_wanted() && !dbl_reset) ? plat_now_ms() + 500 : 0;
 #endif
 #ifdef PIN_LED
     uint32_t last_blink = 0; bool led = false;
@@ -151,10 +160,10 @@ int main(void) {
         mode_pump(&g_dw, now);
         bus_engine_tick(now);
         net_poll(now);
-#ifdef PIN_CART_DRV
+#if defined(PIN_CART_DRV) || defined(PIN_P34)
         if (cart_until) {
-            if (now < cart_until) gpio_put(PIN_CART_DRV, now & 1);
-            else { gpio_put(PIN_CART_DRV, 0); cart_until = 0; }
+            if (now < cart_until) gpio_put(cart_drv, now & 1);
+            else { gpio_put(cart_drv, 0); cart_until = 0; }
         }
 #endif
         if (tud_cdc_n_available(1)) { uint8_t b[64]; uint32_t n = tud_cdc_n_read(1, b, sizeof b); console_feed(b, n); }

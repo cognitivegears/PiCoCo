@@ -178,8 +178,8 @@ quality-*.md`); hardware items from those went into v2.3.1 or v2.4 (hardware-des
 5. **Firmware-pulsed /CART, bench check.** Built for a Plus-W's `CART_DRV` pad (GP33):
    toggled ~500 Hz for 500 ms after the `/HALT` release when `rom_cart_wanted()` (`cart
    auto`: a loaded ROM whose first two bytes are not `DK`; `cart on`/`off` override and are
-   what `save` writes). No Pico 2 board header defines `PIN_CART_DRV`, so `cart on`/`off`
-   are refused there; the JP5-on-a-Pico-2 path is unbuilt. Still open: a GMC image
+   what `save` writes). A Pico 2 or `plusw_hdr` build drives header pin 34 instead, once
+   the saved `pin34 cart` setting says JP5 1-2 is bridged (#70). Still open: a GMC image
    autostarts on a CoCo 3 with `cart auto`, and HDB-DOS still reaches BASIC normally (the
    pulse must not disturb a DOS boot). The self-test does not exercise `/CART`.
 6. **Make EOU easy for a newcomer.** (a) prebuilt `picoco-host` binaries for macOS, Linux
