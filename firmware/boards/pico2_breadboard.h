@@ -10,9 +10,10 @@
 #define PIN_OE_BUS  26
 #define PIN_HALT    27   /* HALT_GATE: HIGH holds /HALT low (Q2 on) */
 #define PIN_LED     PICO_DEFAULT_LED_PIN
-/* GP28 is AUDIO_PWM by default as of v2.3.1 (JP3 1-2) — no sound firmware yet
- * (roadmap item 11), so it is left uninitialised: neither driven nor pulled.
- * GP26/GP8-22 are taken over by PIO1 during `bus selftest` only (fake6809.c). */
+#define PIN_P34     28   /* header pin 34: a solder choice the firmware cannot sense — JP3 1-2 AUDIO_PWM
+                          * (v2.3.1 default), JP5 1-2 CART_DRV (Q4), JP5 2-3 NMI_DRV (Q3, DNP). Driven only
+                          * as the saved `pin34` setting says (main.c, #70); `off` leaves it uninitialised. */
+/* GP26/GP8-22 are taken over by PIO1 during `bus selftest` only (fake6809.c). */
 
 /* Pull-up input pins for main.c's gpio_setup(): D0-7, A0-13, /R/W, OE_BUS. */
 #define PICOCO_INPUT_MASK ((0xFFULL << PIN_D0) | (0x3FFFULL << PIN_A0) | (1ULL << PIN_RW) | (1ULL << PIN_OE_BUS))

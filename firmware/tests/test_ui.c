@@ -1192,6 +1192,31 @@ TEST(settings_toggle_hdbdos_is_saved) {
     ASSERT(strcmp(lines[1], "save") == 0);
 }
 
+/* The exec stub only records lines, so each recorded verb is run through the
+ * real console here to see the row follow the saved value (test_console covers
+ * the verb itself). */
+TEST(settings_pin34_cycles_and_saves) {
+    setup();
+    open_settings(0);
+    ASSERT(row_has(6, "P:PIN 34  OFF"));
+    poll(0, 'P', -1, 10);
+    ASSERT_EQ(nlines, 2);
+    ASSERT(strcmp(lines[0], "pin34 cart") == 0);
+    ASSERT(strcmp(lines[1], "save") == 0);
+    ASSERT_EQ(console_exec(lines[0]), 0);
+    poll(0, 0, -1, 11);
+    ASSERT(row_has(6, "P:PIN 34  CART (JP5 1-2)"));
+    poll(0, 'p', -1, 12);
+    ASSERT(strcmp(lines[2], "pin34 sound") == 0);
+    ASSERT_EQ(console_exec(lines[2]), 0);
+    poll(0, 0, -1, 13);
+    ASSERT(row_has(6, "P:PIN 34  SOUND (JP3 1-2)"));
+    poll(0, 'P', -1, 14);
+    ASSERT_EQ(nlines, 6);
+    ASSERT(strcmp(lines[4], "pin34 off") == 0);
+    ASSERT(strcmp(lines[5], "save") == 0);
+}
+
 TEST(wifi_screen_without_a_radio_is_one_line) {
     setup();
     open_with(0);
@@ -1346,6 +1371,7 @@ int main(void) {
     RUN(disks_lists_image_files_only);
     RUN(home_long_read_only_name_keeps_ro);
     RUN(settings_toggle_hdbdos_is_saved);
+    RUN(settings_pin34_cycles_and_saves);
     RUN(wifi_screen_without_a_radio_is_one_line);
     RUN(bad_size_refused_before_leaving);
     RUN(go_failure_keeps_session_and_shows_reason);
