@@ -571,12 +571,20 @@ static const struct { int16_t min; const char *zone; } zones[] = {
 #define NZONES ((int)(sizeof zones / sizeof zones[0]))   /* the picker's last row, NZONES, is CUSTOM... */
 static bool tz_pick;
 
-/* "OFF", or "UTC+HH:MM" with the zone name when a row has that offset. */
+/* "+HH:MM", as parse_tz reads it; "OFF" when off. */
+static void offset_text(int tz, char *out, size_t n) {
+    if (tz == NET_TZ_OFF) snprintf(out, n, "OFF");
+    else snprintf(out, n, "%c%02d:%02d", tz < 0 ? '-' : '+', abs(tz) / 60, abs(tz) % 60);
+}
+
+/* "OFF", or "UTC+HH:MM" with the zone name when a row has that offset (20 chars at most). */
 static void tz_text(int tz, char *out, size_t n) {
     const char *zone = "";
+    char off[16];
     for (int i = 0; i < NZONES; i++) if (zones[i].min == tz) zone = zones[i].zone;
+    offset_text(tz, off, sizeof off);
     if (tz == NET_TZ_OFF) snprintf(out, n, "OFF");
-    else snprintf(out, n, "UTC%c%02d:%02d%s%s", tz < 0 ? '-' : '+', abs(tz) / 60, abs(tz) % 60, *zone ? " " : "", zone);
+    else snprintf(out, n, "UTC%s%s%s", off, *zone ? " " : "", zone);
 }
 
 static void tz_set(int minutes) {
@@ -607,9 +615,8 @@ static void tz_pick_open(void) {
 static void tz_pick_enter(void) {
     tz_pick = false;
     if (sel < NZONES) { tz_set(zones[sel].min); return; }
-    char cur[16] = "OFF";
-    int tz = net_tz();
-    if (tz != NET_TZ_OFF) snprintf(cur, sizeof cur, "%c%02d:%02d", tz < 0 ? '-' : '+', abs(tz) / 60, abs(tz) % 60);
+    char cur[16];
+    offset_text(net_tz(), cur, sizeof cur);
     ui_text_begin("UTC OFFSET (+HH:MM, -HH, OFF):", cur, false, 6, tz_cb);
 }
 
@@ -626,8 +633,8 @@ static void draw_settings(void) {
     put(3, 0, line, false);
     snprintf(line, sizeof line, "T:CLOCK %s", when);
     put(4, 0, line, false);
-    tz_text(net_tz(), when, sizeof when);
-    snprintf(line, sizeof line, "Z:TIMEZONE %s", when);
+    snprintf(line, sizeof line, "Z:TIMEZONE ");
+    tz_text(net_tz(), line + 11, sizeof line - 11);
     put(5, 0, line, false);
     int64_t dummy;
     if (!plat_rtc_get(&dummy)) put(6, 2, "(CLOCK LOST AT RESET)", false);

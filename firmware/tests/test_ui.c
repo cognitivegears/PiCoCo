@@ -1037,10 +1037,14 @@ TEST(clock_is_set_from_two_prompts) {
     ASSERT(strcmp(lines[1], "save") == 0);
 }
 
-TEST(clock_break_on_the_time_prompt_writes_nothing) {
+TEST(clock_break_on_either_prompt_writes_nothing) {
     setup();
     open_settings(0);
     poll(0, 'T', -1, 10);
+    poll(0, UI_KEY_BREAK, -1, 20);
+    ASSERT_EQ(nlines, 0);
+    ASSERT(row_has(4, "T:CLOCK 20"));
+    poll(0, 'T', -1, 30);
     poll(0, UI_KEY_ENTER, -1, 100);
     ASSERT(row_has(12, "TIME HH:MM 24H:"));
     poll(0, UI_KEY_BREAK, -1, 200);
@@ -1152,8 +1156,11 @@ TEST(settings_names_the_zone_of_the_offset) {
     for (int i = 0; i < 14; i++) poll(0, UI_KEY_DOWN, -1, 40 + (uint32_t)i);   /* EST down to CUSTOM... */
     poll(0, UI_KEY_ENTER, -1, 60);
     ASSERT(row_has(13, "-05:00"));
+    ASSERT_EQ(console_exec("net tz 120"), 0);
+    poll(0, UI_KEY_BREAK, -1, 65);
+    ASSERT(row_has(5, "Z:TIMEZONE UTC+02:00 EET / CEST"));   /* the longest row text, whole */
     ASSERT_EQ(console_exec("net tz 210"), 0);        /* no row names +03:30 */
-    poll(0, UI_KEY_BREAK, -1, 70);
+    poll(0, 0, -1, 70);                              /* a redraw */
     ASSERT(row_has(5, "Z:TIMEZONE UTC+03:30"));
     poll(0, 'Z', -1, 80);
     poll(0, UI_KEY_ENTER, -1, 90);
@@ -1436,7 +1443,7 @@ int main(void) {
     RUN(wifi_server_host_then_port);
     RUN(wifi_server_bad_port_runs_nothing);
     RUN(clock_is_set_from_two_prompts);
-    RUN(clock_break_on_the_time_prompt_writes_nothing);
+    RUN(clock_break_on_either_prompt_writes_nothing);
     RUN(bad_clock_text_runs_nothing);
     RUN(timezone_is_parsed_in_minutes);
     RUN(timezone_picker_enter_sets_and_saves);
