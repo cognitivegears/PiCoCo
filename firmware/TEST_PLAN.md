@@ -746,6 +746,19 @@ CoCo 2 (16K, no Extended BASIC):
 | K.2.7 CoCo 2 manager, carttest launch | PASS: EXEC 49154 manager, carttest PASS lines; 1608 reads crc_err 0 at the soak start. (First attempt hit HDB-DOS: the CoCo 3 rows had saved hdbdw3bck.rom; `rom load manager` + `save` restored the default) | 2026-10-03 |
 | K.2.8 CoCo 2 carttest 30 min + counters | PASS on f1b4b85 (guard dwell check): 31 min, 866 M cycles, `engine_stall 0`, `dw reads 72195 crc_err 0`, `becker reads 18.7 M underrun 0 overrun 0`, `event_lag_max 1`, `event_dup 75.1 M` (8.7 % of reads: OE_BUS high blips on the first selected cycle after a 6809 internal cycle; never on a `$FF42` read). Soaks 1-2 before the fix: see the dated results below | 2026-10-03 |
 
+## L. PiCoCo-DOS boot ROM (#16, `rom/`)
+
+The skeleton: `DK`, `$C002` init, banner, back to BASIC. Bench steps on a
+CoCo with Extended BASIC: copy `rom/picoco-dos.rom` to flash, ENTER on it in
+the Manager's ROMS list (or `rom load picoco-dos.rom`), expect
+`PICOCO-DOS 0.1` over the BASIC banner and `OK`; then `EXEC 49154` prints the
+banner again and `OK`; `PEEK(&H16A)` is 126 (the hook is a JMP).
+
+| Step | Result | Date |
+|---|---|---|
+| XRoar `cocous` (Color BASIC 1.0 or 1.1 with Extended BASIC 1.0), `coco2bus` and `coco3` (`make -C rom xroar`, then `xrscreen.py`) | pass: `PICOCO-DOS 0.1`, `EXTENDED COLOR BASIC 1.0` or `1.1` (2.0 on the CoCo 3), `OK`; Extended BASIC 1.0 has the same `LBEQ $C002` at `$80AC`; the CoCo 3 patch at `$C0D9` reads `JMP $E29D` in the trace. `EXEC 49154` on `coco2bus`: banner, `OK`, `LIST` still shows the program, `PEEK(&H16A)` = 126; on `coco3` the trace shows the re-entry, the patched exit and the prompt (the GDB stub timed out with `-type`, so no screen) | 2026-10-27 |
+| Bench, Manager launch | | |
+
 ## How to resume with Claude
 
 Plug the Pico in, then say "resume the bench test plan at section K.2" (or

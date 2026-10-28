@@ -1,6 +1,6 @@
 # PiCoCo
 
-An RP2350 cartridge for the Tandy Color Computer: a ROM emulator plus a DriveWire Becker port. Hardware is KiCad under `PiCoCo/`, firmware under `firmware/`, design docs under `docs/`.
+An RP2350 cartridge for the Tandy Color Computer: a ROM emulator plus a DriveWire Becker port. Hardware is KiCad under `PiCoCo/`, firmware under `firmware/`, the 6809 boot ROM under `rom/`, design docs under `docs/`.
 
 ## Read first
 
