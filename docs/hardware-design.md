@@ -348,8 +348,8 @@ Firmware defaults to "asserted" at boot (via R7) and explicitly
 drives GP27 LOW after PIO programs are armed. This eliminates the
 cold‑start race where a user could type `DOS` before firmware is
 ready. After release, firmware can re‑assert by driving GP27 HIGH
-(`halt on`); nothing uses that for DriveWire flow control yet
-(`docs/ADDITIONAL_ROADMAP.md` §5 item 2).
+(`halt on`); nothing uses that for DriveWire flow control, and a
+runtime hold is bounded to 500 µs (ADR 0013).
 
 **Decision 2026-09-17: Q2, R7 and R8 stay on the PCB.** The breadboard
 bring-up ran with the Pico on USB, so the cold-boot race was never

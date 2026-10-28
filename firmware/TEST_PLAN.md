@@ -219,9 +219,10 @@ XRoar runs above predate that and stopped at EOU's `Time ?` prompt).
    writes count moves, no error; file survives a reboot if left in place.
 5. `dw disk show` inside NitrOS-9 lists the mounts (virtual channel,
    `dw_vser.c`); `dw disk insert 1 <file>` then `dir /x1`.
-6. Tick loss (`docs/ADDITIONAL_ROADMAP.md` §5 item 2): note `date -t`, run
-   `dir -e -r /dd >/nil` in a loop for 10 minutes, compare with the Pico's
-   `time`. Record the drift in seconds.
+6. Tick loss (ADR 0013: nothing in the firmware holds /HALT at runtime,
+   so expect none): note `date -t`, run `dir -e -r /dd >/nil` in a loop
+   for 10 minutes, compare with the Pico's `time`. Record the drift in
+   seconds.
 7. CoCo RESET returns to HDB-DOS and `DOS` boots again; same after a
    power cycle with `dw mount` saved in `picoco.cfg`.
 8. Manager: `B` on the OS-9 disk boots it (never bench-tested; the plan
