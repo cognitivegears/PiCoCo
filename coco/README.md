@@ -346,8 +346,9 @@ WIFI. Up/Down move, ENTER opens, BREAK returns to BASIC.
   With no DOS ROM set it says `SET A DOS ROM AS DEFAULT`; on a Color BASIC
   machine, `NEEDS EXTENDED BASIC`. BREAK goes back to DISKS with drive 0
   still mounted.
-- **SETTINGS**: `H` toggles HDB-DOS drive mode, `T` sets the clock, `Z` the
-  timezone. BREAK goes back.
+- **SETTINGS**: `H` toggles HDB-DOS drive mode, `T` sets the clock (the date,
+  then the time), `Z` picks a timezone from a list of named offsets
+  (`CUSTOM...` types one). BREAK goes back.
 - **WIFI** (Plus-W only): `S` scans for an SSID, `P` sets the PSK, `H` sets
   the server host, `M` toggles the next-boot transport (net or native) and
   shows `(RESET TO APPLY)`. BREAK goes back.

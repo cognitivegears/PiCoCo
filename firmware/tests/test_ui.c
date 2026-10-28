@@ -1018,35 +1018,68 @@ TEST(wifi_server_bad_port_runs_nothing) {
     ASSERT(row_has(14, "BAD PORT"));
 }
 
-TEST(clock_is_set_from_typed_text) {
+TEST(clock_is_set_from_two_prompts) {
     setup();
     open_settings(0);
     poll(0, 'T', -1, 10);
-    ASSERT(row_has(12, "YYYY-MM-DD HH:MM"));
+    ASSERT(row_has(12, "DATE YYYY-MM-DD:"));
     ASSERT(row_has(13, "20"));                       /* starts from the current clock */
-    for (int i = 0; i < 16; i++) poll(0, 0x08, -1, 20 + (uint32_t)i);
-    type("2026-10-15 19:30");
+    for (int i = 0; i < 10; i++) poll(0, 0x08, -1, 20 + (uint32_t)i);
+    type("2026-10-15");
+    poll(0, UI_KEY_ENTER, -1, 100);
+    ASSERT_EQ(nlines, 0);                            /* nothing written until the time is in */
+    ASSERT(row_has(12, "TIME HH:MM 24H:"));
+    for (int i = 0; i < 5; i++) poll(0, 0x08, -1, 120 + (uint32_t)i);
+    type("19:30");
     poll(0, UI_KEY_ENTER, -1, 300);
     ASSERT_EQ(nlines, 2);
     ASSERT(strcmp(lines[0], "time set 1792092600") == 0);   /* date -u -j -f "%Y-%m-%d %H:%M:%S" "2026-10-15 19:30:00" +%s */
     ASSERT(strcmp(lines[1], "save") == 0);
 }
 
+TEST(clock_break_on_the_time_prompt_writes_nothing) {
+    setup();
+    open_settings(0);
+    poll(0, 'T', -1, 10);
+    poll(0, UI_KEY_ENTER, -1, 100);
+    ASSERT(row_has(12, "TIME HH:MM 24H:"));
+    poll(0, UI_KEY_BREAK, -1, 200);
+    ASSERT_EQ(nlines, 0);
+    ASSERT(row_has(4, "T:CLOCK 20"));
+}
+
 TEST(bad_clock_text_runs_nothing) {
     setup();
     open_settings(0);
     poll(0, 'T', -1, 10);
-    for (int i = 0; i < 16; i++) poll(0, 0x08, -1, 20 + (uint32_t)i);
-    type("2026-02-30 19:30");
+    for (int i = 0; i < 10; i++) poll(0, 0x08, -1, 20 + (uint32_t)i);
+    type("2026-02-30");
+    poll(0, UI_KEY_ENTER, -1, 300);
+    ASSERT_EQ(nlines, 0);
+    ASSERT(row_has(14, "BAD DATE/TIME"));            /* refused before the time prompt */
+    setup();
+    open_settings(0);
+    poll(0, 'T', -1, 10);
+    poll(0, UI_KEY_ENTER, -1, 100);
+    for (int i = 0; i < 5; i++) poll(0, 0x08, -1, 120 + (uint32_t)i);
+    type("24:00");
     poll(0, UI_KEY_ENTER, -1, 300);
     ASSERT_EQ(nlines, 0);
     ASSERT(row_has(14, "BAD DATE/TIME"));
 }
 
+/* Z opens the picker on OFF (the test clock has no offset); CUSTOM... is the row below. */
+static void open_custom_tz(void) {
+    poll(0, 'Z', -1, 10);
+    poll(0, UI_KEY_DOWN, -1, 11);
+    poll(0, UI_KEY_ENTER, -1, 12);
+}
+
 static void tz(const char *text) {
     setup();
     open_settings(0);
-    poll(0, 'Z', -1, 10);
+    open_custom_tz();
+    for (int i = 0; i < 6; i++) poll(0, 0x08, -1, 20 + (uint32_t)i);
     type(text);
     poll(0, UI_KEY_ENTER, -1, 300);
 }
@@ -1059,6 +1092,73 @@ TEST(timezone_is_parsed_in_minutes) {
     tz("+14:00"); ASSERT(strcmp(lines[0], "net tz 840") == 0);
     tz("+15");    ASSERT_EQ(nlines, 0); ASSERT(row_has(14, "BAD OFFSET"));   /* net_set_tz allows +-840 */
     tz("x");      ASSERT_EQ(nlines, 0); ASSERT(row_has(14, "BAD OFFSET"));
+}
+
+TEST(timezone_picker_enter_sets_and_saves) {
+    setup();
+    open_settings(0);
+    poll(0, 'Z', -1, 10);
+    ASSERT(row_has(1, "TIMEZONE"));
+    ASSERT(row_has(12, "OFF"));                      /* preselected, on the last page */
+    ASSERT(row_has(13, "CUSTOM..."));
+    ASSERT(row_has(15, "ENTER=PICK  BREAK=BACK"));
+    ASSERT_EQ(nlines, 0);
+    for (int i = 0; i < 13; i++) poll(0, UI_KEY_UP, -1, 20 + (uint32_t)i);   /* OFF up to EST */
+    ASSERT(row_has(2, "UTC-05:00 EST / CDT"));
+    poll(0, UI_KEY_ENTER, -1, 100);
+    ASSERT_EQ(nlines, 2);
+    ASSERT(strcmp(lines[0], "net tz -300") == 0);
+    ASSERT(strcmp(lines[1], "save") == 0);
+    ASSERT(row_has(1, "SETTINGS"));
+}
+
+TEST(timezone_picker_preselects_the_current_offset) {
+    setup();
+    open_settings(0);
+    poll(0, 'Z', -1, 10);
+    poll(0, UI_KEY_ENTER, -1, 20);                   /* the preselected row is OFF */
+    ASSERT_EQ(nlines, 2);
+    ASSERT(strcmp(lines[0], "net tz off") == 0);
+    setup();
+    open_settings(0);
+    poll(0, 'Z', -1, 10);
+    poll(0, UI_KEY_BREAK, -1, 20);
+    ASSERT_EQ(nlines, 0);
+    ASSERT(row_has(1, "SETTINGS"));
+}
+
+TEST(timezone_custom_falls_through_to_the_prompt) {
+    setup();
+    open_settings(0);
+    open_custom_tz();
+    ASSERT_EQ(nlines, 0);
+    ASSERT(row_has(12, "UTC OFFSET (+HH:MM, -HH, OFF):"));
+    ASSERT(row_has(13, "OFF"));                      /* prefilled with the current offset */
+    poll(0, UI_KEY_BREAK, -1, 20);
+    ASSERT_EQ(nlines, 0);
+    ASSERT(row_has(1, "SETTINGS"));
+}
+
+TEST(settings_names_the_zone_of_the_offset) {
+    setup_console();
+    ASSERT_EQ(console_exec("net tz -300"), 0);
+    open_settings(0);
+    ASSERT(row_has(5, "Z:TIMEZONE UTC-05:00 EST / CDT"));
+    poll(0, 'Z', -1, 10);
+    poll(0, UI_KEY_ENTER, -1, 20);                   /* preselected on the current offset */
+    ASSERT(strcmp(last_line, "save") == 0);
+    ASSERT_EQ(net_tz(), -300);
+    poll(0, 'Z', -1, 30);
+    for (int i = 0; i < 14; i++) poll(0, UI_KEY_DOWN, -1, 40 + (uint32_t)i);   /* EST down to CUSTOM... */
+    poll(0, UI_KEY_ENTER, -1, 60);
+    ASSERT(row_has(13, "-05:00"));
+    ASSERT_EQ(console_exec("net tz 210"), 0);        /* no row names +03:30 */
+    poll(0, UI_KEY_BREAK, -1, 70);
+    ASSERT(row_has(5, "Z:TIMEZONE UTC+03:30"));
+    poll(0, 'Z', -1, 80);
+    poll(0, UI_KEY_ENTER, -1, 90);
+    ASSERT(row_has(12, "UTC OFFSET"));               /* an unlisted offset preselects CUSTOM... */
+    ASSERT_EQ(console_exec("net tz off"), 0);        /* the net stub outlives this test */
 }
 
 TEST(list_pages_counts_and_jumps) {
@@ -1335,9 +1435,14 @@ int main(void) {
     RUN(wifi_scan_failure_is_shown);
     RUN(wifi_server_host_then_port);
     RUN(wifi_server_bad_port_runs_nothing);
-    RUN(clock_is_set_from_typed_text);
+    RUN(clock_is_set_from_two_prompts);
+    RUN(clock_break_on_the_time_prompt_writes_nothing);
     RUN(bad_clock_text_runs_nothing);
     RUN(timezone_is_parsed_in_minutes);
+    RUN(timezone_picker_enter_sets_and_saves);
+    RUN(timezone_picker_preselects_the_current_offset);
+    RUN(timezone_custom_falls_through_to_the_prompt);
+    RUN(settings_names_the_zone_of_the_offset);
     RUN(list_pages_counts_and_jumps);
     RUN(g_then_an_arrow_key_moves);
     RUN(g_then_a_control_key_still_acts);
