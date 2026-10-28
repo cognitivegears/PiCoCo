@@ -40,7 +40,7 @@ init, and the screen reads `PICOCO-DOS 0.1` over the BASIC banner and `OK`.
 XRoar CoCo 2 a program in memory survives it (CoCo 3 not checked; bench:
 `firmware/TEST_PLAN.md` section L). Color BASIC alone
 (no Extended BASIC) never calls `$C002`; there `EXEC 49154` prints the
-banner and returns, untested.
+banner and returns without scanning (no `EX` at `$8000`), untested.
 
 ## How the exit works
 

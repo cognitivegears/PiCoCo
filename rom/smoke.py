@@ -7,7 +7,7 @@ every ROM source. With --xroar it also boots the image headless in XRoar on a
 CoCo 1 (Color BASIC 1.0, Extended BASIC 1.0), a CoCo 2 and a CoCo 3
 (stdout trace, no network) and checks that the banner
 goes out through CHROUT and that BASIC then reads the keyboard through our
-RAM hook, which is where it sits at the OK prompt.
+RAM hook, which is where it sits at the OK prompt. Run from rom/.
 
 Copyright (c) 2026 Nathan Byrd
 SPDX-License-Identifier: MIT
@@ -17,6 +17,7 @@ import os
 import re
 import subprocess
 import sys
+import threading
 
 ROM_BASE = 0xC000
 ROM_SIZE = 8192
@@ -57,22 +58,27 @@ def boot_xroar(rom, machine, seconds, *roms):
            os.path.expanduser("~/.xroar/roms"), "-cart-rom", os.path.abspath(rom),
            "-trace", "-timeout", str(seconds), *roms]
     p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, errors="replace")
+    watchdog = threading.Timer(seconds + 10, p.kill)  # XRoar sometimes ignores -timeout
+    watchdog.start()
     entered = hooked = False
     printed = bytearray()
-    for line in p.stdout:
-        m = TRACE.match(line)
-        if not m:
-            continue
-        addr, op, arg, a = int(m[1], 16), m[2].upper(), m[3].lower(), int(m[4], 16)
-        if addr == 0xC002:
-            entered = True
-        elif ROM_BASE <= addr < ROM_BASE + ROM_SIZE and op == "JSR" and arg == "[$a002]":
-            printed.append(a)
-        elif addr == RVEC4 and op == "JMP" and arg.startswith("$c"):
-            hooked = True
-            p.kill()
-            break
-    p.wait()
+    try:
+        for line in p.stdout:
+            m = TRACE.match(line)
+            if not m:
+                continue
+            addr, op, arg, a = int(m[1], 16), m[2].upper(), m[3].lower(), int(m[4], 16)
+            if addr == 0xC002:
+                entered = True
+            elif ROM_BASE <= addr < ROM_BASE + ROM_SIZE and op == "JSR" and arg == "[$a002]":
+                printed.append(a)
+            elif addr == RVEC4 and op == "JMP" and arg.startswith("$c"):
+                hooked = True
+                break
+    finally:
+        p.kill()
+        watchdog.cancel()
+        p.wait()
     assert entered, f"{machine}: BASIC never jumped to $C002 (DK not taken)"
     assert bytes(printed) == BANNER, f"{machine}: CHROUT saw {bytes(printed)!r}, want {BANNER!r}"
     assert hooked, f"{machine}: BASIC never read the keyboard through the hook at $016A (no OK prompt?)"
@@ -81,7 +87,10 @@ def boot_xroar(rom, machine, seconds, *roms):
 
 def main():
     xroar = "--xroar" in sys.argv
-    rom = [a for a in sys.argv[1:] if a != "--xroar"][0]
+    args = [a for a in sys.argv[1:] if a != "--xroar"]
+    if len(args) != 1:
+        sys.exit("usage: smoke.py [--xroar] picoco-dos.rom")
+    rom = args[0]
     check_image(rom)
     print(f"{rom}: header, vectors, patch zones and licence headers ok")
     if xroar:

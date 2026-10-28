@@ -41,7 +41,9 @@ INIT2   lda #$7E                JMP opcode: the hook slot becomes JMP HOOK
         jmp EXIT
 
 * Zeros to $C0D8: on a CoCo 3, Super Extended BASIC copies a DK cart to RAM
-* and patches the copy as it would Disk BASIC 1.1 ($C0C6-$C0DB, $C8B4-$C8BE).
+* and patches the copy as it would Disk BASIC: 3 bytes at $C0D9 (at $C0C6
+* instead when the byte at $C004 is $D6, which ours is not) and 11 NOPs at
+* $C8B4. Nothing of ours sits in either zone, as in coco/stub/manager.asm.
         rmb $C0D9-*
 * The 3 bytes at $C0D9 are the patched exit: a CoCo 3 overwrites them with its
 * own jump back into its cold start, so this jump is ours only on a CoCo 1/2.
@@ -51,10 +53,14 @@ EXIT    jmp GOECB
 * DK compare, and the instruction after that branch is its no-cartridge path
 * (its banner, the warm-start setup, OK). Find the branch in the ROM rather
 * than hard-code where: $10 $27 then the offset that lands on $C002 from there.
-* No match means no Extended BASIC, so we were EXECed from BASIC: return.
+* Without Extended BASIC ("EX" at $8000; the range floats on a Color BASIC
+* machine) we were EXECed from BASIC: return. So on no match.
 * shortcut: only the LBEQ form is known (Extended BASIC 1.0 and 1.1 in
 * XRoar); add the form another version uses if its cold start ends in our RTS.
-GOECB   ldx #$8000
+GOECB   ldx $8000
+        cmpx #$4558
+        bne GOECBX
+        ldx #$8000
 GOECB1  ldd ,x
         cmpd #$1027             LBEQ
         bne GOECB2
@@ -67,7 +73,7 @@ GOECB1  ldd ,x
 GOECB2  leax 1,x
         cmpx #$A000
         blo GOECB1
-        rts
+GOECBX  rts
 
 * The CONSOLE IN hook, installed to prove the slot is ours; it passes through.
 HOOK    rts
