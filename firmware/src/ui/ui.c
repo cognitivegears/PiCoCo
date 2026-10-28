@@ -875,7 +875,7 @@ void ui_init(ui_send_fn send, void *ctx, ui_exec_fn exec, dw_store *store, dw_se
     active = false;
     pkn = 0; reply_len = 0; pending_act = 0; act_argn = 0;
     screen = SCR_HOME; menu_sel = 0; scanning = tz_pick = boot_wait = false; ui_text_key(UI_KEY_BREAK);
-    nnames = sel = top = 0; truncated = false;
+    list_clear();
     msg[0] = '\0'; pending[0] = '\0'; prev[0] = '\0'; caps = 0; want_lsum = false;
     memset(scr, 0x60, sizeof scr);
     memset(sent, 0x60, sizeof sent);
