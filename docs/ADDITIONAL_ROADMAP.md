@@ -186,9 +186,9 @@ quality-*.md`); hardware items from those went into v2.3.1 or v2.4 (hardware-des
    and Windows, so nobody needs CMake and a compiler to serve an image (a Windows build has
    never been tried); (b) one launcher command that starts the server and
    `becker_relay.py --reconnect` together and finds the bridge port by itself. Before
-   announcing either: build and boot the 6809 EOU image (only the 6309 one has run), and
-   ship `eou_becker.py`, not a remastered image, unless the EOU project's terms allow
-   redistributing one.
+   announcing either: boot the 6809 EOU image on a 6809 CoCo 3 (#13 built it and booted it
+   in XRoar, 2026-10-28; the bench CoCo 3 has a 6309). Ship `eou_becker.py`, not a
+   remastered image: EOU publishes no license (`docs/NITROS9_EOU.md` "Redistribution").
 7. **PIO decode of `$FF40`.** A bank switch is core1's `$FF40` write hook, which lands
    82-93 clk after the write ends, after the next cycle has taken its bank: the first cart
    fetch after a `STA $FF40` comes from the old bank at both speeds

@@ -149,10 +149,10 @@ fast-mode Becker test whichever HDB-DOS ROM started it.
 
 ### H.0 What is needed
 
-- **CPU match.** The EOU zip in the repo root is the 6309-only build. On a
-  stock 68B09E CoCo 3 it will not boot; that needs the 6809
-  build (`68SDC.VHD`) instead. Same rule for the stock disk (`6809l2` vs
-  `6309l2`).
+- **CPU match.** EOU ships a 6309 build (`63SDC.VHD`) and a 6809 build
+  (`68SDC.VHD`); a 6309 image hangs on a stock 68B09E CoCo 3. Same rule for
+  the stock disk (`6809l2` vs `6309l2`). The bench CoCo 3 has a 6309, so
+  the 6809 rows below need another machine.
 - **512 K RAM** for EOU. The stock disk runs in 128 K.
 - **Stock disk:** a `*coco3_becker.dsk` from a NitrOS-9 release (here
   `nos96309l2v030300coco3_becker.dsk`; the `_headless` variant puts the
@@ -171,11 +171,14 @@ fast-mode Becker test whichever HDB-DOS ROM started it.
 
 ### H.1 Prep: EOU Becker image
 
-`python3 firmware/tools/eou_becker.py 63SDC.VHD 63BECKER.VHD` (needs
-toolshed `os9`). It copies the image, then:
+`python3 firmware/tools/eou_becker.py 63SDC.VHD 63BECKER.VHD` (or
+`68SDC.VHD 68BECKER.VHD`; needs toolshed `os9`). It reads the CPU build off
+the image (`MODULES/6309L2` or `6809L2`), copies the image, then:
 
-- Kernel track (LSN 612): `KERNEL_TRACKS/kernel.dw` with `Boot` swapped for
-  `boot_dw_becker`.
+- Kernel track (LSN 612): the track the image boots with, `Boot` swapped
+  for `boot_dw_becker` (REL and Krn kept; `KERNEL_TRACKS/` is not used,
+  the 6809 image names its files differently and its REL differs from the
+  track on disk).
 - Boot file: `BOOTS/OS9Boot.dw` with `dwio` -> `dwio_becker.sb`, `DD` ->
   `ddx0.dd`, and `RBSuper`, `llcocosdc`, `H1` removed (the SDC registers
   overlap the Becker port at `$FF41/$FF42`). Written over `OS9Boot.dw`'s
@@ -244,6 +247,7 @@ Transport per H.0; `picoco-host --mount 0=63BECKER.VHD --hdbdos off`.
 6. `swapboot` runs and lists the sets; quit without selecting (only the
    current boot works here, see H.1).
 7. Plus-W: repeat 1, 2 and 5 over `becker net`.
+8. 6809 CoCo 3: repeat 1 with `68BECKER.VHD` (#13).
 
 Not in scope until the sound/MIDI work lands: `/MIDI`, `/P`, `/N` channels.
 
@@ -279,9 +283,10 @@ Bench CoCo 3 CPU: 6309  RAM: 2 MB
 
 | Check | Pico 2 | Plus-W | Date |
 |---|---|---|---|
-| H.1 EOU Becker image built | n/a | n/a | 2026-10-01: `63BECKER.VHD`, 64 modules, boot file 35361 bytes at LSN 47253 |
+| H.1 EOU Becker image built | n/a | n/a | 2026-10-01: `63BECKER.VHD`, 64 modules, boot file 35361 bytes at LSN 47253. 2026-10-28 (#13): `68BECKER.VHD`, 62 modules, 36076 bytes at LSN 235865; `63BECKER.VHD` rebuilt from the on-disk track differs from the 10-01 build only in REL |
 | H.2 XRoar, stock disk | n/a | n/a | pass 2026-10-01: shell prompt (6309, hdbdw3bc3) |
 | H.2 XRoar, EOU | n/a | n/a | pass 2026-10-01 to the `Time ?` prompt: 512k, 6309 native, DriveWire active; `reads=1383 crc_err=0 notrdy=0`. gshell not run |
+| H.2 XRoar, EOU 6809 (`68BECKER.VHD`) | n/a | n/a | 2026-10-28, boots by server stats only, banner not observed (headless, no screen): `reads=1817 crc_err=0 notrdy=0 timeouts=0`, 4 OP_TIME, reads stop at 1817 by 100 s and OP_SERREAD polling goes on; the 6309 image run the same way reads 1887 (the 10-01 bench boot read ~1,880). Banner check still open |
 | H.3.1 stock boot | pass 2026-10-01 after the E9 discharge fix in `bus_core1.c`: shell prompt, `dw reads 308 crc_err 0`, `becker reads 79457 underrun 0`, `dw hdbdos off`. Before the fix: hung at `i2x`, underrun 1, crc_err 84 (phantom byte after a `$26` write) | | 2026-10-01 |
 | H.3.2 clock | pass: startup prints the 2014 build date (before the first OP_TIME is applied), `date -t` then shows 2026-10-01 10:38:51 matching the Pico | | 2026-10-01 |
 | H.3.3 read, two drives | `dir -e /dd` pass; `/x1` not run | | 2026-10-01 |
@@ -291,6 +296,7 @@ Bench CoCo 3 CPU: 6309  RAM: 2 MB
 | H.3.7 reset / power cycle | RESET inside NitrOS-9 restarts the NitrOS-9 boot, not HDB-DOS; power cycle returns to HDB-DOS (mounts need `save`) | | 2026-10-01 |
 | H.3.8 manager `B` | Boot screen: J.6.4 | | |
 | H.3 through an MPI | | | |
+| H.4.8 EOU boot, 6809 image | open: needs a 6809 CoCo 3 (bench machine is a 6309) | | |
 | H.4.1 EOU boot (bridge) | pass 2026-10-01 (third try): 2048k, 6309 native, boots to the prompt; 2409 sectors, 21 re-read after a checksum failure (0.9 %, open). Needed: the server dropping EOU's SDC probe (`64 64 00 64 00 ...` on `$FF42`), `COCO3FPGA=1` in the image. Still prompts for the time: root `startup` is the `.sdc` one | | 2026-10-01 |
 | H.4.2-4 clock, gshell, write | gshell loads and launches apps (trackpad), no time prompt with the `.dw` startup, saved `becker bridge` survives a power cycle; ~7935 sectors, 42 re-reads (0.5 %, open), 0 phantom reads. `dcheck` not run | | 2026-10-01 |
 | H.4.5 30 min soak | pass: copy + `dcheck /dd` + del over the bridge, no reconnect, no phantom reads. dcheck reports 117 lost and 129 shared clusters: both are in the untouched `63SDC.VHD` as shipped (kernel track, old boot extents; 5 files with two directory entries), so no damage from this session | | 2026-10-01 |
@@ -760,6 +766,18 @@ commit; `picotool load -x` if the drive won't mount). Results get appended
 to this file under a dated "Results" heading.
 
 ## Results
+
+### 2026-10-28, XRoar only: EOU 6809 image (#13)
+`eou_becker.py` now takes the kernel track from the image (LSN 612) and
+the CPU build from `MODULES/`, so the 6809 zip's `68SDC.VHD` remasters
+(its `KERNEL_TRACKS/` has `6809_kernel_sdc`, no `kernel.dw`, and `os9 copy`
+exits 0 on a missing path, so the old script died on the missing file with
+no useful message).
+Headless XRoar (`-ui null -ao null -machine coco3 -machine-cpu 6809
+-ram 512 -cart becker`, 6809 being XRoar's default anyway, `hdbdw3bc3.rom`, `DOS`) against `picoco-host
+--hdbdos off`: H.2 rows above. No CoCo 3 with a 6809 on the bench; H.4.8
+stays open. Redistribution of EOU images: answered in
+`docs/NITROS9_EOU.md`.
 
 ### 2026-10-03, PCB v2.3.1 #1, Pico 2, CoCo 2 (26-3026, 16K, no ECB): PIO engine stall guard
 carttest soaks 1 and 2 (7bec09f, 6fa526c) died after 7-13 PASS lines with

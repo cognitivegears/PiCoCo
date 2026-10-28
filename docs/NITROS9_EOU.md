@@ -14,7 +14,7 @@ Tested 2026-10-01 on PCB v2.3.1 with a Pico 2, a CoCo 3 with a 6309 and
 |---|---|
 | Stock NitrOS-9 L2 (6309), served from the Pico's flash | works |
 | EOU 1.0.1 (6309), served from a Mac over USB (bridge mode) | works: boots, gshell, apps, 40 minute soak |
-| EOU 6809 build | not tested; the remaster script handles it by file name |
+| EOU 6809 build (`68SDC.VHD`) | remastered and booted in XRoar (TEST_PLAN H.2, 2026-10-28); not yet run on a 6809 CoCo 3, the bench machine has a 6309 |
 | EOU over WiFi (Plus-W, `becker net`) | not tested |
 | EOU served by DriveWire 4 or pyDriveWire instead of `picoco-host` | not tested, see "Other servers" |
 | EOU from the Pico's flash | not possible: the image is 128 MB, flash holds 2.5 MB (Pico 2) or 14.5 MB (Plus-W) |
@@ -83,12 +83,16 @@ You need:
 Then build the Becker image (it copies; the original is left alone):
 
 ```
-python3 firmware/tools/eou_becker.py 63SDC.VHD 63BECKER.VHD
+python3 firmware/tools/eou_becker.py 63SDC.VHD 63BECKER.VHD    # 6309
+python3 firmware/tools/eou_becker.py 68SDC.VHD 68BECKER.VHD    # 6809
 ```
 
-What the script changes, all from modules on the image itself:
+The script reads the CPU build off the image (`MODULES/6309L2` or
+`6809L2`), so the file names are free. `--selftest` checks its module
+parser. What it changes, all from modules on the image itself:
 
-- kernel track: `boot_dw_becker` instead of the SDC boot module;
+- kernel track: the one the image boots with, `boot_dw_becker` swapped in
+  for the SDC boot module;
 - boot file: `dwio_becker` and `/DD` = DriveWire drive 0; the SDC driver
   modules removed (their registers sit on the Becker port);
 - `startup`: the DriveWire one, which does not stop to ask the time;
@@ -147,6 +151,19 @@ save
 ```
 
 and stop the relay and the server.
+
+## Redistribution
+
+Why this repository ships the script and not a `63BECKER.VHD`: the EOU
+download page (lcurtisboyle.com/nitros9/nitros9.html) and the documents in
+the zip (beginner's guide, update notes, env-file notes) state no license
+(checked 2026-10-28). The beginner's guide lists the alternate builds
+(Matchbox, CoCo3FPGA, XRoar) as made "with our blessing" by a named
+maintainer each, which is permission given case by case, and the image
+bundles programs by many authors whose terms we have not checked. So no EOU
+image, original or remastered, is checked in; run the script on your own
+download. If you want to publish a remastered image, ask the EOU authors
+first (contact details are on the download page).
 
 ## Troubleshooting
 
