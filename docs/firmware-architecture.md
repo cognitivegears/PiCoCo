@@ -905,9 +905,10 @@ Power‑on sequence:
    the CPU runs.
 
 After boot, `halt on` / `halt off` on the console assert and release
-/HALT by hand; nothing in the firmware uses it for flow control yet
-(`docs/ADDITIONAL_ROADMAP.md` §5 item 2 bounds such holds to a few
-hundred µs).
+/HALT by hand. Nothing else drives it: DriveWire paces the CoCo through
+the Becker status register, never /HALT, and any future runtime hold is
+bounded to 500 µs (ADR 0013; a hold longer than a 16.7 ms VSYNC tick
+costs NitrOS-9 a clock tick).
 
 Boundary: if firmware crashes before step 5, the CoCo will hang at
 reset instead of running with a broken cart. That's the safer failure

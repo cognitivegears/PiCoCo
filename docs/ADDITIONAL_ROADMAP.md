@@ -168,8 +168,8 @@ quality-*.md`); hardware items from those went into v2.3.1 or v2.4 (hardware-des
 ### Firmware, ordered by value
 1. **Auto-save mounts.** `dw mount` reaches flash only on `save`; the community workflow is
    mount-then-reset-to-boot, so the mount is lost. Write `picoco.cfg` on mount/eject.
-2. **/HALT flow-control holds** longer than a GIME tick (16.7 ms) cost NitrOS-9 clock ticks;
-   bound runtime holds to a few hundred us (the 1.2 s boot hold is fine).
+2. **/HALT flow-control holds**: decided, ADR 0013. None exist at runtime; a future one is
+   capped at 500 µs. Kept as a line because open issues cite these item numbers.
 3. SPDX headers on every firmware source; `console_exec` should reject >6 tokens / >135
    chars instead of truncating silently; note that `bus_stats` counters are non-atomic
    (`stats reset` races core1's own counters, firmware/README.md).
