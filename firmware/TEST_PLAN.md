@@ -464,8 +464,12 @@ there is no save key.
 3. DISKS: `1` on an image mounts it in drive 1 (digit shown by the name);
    `E` then `1` ejects. RESET: the mount is still there (`status`), no `save` typed.
 4. SHIFT+UP/DOWN page a long list; `G` then a letter jumps; the title row counts.
-5. SETTINGS: `H` toggles the HDB-DOS mode; the clock row shows the date; `T`/`Z`
-   say `NOT YET` until #59.
+5. SETTINGS: `H` toggles the HDB-DOS mode; the clock row shows the date. `T`
+   asks `DATE YYYY-MM-DD:` then `TIME HH:MM 24H:`, each prefilled; ENTER on the
+   time lands in `time`, BREAK on either writes nothing (#68). `Z` opens a
+   list of named offsets with the current one selected; ENTER lands in
+   `net tz`, and the row then shows the zone name (`UTC-05:00 EST / CDT`);
+   `CUSTOM...` opens the typed offset prompt, prefilled.
 6. WIFI on the Pico 2 PCB: `NO RADIO ON THIS BOARD`.
 7. WIFI on the Plus-W header build: SSID, PSK, SERVER, MODE, STATE, IP rows match
    `net status`; `M` flips the next-boot transport and shows `(RESET TO APPLY)`.

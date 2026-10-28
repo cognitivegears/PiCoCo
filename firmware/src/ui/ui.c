@@ -190,16 +190,17 @@ static void list_cb(const char *name, uint32_t size, void *ctx) {
 
 static int name_cmp(const void *a, const void *b) { return strcasecmp(a, b); }
 
+static void list_clear(void) {
+    nnames = sel = top = jumpn = 0;
+    truncated = jump_armed = list_drives = false;
+}
+
 static void list_load(bool roms) {
-    nnames = 0;
-    truncated = false;
+    list_clear();
     list_roms = roms;
     list_drives = !roms;
     plat_fs_list(list_cb, NULL);
     qsort(names, (size_t)nnames, NAME_LEN, name_cmp);
-    sel = top = 0;
-    jumpn = 0;
-    jump_armed = false;
 }
 
 /* Drive holding this image, or -1. */
@@ -526,8 +527,9 @@ static uint8_t key_boot(uint8_t key) {
 static void clock_text(char when[20]) {
     time_t t = (time_t)dw_time_get(g_dw, now_ms);
     struct tm tmv;
+    memset(when, 0, 20);            /* T's prompts prefill from when[0] and when[11] */
     if (gmtime_r(&t, &tmv)) strftime(when, 20, "%Y-%m-%d %H:%M", &tmv);   /* dw time is local already */
-    else snprintf(when, 20, "?");
+    else when[0] = '?';
 }
 
 static void clock_cb(const char *text) {
@@ -538,27 +540,101 @@ static void clock_cb(const char *text) {
     change(line);
 }
 
-static void tz_cb(const char *text) {
+/* T asks for the date, then the time (#68); both go to the clock as one `time set`. */
+static char date_pick[11];
+
+static void time_cb(const char *text) {
+    char when[20];
+    snprintf(when, sizeof when, "%s %s", date_pick, text);
+    clock_cb(when);
+}
+
+static void date_cb(const char *text) {
+    char when[20], now[20];
+    int64_t t;
+    snprintf(when, sizeof when, "%s 00:00", text);
+    if (parse_datetime(when, &t) != 0) { set_msg("BAD DATE/TIME"); return; }
+    snprintf(date_pick, sizeof date_pick, "%s", text);
+    clock_text(now);
+    ui_text_begin("TIME HH:MM 24H:", now + 11, false, 5, time_cb);
+}
+
+/* Z opens a picker of named offsets (#68). The firmware keeps a fixed offset
+ * and has no DST, so a row names the standard and daylight zones sharing it. */
+static const struct { int16_t min; const char *zone; } zones[] = {
+    { -600, "HST" }, { -540, "AKST / HDT" }, { -480, "PST / AKDT" }, { -420, "MST / PDT" },
+    { -360, "CST / MDT" }, { -300, "EST / CDT" }, { -240, "AST / EDT" }, { -210, "NST" },
+    { -180, "ADT / BRT" }, { 0, "GMT / UTC" }, { 60, "CET / BST" }, { 120, "EET / CEST" },
+    { 180, "MSK / EEST" }, { 330, "IST" }, { 480, "CST / AWST" }, { 540, "JST / KST" },
+    { 600, "AEST" }, { 720, "NZST" }, { NET_TZ_OFF, "" },
+};
+#define NZONES ((int)(sizeof zones / sizeof zones[0]))   /* the picker's last row, NZONES, is CUSTOM... */
+static bool tz_pick;
+
+/* "+HH:MM", as parse_tz reads it; "OFF" when off. */
+static void offset_text(int tz, char *out, size_t n) {
+    if (tz == NET_TZ_OFF) snprintf(out, n, "OFF");
+    else snprintf(out, n, "%c%02d:%02d", tz < 0 ? '-' : '+', abs(tz) / 60, abs(tz) % 60);
+}
+
+/* "OFF", or "UTC+HH:MM" with the zone name when a row has that offset (20 chars at most). */
+static void tz_text(int tz, char *out, size_t n) {
+    const char *zone = "";
+    char off[16];
+    for (int i = 0; i < NZONES; i++) if (zones[i].min == tz) zone = zones[i].zone;
+    offset_text(tz, off, sizeof off);
+    if (tz == NET_TZ_OFF) snprintf(out, n, "OFF");
+    else snprintf(out, n, "UTC%s%s%s", off, *zone ? " " : "", zone);
+}
+
+static void tz_set(int minutes) {
     static char line[24];
+    if (minutes == NET_TZ_OFF) snprintf(line, sizeof line, "net tz off");
+    else snprintf(line, sizeof line, "net tz %d", minutes);
+    change(line);
+}
+
+static void tz_cb(const char *text) {
     int m = 0;
     int r = parse_tz(text, &m);
     if (r < 0) { set_msg("BAD OFFSET"); return; }
-    if (r) snprintf(line, sizeof line, "net tz off");
-    else snprintf(line, sizeof line, "net tz %d", m);
-    change(line);
+    tz_set(r ? NET_TZ_OFF : m);
+}
+
+static void tz_pick_open(void) {
+    list_clear();
+    for (int i = 0; i < NZONES; i++) tz_text(zones[i].min, names[i], NAME_LEN);
+    snprintf(names[NZONES], NAME_LEN, "CUSTOM...");
+    nnames = NZONES + 1;
+    sel = NZONES;                   /* an offset no row names is a custom one */
+    for (int i = 0; i < NZONES; i++) if (zones[i].min == net_tz()) sel = i;
+    if (sel >= LIST_ROWS) top = nnames - LIST_ROWS;   /* the last page, so CUSTOM... shows under OFF */
+    tz_pick = true;
+}
+
+static void tz_pick_enter(void) {
+    tz_pick = false;
+    if (sel < NZONES) { tz_set(zones[sel].min); return; }
+    char cur[16];
+    offset_text(net_tz(), cur, sizeof cur);
+    ui_text_begin("UTC OFFSET (+HH:MM, -HH, OFF):", cur, false, 6, tz_cb);
 }
 
 static void draw_settings(void) {
     char line[UI_COLS + 1], when[20];
+    if (tz_pick) {
+        list_draw("TIMEZONE", "");
+        put(15, 0, "ENTER=PICK  BREAK=BACK", false);
+        return;
+    }
     clock_text(when);
     put(1, 0, "SETTINGS", false);
     snprintf(line, sizeof line, "H:HDB-DOS DRIVE MODE %s", g_dw->hdbdos ? "ON" : "OFF");
     put(3, 0, line, false);
     snprintf(line, sizeof line, "T:CLOCK %s", when);
     put(4, 0, line, false);
-    int tz = net_tz();
-    if (tz == NET_TZ_OFF) snprintf(line, sizeof line, "Z:TIMEZONE OFF");
-    else snprintf(line, sizeof line, "Z:TIMEZONE UTC%c%02d:%02d", tz < 0 ? '-' : '+', abs(tz) / 60, abs(tz) % 60);
+    snprintf(line, sizeof line, "Z:TIMEZONE ");
+    tz_text(net_tz(), line + 11, sizeof line - 11);
     put(5, 0, line, false);
     int64_t dummy;
     if (!plat_rtc_get(&dummy)) put(6, 2, "(CLOCK LOST AT RESET)", false);
@@ -567,14 +643,21 @@ static void draw_settings(void) {
 }
 
 static uint8_t key_settings(uint8_t key) {
+    if (tz_pick) {
+        if (list_key(key)) return 0;
+        if (key == UI_KEY_BREAK) tz_pick = false;
+        else if (key == UI_KEY_ENTER) tz_pick_enter();
+        return 0;
+    }
     if (key == UI_KEY_BREAK) screen = SCR_HOME;
     else if (key == 'H' || key == 'h') change(g_dw->hdbdos ? "dw hdbdos off" : "dw hdbdos on");
     else if (key == 'T' || key == 't') {
         char when[20];
         clock_text(when);
-        ui_text_begin("YYYY-MM-DD HH:MM", when, false, 16, clock_cb);
+        when[10] = '\0';
+        ui_text_begin("DATE YYYY-MM-DD:", when, false, 10, date_cb);
     }
-    else if (key == 'Z' || key == 'z') ui_text_begin("UTC OFFSET (+HH:MM, -HH, OFF):", "", false, 6, tz_cb);
+    else if (key == 'Z' || key == 'z') tz_pick_open();
     return 0;
 }
 
@@ -623,9 +706,7 @@ static void scan_cb(const char *ssid, int rssi, int chan, void *ctx) {
 
 static void scan_start(void) {
     if (mode_get() == MODE_NET) { set_msg("LEAVE NET MODE FIRST"); return; }
-    nnames = sel = top = jumpn = 0;
-    truncated = jump_armed = false;
-    list_drives = false;
+    list_clear();
     /* shortcut: net_scan blocks core0 for up to 5 s; the stub's poll retries cover it, and
      * ui_feed drops the retries it sent meanwhile (a retry landing after that still gets one copy). */
     int rc = net_scan(scan_cb, NULL);
@@ -743,7 +824,7 @@ static void on_poll(uint8_t flags, uint8_t key, uint8_t c) {
     bool first = (flags & 2) != 0;
     uint8_t act = 0;
     if (first) {
-        caps = c; screen = SCR_HOME; menu_sel = 0; scanning = false; ui_text_key(UI_KEY_BREAK);
+        caps = c; screen = SCR_HOME; menu_sel = 0; scanning = tz_pick = false; ui_text_key(UI_KEY_BREAK);
         if (!msg_keep) msg[0] = '\0';
         msg_keep = jump_armed = eject_armed = boot_wait = false;
     }
@@ -793,8 +874,8 @@ void ui_init(ui_send_fn send, void *ctx, ui_exec_fn exec, dw_store *store, dw_se
     g_send = send; g_ctx = ctx; g_exec = exec; g_store = store; g_dw = dw;
     active = false;
     pkn = 0; reply_len = 0; pending_act = 0; act_argn = 0;
-    screen = SCR_HOME; menu_sel = 0; scanning = false; boot_wait = false; ui_text_key(UI_KEY_BREAK);
-    nnames = sel = top = 0; truncated = false;
+    screen = SCR_HOME; menu_sel = 0; scanning = tz_pick = boot_wait = false; ui_text_key(UI_KEY_BREAK);
+    list_clear();
     msg[0] = '\0'; pending[0] = '\0'; prev[0] = '\0'; caps = 0; want_lsum = false;
     memset(scr, 0x60, sizeof scr);
     memset(sent, 0x60, sizeof sent);
