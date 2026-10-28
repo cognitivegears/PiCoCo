@@ -87,5 +87,6 @@ tools/         generators and routing/fab tooling (see docs/kicad-workflow.md)
 fab/main/      JLCPCB package: Gerber zip, BOM, CPL, module stencil, ordering checklist
 breakout/      breadboard-phase boards (cart fingers to 2x20 header, cobbler)
 firmware/      RP2350 firmware (host-testable core)
+rom/           PiCoCo-DOS, the MIT-licensed 6809 boot ROM (rom/README.md)
 docs/          design documents and roadmap
 ```

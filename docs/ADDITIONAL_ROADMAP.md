@@ -74,10 +74,8 @@ map are functional interfaces, same footing as the SDC register map in
 
 - Budget 2–4 KB of the 8 KB window for v1; sequential file I/O maybe
   +2 KB. Leaves room for the menu and a Becker client.
-- Toolchain: `lwasm` from lwtools (not yet in the repo; add under
-  `rom/` with a Makefile and a host-side smoke test that loads the ROM
-  into a 6809 emulator core, or at minimum asserts the `DK` header and
-  vector table).
+- Toolchain: `lwasm` under `rom/` (#16): `make -C rom` builds and runs
+  the host smoke test, `make -C rom xroar` boots the image headless.
 - Effort: weeks part-time for must-haves. Sequential I/O roughly
   doubles it.
 - The ROM manager (`coco/stub/manager.asm`, `firmware/src/ui/`) already

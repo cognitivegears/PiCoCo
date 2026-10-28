@@ -11,8 +11,8 @@ modify this hardware design under the terms of that license.
 
   https://ohwr.org/cern_ohl_s_v2.txt
 
-Firmware source code (when present, under `firmware/`) is released
-under the MIT License:
+Firmware source code (under `firmware/`) and the PiCoCo-DOS boot ROM
+(under `rom/`) are released under the MIT License:
 
   Permission is hereby granted, free of charge, to any person
   obtaining a copy of this software and associated documentation
